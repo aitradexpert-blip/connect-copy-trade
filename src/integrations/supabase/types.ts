@@ -14,7 +14,123 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          subscription_plan: string | null
+          subscription_status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          subscription_plan?: string | null
+          subscription_status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          subscription_plan?: string | null
+          subscription_status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      trading_accounts: {
+        Row: {
+          balance: number | null
+          connection_status: string | null
+          created_at: string
+          equity: number | null
+          id: string
+          login: string
+          metaapi_account_id: string
+          name: string
+          platform: string
+          server: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          balance?: number | null
+          connection_status?: string | null
+          created_at?: string
+          equity?: number | null
+          id?: string
+          login: string
+          metaapi_account_id: string
+          name: string
+          platform: string
+          server: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          balance?: number | null
+          connection_status?: string | null
+          created_at?: string
+          equity?: number | null
+          id?: string
+          login?: string
+          metaapi_account_id?: string
+          name?: string
+          platform?: string
+          server?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      trading_signals: {
+        Row: {
+          comment: string | null
+          created_at: string
+          direction: string
+          expires_at: string | null
+          id: string
+          lot_size: number
+          scheduled_at: string | null
+          status: string | null
+          stop_loss: number | null
+          symbol: string
+          take_profit: number | null
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          direction: string
+          expires_at?: string | null
+          id?: string
+          lot_size: number
+          scheduled_at?: string | null
+          status?: string | null
+          stop_loss?: number | null
+          symbol: string
+          take_profit?: number | null
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          direction?: string
+          expires_at?: string | null
+          id?: string
+          lot_size?: number
+          scheduled_at?: string | null
+          status?: string | null
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
