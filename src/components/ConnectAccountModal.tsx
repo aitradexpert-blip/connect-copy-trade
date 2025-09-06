@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 interface ConnectAccountModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAccountConnected: (account: any) => void;
+  onAccountConnected?: () => void;
 }
 
 export function ConnectAccountModal({ 
