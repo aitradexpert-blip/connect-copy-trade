@@ -13,6 +13,8 @@ import Subscription from "./pages/Subscription";
 import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import Settings from "./pages/Settings";
+import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +61,8 @@ const App = () => (
             <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
             <Route path="/accounts" element={<ProtectedRoute><TradingAccounts /></ProtectedRoute>} />
             <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

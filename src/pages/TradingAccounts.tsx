@@ -97,9 +97,26 @@ const TradingAccounts = () => {
     }
   };
 
-  const handleRefresh = async (_id: string) => {
-    // Placeholder for MetaAPI refresh via Edge Function
-    toast({ title: "Refreshing account", description: "Live balance update coming soon." });
+  const handleRefresh = async (account: TradingAccount) => {
+    const { data: info, error: fnError } = await supabase.functions.invoke('metaapi-account-info', {
+      body: { accountId: account.metaapi_account_id },
+    });
+    if (fnError) {
+      toast({ title: 'Refresh failed', description: fnError.message, variant: 'destructive' });
+      return;
+    }
+    const balance = Number(info?.balance || 0);
+    const equity = Number(info?.equity || 0);
+    const { error } = await supabase
+      .from('trading_accounts')
+      .update({ balance, equity })
+      .eq('id', account.id);
+    if (error) {
+      toast({ title: 'Update failed', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Account refreshed' });
+      setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, balance, equity } : a));
+    }
   };
 
   const EmptyState = () => (
@@ -174,7 +191,7 @@ const TradingAccounts = () => {
                       <TableCell>${account.equity.toFixed(2)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => handleRefresh(account.id)}>
+                          <Button variant="ghost" size="sm" onClick={() => handleRefresh(account)}>
                             <RefreshCw className="w-4 h-4" />
                           </Button>
                           <Button variant="ghost" size="sm" onClick={() => handleRename(account.id, account.name)}>

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 
@@ -27,27 +28,32 @@ export function TopHeader() {
       <div className="flex items-center gap-4">
         <SidebarTrigger />
         <div className="hidden md:block">
-          <h2 className="text-lg font-semibold text-foreground">Trading Dashboard</h2>
-          <p className="text-sm text-muted-foreground">Monitor your trading performance</p>
+          <h2 className="text-lg font-semibold text-foreground">Meta Ai Xpert Trader</h2>
+          <p className="text-sm text-muted-foreground">Copy trading, signals and AI</p>
         </div>
       </div>
 
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-          onClick={() => import("@/hooks/use-toast").then(({ toast }) => toast({ title: "No new notifications", description: "You're all caught up." }))}
-          aria-label="Notifications"
-        >
-          <Bell className="w-5 h-5" />
-          <Badge
-            variant="destructive"
-            className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
-          >
-            0
-          </Badge>
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+              <Bell className="w-5 h-5" />
+              <Badge
+                variant="destructive"
+                className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
+              >
+                0
+              </Badge>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 bg-popover border border-border">
+            <div className="text-sm font-medium mb-2">Notifications</div>
+            <div className="text-sm text-muted-foreground py-4 text-center">
+              You're all caught up.
+            </div>
+          </PopoverContent>
+        </Popover>
+
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

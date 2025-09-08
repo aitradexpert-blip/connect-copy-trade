@@ -20,12 +20,11 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { metaApiService } from "@/services/metaapi";
 
 interface ConnectAccountModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAccountConnected?: (account: any) => void;
+  onAccountConnected?: () => void;
 }
 
 export function ConnectAccountModal({ 
@@ -39,30 +38,59 @@ export function ConnectAccountModal({
     server: "",
     metaapiAccountId: "",
     platform: "",
-    accountId: "",
-    token: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      const newAccount = {
-        id: Date.now(),
-        name: formData.name,
-        accountId: formData.accountId,
-        platform: formData.platform,
-        status: "connected",
-        balance: Math.random() * 50000 + 10000,
-        equity: Math.random() * 50000 + 10000,
-      };
+    try {
+      // 1) Insert trading account
+      const { data: inserted, error: insertError } = await supabase
+        .from("trading_accounts")
+        .insert([
+          {
+            user_id: user.id,
+            name: formData.name,
+            login: formData.login,
+            server: formData.server,
+            metaapi_account_id: formData.metaapiAccountId,
+            platform: formData.platform,
+            connection_status: "connected",
+          },
+        ])
+        .select("id")
+        .single();
 
-      onAccountConnected(newAccount);
-      
+      if (insertError) throw insertError;
+
+      // 2) Fetch live balance/equity from MetaAPI via Edge Function
+      const { data: info, error: fnError } = await supabase.functions.invoke(
+        "metaapi-account-info",
+        {
+          body: { accountId: formData.metaapiAccountId },
+        }
+      );
+
+      if (fnError) {
+        console.error(fnError);
+      }
+
+      const balance = Number(info?.balance || 0);
+      const equity = Number(info?.equity || 0);
+
+      // 3) Update record with live balances
+      if (inserted?.id) {
+        await supabase
+          .from("trading_accounts")
+          .update({ balance, equity })
+          .eq("id", inserted.id);
+      }
+
       toast({
         title: "Account connected successfully!",
         description: `${formData.name} has been connected to your trading dashboard.`,
@@ -73,22 +101,25 @@ export function ConnectAccountModal({
         login: "", 
         server: "", 
         metaapiAccountId: "", 
-        platform: "", 
-        accountId: "", 
-        token: "" 
+        platform: "" 
       });
       setIsLoading(false);
       onOpenChange(false);
-    }, 1500);
+      onAccountConnected?.();
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Failed to connect account", description: error.message, variant: "destructive" });
+      setIsLoading(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] bg-card border-border">
+      <DialogContent className="sm:max-w-[480px] bg-card border-border">
         <DialogHeader>
           <DialogTitle>Connect Trading Account</DialogTitle>
           <DialogDescription>
-            Connect your MetaTrader account using MetaAPI credentials.
+            Connect your MetaTrader account using MetaAPI account ID.
           </DialogDescription>
         </DialogHeader>
         
@@ -103,26 +134,37 @@ export function ConnectAccountModal({
               required
             />
           </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="accountId">Account ID</Label>
-            <Input
-              id="accountId"
-              placeholder="12345678"
-              value={formData.accountId}
-              onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
-              required
-            />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="login">Login</Label>
+              <Input
+                id="login"
+                placeholder="12345678"
+                value={formData.login}
+                onChange={(e) => setFormData({ ...formData, login: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="server">Server</Label>
+              <Input
+                id="server"
+                placeholder="Broker-Server"
+                value={formData.server}
+                onChange={(e) => setFormData({ ...formData, server: e.target.value })}
+                required
+              />
+            </div>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="token">MetaAPI Token</Label>
+            <Label htmlFor="metaapiAccountId">MetaAPI Account ID</Label>
             <Input
-              id="token"
-              type="password"
-              placeholder="eyJhbGciOiJSUzI1NiIs..."
-              value={formData.token}
-              onChange={(e) => setFormData({ ...formData, token: e.target.value })}
+              id="metaapiAccountId"
+              placeholder="e.g. 12345678:abcf-..."
+              value={formData.metaapiAccountId}
+              onChange={(e) => setFormData({ ...formData, metaapiAccountId: e.target.value })}
               required
             />
           </div>
