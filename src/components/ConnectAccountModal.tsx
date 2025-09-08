@@ -39,6 +39,8 @@ export function ConnectAccountModal({
     server: "",
     metaapiAccountId: "",
     platform: "",
+    accountId: "",
+    token: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -66,7 +68,15 @@ export function ConnectAccountModal({
         description: `${formData.name} has been connected to your trading dashboard.`,
       });
 
-      setFormData({ name: "", accountId: "", token: "", platform: "" });
+      setFormData({ 
+        name: "", 
+        login: "", 
+        server: "", 
+        metaapiAccountId: "", 
+        platform: "", 
+        accountId: "", 
+        token: "" 
+      });
       setIsLoading(false);
       onOpenChange(false);
     }, 1500);
