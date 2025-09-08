@@ -57,8 +57,8 @@ export function AppSidebar() {
             </div>
             {!collapsed && (
               <div>
-                <h1 className="text-lg font-bold text-foreground">TradeCopy</h1>
-                <p className="text-xs text-muted-foreground">Pro Trading</p>
+                <h1 className="text-lg font-bold text-foreground">Meta Ai Xpert Trader</h1>
+                <p className="text-xs text-muted-foreground">Copy trading & AI</p>
               </div>
             )}
           </div>

@@ -33,13 +33,19 @@ export function TopHeader() {
       </div>
 
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" className="relative">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          onClick={() => import("@/hooks/use-toast").then(({ toast }) => toast({ title: "No new notifications", description: "You're all caught up." }))}
+          aria-label="Notifications"
+        >
           <Bell className="w-5 h-5" />
-          <Badge 
-            variant="destructive" 
+          <Badge
+            variant="destructive"
             className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
           >
-            3
+            0
           </Badge>
         </Button>
 
@@ -57,7 +63,7 @@ export function TopHeader() {
           <DropdownMenuContent align="end" className="w-56 bg-popover border border-border">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/profile")}>
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
@@ -65,7 +71,7 @@ export function TopHeader() {
               <CreditCard className="mr-2 h-4 w-4" />
               Subscription
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/settings")}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </DropdownMenuItem>

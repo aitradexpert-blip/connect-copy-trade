@@ -18,6 +18,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { metaApiService } from "@/services/metaapi";
 
 interface ConnectAccountModalProps {
   open: boolean;
@@ -32,8 +35,9 @@ export function ConnectAccountModal({
 }: ConnectAccountModalProps) {
   const [formData, setFormData] = useState({
     name: "",
-    accountId: "",
-    token: "",
+    login: "",
+    server: "",
+    metaapiAccountId: "",
     platform: "",
   });
   const [isLoading, setIsLoading] = useState(false);
