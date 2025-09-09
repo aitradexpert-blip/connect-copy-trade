@@ -50,19 +50,70 @@ const Index = () => {
   }, [user]);
 
   const refreshData = async () => {
-    // Re-run the loader to fetch live metrics
     if (!user) return;
-    const { data, error } = await supabase
-      .from("trading_accounts")
-      .select("balance,equity")
-      .eq("user_id", user.id);
-    if (error) {
-      console.error(error);
-      return;
+    setLoading(true);
+    
+    try {
+      // Get all trading accounts for the user
+      const { data: accounts, error } = await supabase
+        .from("trading_accounts")
+        .select("id,metaapi_account_id,balance,equity")
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      let totalBalance = 0;
+      let totalEquity = 0;
+      let totalPositions = 0;
+
+      // Refresh each account's data from MetaAPI
+      for (const account of accounts || []) {
+        try {
+          const { data: info, error: fnError } = await supabase.functions.invoke(
+            "metaapi-account-info",
+            { body: { accountId: account.metaapi_account_id } }
+          );
+
+          if (!fnError && info) {
+            const balance = Number(info.balance || 0);
+            const equity = Number(info.equity || 0);
+            const positions = Number(info.positions || 0);
+
+            totalBalance += balance;
+            totalEquity += equity;
+            totalPositions += positions;
+
+            // Update the account in the database
+            await supabase
+              .from("trading_accounts")
+              .update({ balance, equity })
+              .eq("id", account.id);
+          } else {
+            // Use cached values if API fails
+            totalBalance += Number(account.balance || 0);
+            totalEquity += Number(account.equity || 0);
+          }
+        } catch (err) {
+          // Use cached values if API fails
+          totalBalance += Number(account.balance || 0);
+          totalEquity += Number(account.equity || 0);
+        }
+      }
+
+      // Calculate daily P&L (simplified - difference between equity and balance)
+      const dailyPnL = totalEquity - totalBalance;
+
+      setMetrics({
+        balance: totalBalance,
+        equity: totalEquity,
+        positions: totalPositions,
+        dailyPnL: dailyPnL,
+      });
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setLoading(false);
     }
-    const balance = (data || []).reduce((sum: number, a: any) => sum + Number(a.balance || 0), 0);
-    const equity = (data || []).reduce((sum: number, a: any) => sum + Number(a.equity || 0), 0);
-    setMetrics((m) => ({ ...m, balance, equity }));
   };
 
   const dailyPnLType = metrics.dailyPnL >= 0 ? "profit" : "loss";

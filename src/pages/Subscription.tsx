@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, CreditCard } from "lucide-react";
+import { Check, Upload, ExternalLink, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 
 interface PlanFeature {
@@ -20,6 +22,7 @@ interface Plan {
   description: string;
   features: PlanFeature[];
   popular?: boolean;
+  yocoLink: string;
 }
 
 const plans: Plan[] = [
@@ -27,6 +30,7 @@ const plans: Plan[] = [
     name: "Basic",
     price: 100,
     description: "Perfect for getting started with copy trading",
+    yocoLink: "https://pay.yoco.com/r/78avpk",
     features: [
       { text: "2 Auto-Trades per month", included: true },
       { text: "Up to 3 Copy Accounts", included: true },
@@ -41,6 +45,7 @@ const plans: Plan[] = [
     name: "Professional",
     price: 300,
     description: "For serious traders who need more features",
+    yocoLink: "https://pay.yoco.com/r/731Eg5",
     features: [
       { text: "Unlimited Auto-Trades", included: true },
       { text: "Up to 10 Copy Accounts", included: true },
@@ -56,6 +61,7 @@ const plans: Plan[] = [
     name: "Enterprise",
     price: 500,
     description: "Complete trading solution for professionals",
+    yocoLink: "https://pay.yoco.com/r/2YaDjW",
     features: [
       { text: "Unlimited Auto-Trades", included: true },
       { text: "Unlimited Copy Accounts", included: true },
@@ -70,29 +76,65 @@ const plans: Plan[] = [
 
 const Subscription = () => {
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [cardNumber, setCardNumber] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvc, setCvc] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showProofDialog, setShowProofDialog] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const handlePayment = async () => {
-    if (!selectedPlan) return;
+  const handleYocoPayment = (plan: Plan) => {
+    setSelectedPlan(plan);
+    // Open Yoco payment link in new tab
+    window.open(plan.yocoLink, '_blank');
+    // Show proof of payment dialog
+    setTimeout(() => setShowProofDialog(true), 1000);
+  };
+
+  const handleProofUpload = async () => {
+    if (!paymentProofFile || !selectedPlan || !user) return;
     
-    setIsProcessing(true);
+    setIsUploading(true);
     
-    // Simulate payment processing
-    setTimeout(() => {
+    try {
+      // Upload file to storage
+      const fileName = `${user.id}/${Date.now()}-${paymentProofFile.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(fileName, paymentProofFile);
+
+      if (uploadError) throw uploadError;
+
+      // Create payment proof record
+      const { error: dbError } = await supabase
+        .from('payment_proofs')
+        .insert({
+          user_id: user.id,
+          email: user.email!,
+          plan: selectedPlan.name,
+          amount: selectedPlan.price,
+          image_url: uploadData.path,
+          status: 'pending'
+        });
+
+      if (dbError) throw dbError;
+
       toast({
-        title: "Subscription successful!",
-        description: `Premium features unlocked for ${selectedPlan.name} plan.`,
+        title: "Proof of payment submitted!",
+        description: "Your payment will be reviewed by our team within 24 hours.",
       });
-      setIsProcessing(false);
+
+      setShowProofDialog(false);
+      setPaymentProofFile(null);
       setSelectedPlan(null);
-      setCardNumber("");
-      setExpiry("");
-      setCvc("");
-    }, 2000);
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const formatCardNumber = (value: string) => {
@@ -174,80 +216,69 @@ const Subscription = () => {
                   ))}
                 </ul>
                 
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button 
-                      className={`w-full ${
-                        plan.popular 
-                          ? 'bg-gradient-primary' 
-                          : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                      }`}
-                      onClick={() => setSelectedPlan(plan)}
-                    >
-                      Subscribe to {plan.name}
-                    </Button>
-                  </DialogTrigger>
-                  
-                  <DialogContent className="bg-gradient-card border-border">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <CreditCard className="w-5 h-5" />
-                        Complete Payment
-                      </DialogTitle>
-                      <DialogDescription>
-                        Subscribe to {selectedPlan?.name} plan for R{selectedPlan?.price}/month
-                      </DialogDescription>
-                    </DialogHeader>
-                    
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="card-number">Card Number</Label>
-                        <Input
-                          id="card-number"
-                          placeholder="1234 5678 9012 3456"
-                          value={cardNumber}
-                          onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                          maxLength={19}
-                        />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="expiry">Expiry Date</Label>
-                          <Input
-                            id="expiry"
-                            placeholder="MM/YY"
-                            value={expiry}
-                            onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                            maxLength={5}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="cvc">CVC</Label>
-                          <Input
-                            id="cvc"
-                            placeholder="123"
-                            value={cvc}
-                            onChange={(e) => setCvc(e.target.value.replace(/\D/g, ''))}
-                            maxLength={4}
-                          />
-                        </div>
-                      </div>
-                      
-                      <Button 
-                        onClick={handlePayment}
-                        className="w-full bg-gradient-primary"
-                        disabled={isProcessing || !cardNumber || !expiry || !cvc}
-                      >
-                        {isProcessing ? "Processing..." : `Pay R${selectedPlan?.price}`}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <Button 
+                  className={`w-full ${
+                    plan.popular 
+                      ? 'bg-gradient-primary' 
+                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                  }`}
+                  onClick={() => handleYocoPayment(plan)}
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Subscribe to {plan.name}
+                </Button>
               </CardContent>
             </Card>
           ))}
         </div>
+
+        {/* Proof of Payment Dialog */}
+        <Dialog open={showProofDialog} onOpenChange={setShowProofDialog}>
+          <DialogContent className="bg-gradient-card border-border">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Camera className="w-5 h-5" />
+                Submit Proof of Payment
+              </DialogTitle>
+              <DialogDescription>
+                Upload a screenshot of your payment confirmation for {selectedPlan?.name} plan (R{selectedPlan?.price}/month)
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="payment-proof">Payment Proof Screenshot</Label>
+                <Input
+                  id="payment-proof"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Please upload a clear screenshot of your Yoco payment confirmation
+                </p>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowProofDialog(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleProofUpload}
+                  className="flex-1 bg-gradient-primary"
+                  disabled={isUploading || !paymentProofFile}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  {isUploading ? "Uploading..." : "Submit Proof"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

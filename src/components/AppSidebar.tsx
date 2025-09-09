@@ -6,9 +6,12 @@ import {
   Bot, 
   CreditCard,
   Settings,
-  LogOut
+  LogOut,
+  Shield
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useAdminCheck } from "@/hooks/useAdminCheck";
+import { useAuth } from "@/hooks/useAuth";
 
 import {
   Sidebar,
@@ -37,6 +40,8 @@ const settingsItems = [
 
 export function AppSidebar() {
   const { state } = useSidebar();
+  const { signOut } = useAuth();
+  const { isAdmin } = useAdminCheck();
   const location = useLocation();
   const currentPath = location.pathname;
   const collapsed = state === "collapsed";
@@ -96,6 +101,16 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              {isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink to="/admin" className={getNavCls}>
+                      <Shield className="w-4 h-4" />
+                      {!collapsed && <span>Admin</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -104,7 +119,7 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-border bg-card p-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton>
+            <SidebarMenuButton onClick={signOut}>
               <LogOut className="w-4 h-4" />
               {!collapsed && <span>Logout</span>}
             </SidebarMenuButton>

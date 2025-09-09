@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import TradingSignals from "./pages/TradingSignals";
-import CopyTrading from "./pages/CopyTrading";
+import CopyTrading from "./pages/CopyTradingNew";
 import AIAutoTrading from "./pages/AIAutoTrading";
 import TradingAccounts from "./pages/TradingAccounts";
 import Subscription from "./pages/Subscription";
