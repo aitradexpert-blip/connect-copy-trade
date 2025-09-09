@@ -14,6 +14,90 @@ export type Database = {
   }
   public: {
     Tables: {
+      copy_trading_relationships: {
+        Row: {
+          created_at: string
+          follower_account_id: string | null
+          follower_user_id: string | null
+          id: string
+          master_account_id: string | null
+          master_user_id: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string
+          follower_account_id?: string | null
+          follower_user_id?: string | null
+          id?: string
+          master_account_id?: string | null
+          master_user_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string
+          follower_account_id?: string | null
+          follower_user_id?: string | null
+          id?: string
+          master_account_id?: string | null
+          master_user_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "copy_trading_relationships_follower_account_id_fkey"
+            columns: ["follower_account_id"]
+            isOneToOne: false
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copy_trading_relationships_master_account_id_fkey"
+            columns: ["master_account_id"]
+            isOneToOne: false
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_proofs: {
+        Row: {
+          amount: number
+          approved_at: string | null
+          approved_by: string | null
+          email: string
+          id: string
+          image_url: string
+          plan: string
+          status: string | null
+          submitted_at: string
+          user_id: string | null
+        }
+        Insert: {
+          amount: number
+          approved_at?: string | null
+          approved_by?: string | null
+          email: string
+          id?: string
+          image_url: string
+          plan: string
+          status?: string | null
+          submitted_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          amount?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          email?: string
+          id?: string
+          image_url?: string
+          plan?: string
+          status?: string | null
+          submitted_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -51,6 +135,7 @@ export type Database = {
           created_at: string
           equity: number | null
           id: string
+          is_master: boolean | null
           login: string
           metaapi_account_id: string
           name: string
@@ -65,6 +150,7 @@ export type Database = {
           created_at?: string
           equity?: number | null
           id?: string
+          is_master?: boolean | null
           login: string
           metaapi_account_id: string
           name: string
@@ -79,6 +165,7 @@ export type Database = {
           created_at?: string
           equity?: number | null
           id?: string
+          is_master?: boolean | null
           login?: string
           metaapi_account_id?: string
           name?: string
@@ -128,6 +215,69 @@ export type Database = {
           stop_loss?: number | null
           symbol?: string
           take_profit?: number | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          role: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          role?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          role?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          appearance_theme: string | null
+          created_at: string
+          email_notifications: Json | null
+          id: string
+          language: string | null
+          push_notifications: Json | null
+          timezone: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          appearance_theme?: string | null
+          created_at?: string
+          email_notifications?: Json | null
+          id?: string
+          language?: string | null
+          push_notifications?: Json | null
+          timezone?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          appearance_theme?: string | null
+          created_at?: string
+          email_notifications?: Json | null
+          id?: string
+          language?: string | null
+          push_notifications?: Json | null
+          timezone?: string | null
+          updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
