@@ -60,7 +60,6 @@ export default function CopyTrading() {
           name,
           platform,
           balance,
-          profiles(display_name),
           user_id
         `)
         .eq("is_master", true)
@@ -71,7 +70,7 @@ export default function CopyTrading() {
       const masters = (mastersData || []).map((master: any) => ({
         id: master.id,
         name: master.name,
-        user_email: master.profiles?.display_name || "Anonymous",
+        user_email: "Master Trader", // Simplified for now
         performance: 12.5, // This would come from actual performance calculation
         followers: 0, // This would come from relationships count
         account_id: master.id

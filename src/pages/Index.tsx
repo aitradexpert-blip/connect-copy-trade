@@ -77,7 +77,13 @@ const Index = () => {
           if (!fnError && info) {
             const balance = Number(info.balance || 0);
             const equity = Number(info.equity || 0);
-            const positions = Number(info.positions || 0);
+            
+            // Get positions count from MetaAPI positions endpoint
+            const { data: positionsData } = await supabase.functions.invoke(
+              "metaapi-get-positions",
+              { body: { accountId: account.metaapi_account_id } }
+            );
+            const positions = Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
 
             totalBalance += balance;
             totalEquity += equity;

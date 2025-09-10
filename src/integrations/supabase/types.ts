@@ -59,6 +59,39 @@ export type Database = {
           },
         ]
       }
+      kyc_documents: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          document_type: string
+          id: string
+          image_url: string
+          status: string | null
+          submitted_at: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          document_type: string
+          id?: string
+          image_url: string
+          status?: string | null
+          submitted_at?: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          document_type?: string
+          id?: string
+          image_url?: string
+          status?: string | null
+          submitted_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       payment_proofs: {
         Row: {
           amount: number
@@ -286,7 +319,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: { _role: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
