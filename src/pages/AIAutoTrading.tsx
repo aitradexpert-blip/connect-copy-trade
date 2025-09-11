@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -19,6 +19,8 @@ import { Switch } from "@/components/ui/switch";
 import AppLayout from "@/components/AppLayout";
 import { Bot, TrendingUp, Zap } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const mockBots = [
   {
@@ -44,10 +46,12 @@ const mockBots = [
   },
 ];
 
-const mockAccounts = [
-  { id: "1", name: "Live Account 1", platform: "MT5" },
-  { id: "2", name: "Demo Account", platform: "MT4" },
-];
+interface TradingAccount {
+  id: string;
+  name: string;
+  platform: string;
+  metaapi_account_id: string;
+}
 
 const riskLevels = ["Low", "Medium", "High"];
 
@@ -57,6 +61,27 @@ export default function AIAutoTrading() {
   const [riskLevel, setRiskLevel] = useState([1]);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [accounts, setAccounts] = useState<TradingAccount[]>([]);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    const loadAccounts = async () => {
+      if (!user) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from("trading_accounts")
+          .select("id,name,platform,metaapi_account_id")
+          .eq("user_id", user.id);
+
+        if (error) throw error;
+        setAccounts(data || []);
+      } catch (error: any) {
+        console.error("Error loading trading accounts:", error);
+      }
+    };
+    loadAccounts();
+  }, [user]);
 
   const handleActivateBot = (bot: any) => {
     setSelectedBot(bot);
@@ -64,7 +89,7 @@ export default function AIAutoTrading() {
   };
 
   const handleConfirmActivation = () => {
-    const account = mockAccounts.find(acc => acc.id === selectedAccount);
+    const account = accounts.find(acc => acc.id === selectedAccount);
     if (account && agreeTerms) {
       toast({
         title: `${selectedBot.name} activated!`,
@@ -160,9 +185,9 @@ export default function AIAutoTrading() {
                       <SelectValue placeholder="Choose account for bot trading" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockAccounts.map((account) => (
+                      {accounts.map((account) => (
                         <SelectItem key={account.id} value={account.id}>
-                          {account.name} ({account.platform})
+                          {account.name} ({account.platform.toUpperCase()})
                         </SelectItem>
                       ))}
                     </SelectContent>
