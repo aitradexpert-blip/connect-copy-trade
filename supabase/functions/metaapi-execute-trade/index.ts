@@ -10,9 +10,9 @@ const corsHeaders = {
 
 const CLIENT_API_URL = 'https://mt-client-api-v1.london.agiliumtrade.ai'
 
-interface TradeRequest {
+interface MetaApiTradeRequest {
+  actionType: 'ORDER_TYPE_BUY' | 'ORDER_TYPE_SELL'
   symbol: string
-  direction: 'BUY' | 'SELL'
   volume: number
   stopLoss?: number
   takeProfit?: number
@@ -49,10 +49,26 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Execute trade
-    const tradeData: TradeRequest = {
+    // Map incoming payload to MetaAPI format
+    const direction: 'BUY' | 'SELL' | undefined = trade.direction
+    const actionType = trade.actionType
+      ? trade.actionType
+      : direction === 'BUY'
+        ? 'ORDER_TYPE_BUY'
+        : direction === 'SELL'
+          ? 'ORDER_TYPE_SELL'
+          : undefined
+
+    if (!actionType) {
+      return new Response(JSON.stringify({ error: 'Missing or invalid direction/actionType' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+
+    const tradeData: MetaApiTradeRequest = {
+      actionType,
       symbol: trade.symbol,
-      direction: trade.direction,
       volume: trade.volume,
       stopLoss: trade.stopLoss,
       takeProfit: trade.takeProfit,
@@ -89,7 +105,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ 
       success: true, 
-      tradeId: result.stringCode,
+      tradeId: result?.stringCode ?? result?.id ?? result?.dealId ?? result?.orderId ?? null,
       message: 'Trade executed successfully',
       details: result
     }), {
