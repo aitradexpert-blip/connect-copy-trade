@@ -32,7 +32,7 @@ export interface TradeRequest {
   volume: number;
   takeProfit?: number;
   stopLoss?: number;
-  openPrice?: number;
+//  openPrice?: number;
 }
 
 class MetaApiService {
