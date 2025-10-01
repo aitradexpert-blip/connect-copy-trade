@@ -104,17 +104,6 @@ class MetaApiService {
     }
   }
 
-const testTrade: TradeRequest = {
-  actionType: 'ORDER_TYPE_BUY', // Use the exact string for a market buy
-  symbol: 'EURUSD',            // Use a major symbol that is definitely tradable
-  volume: 0.01,                // Start with a very small lot size to test
-  // DO NOT include openPrice, takeProfit, or stopLoss for this initial test.
-  // The goal is to get ANY trade to work. You can add SL/TP later.
-};
-
-  // Execute the test trade
-const result = await metaApiService.executeTrade(accountId, testTrade);
-console.log('Test Trade Result:', result);
   
   async executeTrade(accountId: string, trade: TradeRequest): Promise<any> {
     try {
