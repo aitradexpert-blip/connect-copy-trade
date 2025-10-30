@@ -9,6 +9,7 @@ import {
   Play,
   RefreshCw
 } from "lucide-react";
+import VoiceAssistant from "@/components/VoiceAssistant";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/MetricCard";
@@ -266,6 +267,11 @@ const Index = () => {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Voice Assistant - Floating button */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <VoiceAssistant />
       </div>
     </AppLayout>
   );

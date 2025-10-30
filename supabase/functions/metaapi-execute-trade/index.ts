@@ -103,6 +103,35 @@ Deno.serve(async (req) => {
     const result = await resp.json()
     console.log('Trade executed successfully:', result)
 
+    // Log trade to trade_history
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      
+      await fetch(`${supabaseUrl}/rest/v1/trade_history`, {
+        method: 'POST',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: trade.user_id,
+          trading_account_id: accountId,
+          signal_id: trade.signal_id || null,
+          symbol: trade.symbol,
+          direction: trade.direction,
+          volume: trade.volume,
+          stop_loss: trade.stopLoss,
+          take_profit: trade.takeProfit,
+          status: 'open',
+          comment: trade.comment
+        })
+      });
+    } catch (e) {
+      console.error('Failed to log trade history:', e);
+    }
+
     return new Response(JSON.stringify({ 
       success: true, 
       tradeId: result?.stringCode ?? result?.id ?? result?.dealId ?? result?.orderId ?? null,

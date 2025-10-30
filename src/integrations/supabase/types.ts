@@ -14,6 +14,94 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_bot_assignments: {
+        Row: {
+          auto_execute: boolean | null
+          bot_id: string
+          created_at: string
+          executed_at: string | null
+          id: string
+          signal_id: string
+          status: string
+          trading_account_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_execute?: boolean | null
+          bot_id: string
+          created_at?: string
+          executed_at?: string | null
+          id?: string
+          signal_id: string
+          status?: string
+          trading_account_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_execute?: boolean | null
+          bot_id?: string
+          created_at?: string
+          executed_at?: string | null
+          id?: string
+          signal_id?: string
+          status?: string
+          trading_account_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_bot_assignments_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "ai_bots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_bot_assignments_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "trading_signals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_bot_assignments_trading_account_id_fkey"
+            columns: ["trading_account_id"]
+            isOneToOne: false
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_bots: {
+        Row: {
+          bot_name: string
+          created_at: string
+          id: string
+          settings: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          bot_name: string
+          created_at?: string
+          id?: string
+          settings?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          bot_name?: string
+          created_at?: string
+          id?: string
+          settings?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       copy_trading_relationships: {
         Row: {
           created_at: string
@@ -63,32 +151,65 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          bank_statement_url: string | null
+          city: string | null
+          date_of_birth: string | null
           document_type: string
+          fica_compliant: boolean | null
+          full_name: string | null
           id: string
+          id_number: string | null
           image_url: string
+          physical_address: string | null
+          postal_code: string | null
+          proof_of_residence_url: string | null
+          province: string | null
           status: string | null
           submitted_at: string
           user_id: string
+          verification_notes: string | null
         }
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          bank_statement_url?: string | null
+          city?: string | null
+          date_of_birth?: string | null
           document_type: string
+          fica_compliant?: boolean | null
+          full_name?: string | null
           id?: string
+          id_number?: string | null
           image_url: string
+          physical_address?: string | null
+          postal_code?: string | null
+          proof_of_residence_url?: string | null
+          province?: string | null
           status?: string | null
           submitted_at?: string
           user_id: string
+          verification_notes?: string | null
         }
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          bank_statement_url?: string | null
+          city?: string | null
+          date_of_birth?: string | null
           document_type?: string
+          fica_compliant?: boolean | null
+          full_name?: string | null
           id?: string
+          id_number?: string | null
           image_url?: string
+          physical_address?: string | null
+          postal_code?: string | null
+          proof_of_residence_url?: string | null
+          province?: string | null
           status?: string | null
           submitted_at?: string
           user_id?: string
+          verification_notes?: string | null
         }
         Relationships: []
       }
@@ -161,6 +282,84 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_history: {
+        Row: {
+          closed_at: string | null
+          comment: string | null
+          created_at: string
+          direction: string
+          entry_price: number | null
+          executed_at: string
+          exit_price: number | null
+          id: string
+          profit_loss: number | null
+          signal_id: string | null
+          status: string
+          stop_loss: number | null
+          symbol: string
+          take_profit: number | null
+          trading_account_id: string
+          updated_at: string
+          user_id: string
+          volume: number
+        }
+        Insert: {
+          closed_at?: string | null
+          comment?: string | null
+          created_at?: string
+          direction: string
+          entry_price?: number | null
+          executed_at?: string
+          exit_price?: number | null
+          id?: string
+          profit_loss?: number | null
+          signal_id?: string | null
+          status?: string
+          stop_loss?: number | null
+          symbol: string
+          take_profit?: number | null
+          trading_account_id: string
+          updated_at?: string
+          user_id: string
+          volume: number
+        }
+        Update: {
+          closed_at?: string | null
+          comment?: string | null
+          created_at?: string
+          direction?: string
+          entry_price?: number | null
+          executed_at?: string
+          exit_price?: number | null
+          id?: string
+          profit_loss?: number | null
+          signal_id?: string | null
+          status?: string
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+          trading_account_id?: string
+          updated_at?: string
+          user_id?: string
+          volume?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_history_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "trading_signals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_history_trading_account_id_fkey"
+            columns: ["trading_account_id"]
+            isOneToOne: false
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trading_accounts: {
         Row: {
           balance: number | null
@@ -217,6 +416,8 @@ export type Database = {
           expires_at: string | null
           id: string
           lot_size: number
+          open_price: number | null
+          order_type: string | null
           scheduled_at: string | null
           status: string | null
           stop_loss: number | null
@@ -230,6 +431,8 @@ export type Database = {
           expires_at?: string | null
           id?: string
           lot_size: number
+          open_price?: number | null
+          order_type?: string | null
           scheduled_at?: string | null
           status?: string | null
           stop_loss?: number | null
@@ -243,6 +446,8 @@ export type Database = {
           expires_at?: string | null
           id?: string
           lot_size?: number
+          open_price?: number | null
+          order_type?: string | null
           scheduled_at?: string | null
           status?: string | null
           stop_loss?: number | null
@@ -319,10 +524,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      has_role: {
-        Args: { _role: string; _user_id: string }
-        Returns: boolean
-      }
+      has_role: { Args: { _role: string; _user_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

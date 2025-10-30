@@ -1,1 +1,19 @@
 project_id = "tkgguyjoynnrsayfxzvj"
+
+[functions.metaapi-account-info]
+verify_jwt = false
+
+[functions.metaapi-enable-copy-factory]
+verify_jwt = false
+
+[functions.metaapi-execute-trade]
+verify_jwt = false
+
+[functions.metaapi-get-positions]
+verify_jwt = false
+
+[functions.auto-execute-signal]
+verify_jwt = false
+
+[functions.copy-trade-listener]
+verify_jwt = false

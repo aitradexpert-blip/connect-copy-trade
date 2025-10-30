@@ -11,6 +11,7 @@ import { User, Mail, Calendar, Shield, CheckCircle, XCircle, Settings, TrendingU
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import KYCWizard from "@/components/KYCWizard";
 
 interface UserProfile {
   display_name: string;
@@ -388,103 +389,8 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* KYC Documents Section for South African Users */}
-          <Card className="bg-gradient-card border-border shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                KYC Documents (South Africa)
-              </CardTitle>
-              <CardDescription>
-                Upload your identification documents for verification
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* ID Document Upload */}
-              <div className="space-y-2">
-                <Label>South African ID Document</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => handleKycUpload(e, 'ID_DOCUMENT')}
-                    disabled={uploading}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={uploading}
-                    onClick={() => (document.querySelector('input[type="file"]') as HTMLInputElement)?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload ID
-                  </Button>
-                </div>
-              </div>
-
-              {/* Proof of Address Upload */}
-              <div className="space-y-2">
-                <Label>Proof of Address</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => handleKycUpload(e, 'PROOF_OF_ADDRESS')}
-                    disabled={uploading}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={uploading}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload Proof
-                  </Button>
-                </div>
-              </div>
-
-              {/* Bank Statement Upload */}
-              <div className="space-y-2">
-                <Label>Bank Statement (Last 3 months)</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => handleKycUpload(e, 'BANK_STATEMENT')}
-                    disabled={uploading}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={uploading}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload Statement
-                  </Button>
-                </div>
-              </div>
-
-              {/* Uploaded Documents Status */}
-              {kycDocuments.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="font-medium">Uploaded Documents</h4>
-                  {kycDocuments.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <span className="font-medium">{doc.document_type.replace('_', ' ')}</span>
-                        <p className="text-sm text-muted-foreground">
-                          Uploaded: {new Date(doc.submitted_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Badge variant={doc.status === 'approved' ? 'default' : doc.status === 'pending' ? 'secondary' : 'destructive'}>
-                        {doc.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* KYC Wizard - FICA Compliant */}
+          <KYCWizard />
         </div>
       </AppLayout>
     );

@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TopHeader } from "@/components/TopHeader";
+import FSCADisclaimer from "@/components/FSCADisclaimer";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -16,6 +17,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           <TopHeader />
           
           <main className="flex-1 p-6">
+            <FSCADisclaimer />
             {children}
           </main>
         </div>
