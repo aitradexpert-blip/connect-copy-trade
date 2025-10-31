@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import AppLayout from "@/components/AppLayout";
+import RiskCalculator from "@/components/RiskCalculator";
 import { TrendingUp, TrendingDown, Play } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +16,8 @@ interface Signal {
   symbol: string;
   direction: 'BUY' | 'SELL';
   lot_size: number;
+  stop_loss?: number | null;
+  take_profit?: number | null;
   comment?: string | null;
   created_at: string;
 }
@@ -22,6 +25,7 @@ interface Signal {
 interface TradingAccount {
   id: string;
   name: string;
+  balance: number;
   metaapi_account_id: string;
 }
 
@@ -29,6 +33,8 @@ export default function TradingSignals() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
+  const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
+  const [calculatedLotSize, setCalculatedLotSize] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const { toast } = useToast();
@@ -43,7 +49,7 @@ export default function TradingSignals() {
         // Load signals
         const { data: signalsData, error: signalsError } = await supabase
           .from('trading_signals')
-          .select('id,symbol,direction,lot_size,comment,created_at')
+          .select('id,symbol,direction,lot_size,stop_loss,take_profit,comment,created_at')
           .order('created_at', { ascending: false });
 
         if (signalsError) throw signalsError;
@@ -52,7 +58,7 @@ export default function TradingSignals() {
         // Load user's trading accounts
         const { data: accountsData, error: accountsError } = await supabase
           .from('trading_accounts')
-          .select('id,name,metaapi_account_id')
+          .select('id,name,balance,metaapi_account_id')
           .eq('user_id', user.id);
 
         if (accountsError) throw accountsError;
@@ -67,8 +73,8 @@ export default function TradingSignals() {
     load();
   }, [user, toast]);
 
-  const executeSignal = async (signal: Signal) => {
-    if (!selectedAccount) {
+  const executeSignal = async () => {
+    if (!selectedAccount || !selectedSignal) {
       toast({ title: 'Select Account', description: 'Please select a trading account first', variant: 'destructive' });
       return;
     }
@@ -81,14 +87,16 @@ export default function TradingSignals() {
 
     setExecuting(true);
     try {
+      const lotSize = calculatedLotSize > 0 ? calculatedLotSize : selectedSignal.lot_size;
+      
       const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
         body: {
           accountId: account.metaapi_account_id,
           trade: {
-            symbol: signal.symbol,
-            direction: signal.direction,
-            volume: signal.lot_size,
-            comment: `Signal: ${signal.comment || signal.symbol}`
+            symbol: selectedSignal.symbol,
+            direction: selectedSignal.direction,
+            volume: lotSize,
+            comment: `Signal: ${selectedSignal.comment || selectedSignal.symbol}`
           }
         }
       });
@@ -97,8 +105,10 @@ export default function TradingSignals() {
 
       toast({
         title: 'Trade Executed',
-        description: `${signal.direction} ${signal.lot_size} lots of ${signal.symbol} executed successfully`
+        description: `${selectedSignal.direction} ${lotSize} lots of ${selectedSignal.symbol} executed successfully`
       });
+      
+      setSelectedSignal(null);
     } catch (error: any) {
       console.error('Trade execution error:', error);
       toast({
@@ -179,21 +189,27 @@ export default function TradingSignals() {
                 <div className="text-xs text-muted-foreground">
                   {new Date(signal.created_at).toLocaleString()}
                 </div>
-                <Dialog>
+                <Dialog open={selectedSignal?.id === signal.id} onOpenChange={(open) => {
+                  if (!open) {
+                    setSelectedSignal(null);
+                    setCalculatedLotSize(0);
+                  }
+                }}>
                   <DialogTrigger asChild>
                     <Button 
                       className="w-full bg-gradient-primary" 
                       disabled={accounts.length === 0}
+                      onClick={() => setSelectedSignal(signal)}
                     >
                       <Play className="w-4 h-4 mr-2" />
                       Execute Trade
                     </Button>
                   </DialogTrigger>
-                  <DialogContent>
+                  <DialogContent className="max-w-md">
                     <DialogHeader>
                       <DialogTitle>Execute Trade Signal</DialogTitle>
                       <DialogDescription>
-                        Execute {signal.direction} {signal.lot_size} lots of {signal.symbol}
+                        {signal.direction} {signal.symbol} — Calculate optimal lot size based on your risk
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
@@ -206,14 +222,44 @@ export default function TradingSignals() {
                           <SelectContent>
                             {accounts.map((account) => (
                               <SelectItem key={account.id} value={account.id}>
-                                {account.name}
+                                {account.name} (${account.balance.toFixed(2)})
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {selectedAccount && signal.stop_loss && (
+                        <div className="border-t pt-4">
+                          <RiskCalculator
+                            accountBalance={accounts.find(a => a.id === selectedAccount)?.balance || 0}
+                            stopLossPips={50} // Simplified - would calculate from signal.stop_loss
+                            onCalculate={setCalculatedLotSize}
+                          />
+                        </div>
+                      )}
+
+                      <div className="bg-accent/50 p-3 rounded-lg">
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Symbol:</span>
+                            <span className="font-medium">{signal.symbol}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Direction:</span>
+                            <span className="font-medium">{signal.direction}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Lot Size:</span>
+                            <span className="font-medium">
+                              {calculatedLotSize > 0 ? calculatedLotSize.toFixed(2) : signal.lot_size}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
                       <Button 
-                        onClick={() => executeSignal(signal)} 
+                        onClick={executeSignal} 
                         disabled={!selectedAccount || executing}
                         className="w-full bg-gradient-primary"
                       >

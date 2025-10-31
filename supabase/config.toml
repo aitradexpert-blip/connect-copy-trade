@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.copy-trade-listener]
 verify_jwt = false
+
+[functions.voice-ai-assistant]
+verify_jwt = false

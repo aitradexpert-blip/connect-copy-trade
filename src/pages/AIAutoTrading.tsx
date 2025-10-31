@@ -17,34 +17,11 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import AppLayout from "@/components/AppLayout";
-import { Bot, TrendingUp, Zap } from "lucide-react";
+import { Bot, TrendingUp, ExternalLink } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-
-const mockBots = [
-  {
-    id: 1,
-    name: "Scalper Pro",
-    description: "High-frequency trading bot for quick profits in volatile markets",
-    performance: "+24.5%",
-    icon: Zap,
-  },
-  {
-    id: 2,
-    name: "Trend Follower",
-    description: "Identifies and follows major market trends for consistent gains",
-    performance: "+18.2%",
-    icon: TrendingUp,
-  },
-  {
-    id: 3,
-    name: "Volatility Rider",
-    description: "Capitalizes on market volatility using advanced algorithms",
-    performance: "+31.7%",
-    icon: Bot,
-  },
-];
+import { useNavigate } from "react-router-dom";
 
 interface TradingAccount {
   id: string;
@@ -53,52 +30,111 @@ interface TradingAccount {
   metaapi_account_id: string;
 }
 
+interface AIBot {
+  id: string;
+  bot_name: string;
+  description: string;
+  strategy_type: string;
+  risk_level: string;
+  status: string;
+}
+
 const riskLevels = ["Low", "Medium", "High"];
 
 export default function AIAutoTrading() {
-  const [selectedBot, setSelectedBot] = useState<any>(null);
+  const [bot, setBot] = useState<AIBot | null>(null);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [riskLevel, setRiskLevel] = useState([1]);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
+  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const loadAccounts = async () => {
+    const loadData = async () => {
       if (!user) return;
       
       try {
-        const { data, error } = await supabase
+        // Load the Forex Signal Bot (Swing Trader)
+        const { data: botData, error: botError } = await supabase
+          .from("ai_bots")
+          .select("*")
+          .eq("status", "active")
+          .eq("bot_name", "Swing Trader")
+          .single();
+
+        if (botError) throw botError;
+        if (botData) {
+          setBot({
+            id: botData.id,
+            bot_name: botData.bot_name,
+            description: "AI-powered signal execution bot for automated trading",
+            strategy_type: "swing",
+            risk_level: "medium",
+            status: botData.status
+          });
+        }
+
+        // Load user's trading accounts
+        const { data: accountsData, error: accountsError } = await supabase
           .from("trading_accounts")
           .select("id,name,platform,metaapi_account_id")
           .eq("user_id", user.id);
 
-        if (error) throw error;
-        setAccounts(data || []);
+        if (accountsError) throw accountsError;
+        setAccounts(accountsData || []);
       } catch (error: any) {
-        console.error("Error loading trading accounts:", error);
+        console.error("Error loading data:", error);
+        toast({
+          title: "Error loading bot",
+          description: error.message,
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
       }
     };
-    loadAccounts();
+    loadData();
   }, [user]);
 
-  const handleActivateBot = (bot: any) => {
-    setSelectedBot(bot);
+  const handleActivateBot = () => {
     setIsModalOpen(true);
   };
 
-  const handleConfirmActivation = () => {
+  const handleConfirmActivation = async () => {
     const account = accounts.find(acc => acc.id === selectedAccount);
-    if (account && agreeTerms) {
+    if (!account || !agreeTerms || !bot) return;
+
+    try {
+      const { error } = await supabase
+        .from('ai_bot_assignments')
+        .insert([{
+          bot_id: bot.id,
+          signal_id: bot.id,
+          user_id: user?.id || '',
+          trading_account_id: selectedAccount,
+          auto_execute: true,
+          status: 'active'
+        }]);
+
+      if (error) throw error;
+
       toast({
-        title: `${selectedBot.name} activated!`,
-        description: `Bot activated on ${account.name}`,
+        title: "Forex Signal Bot Activated!",
+        description: `Bot will automatically execute admin signals on ${account.name}`,
       });
       setIsModalOpen(false);
       setSelectedAccount("");
       setAgreeTerms(false);
       setRiskLevel([1]);
+    } catch (error: any) {
+      toast({
+        title: "Activation failed",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -106,133 +142,175 @@ export default function AIAutoTrading() {
     return riskLevels[level] || "Medium";
   };
 
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-4 text-muted-foreground">Loading AI bot...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!bot) {
+    return (
+      <AppLayout>
+        <div className="text-center py-16">
+          <h1 className="text-2xl font-bold mb-4">No AI Bot Available</h1>
+          <p className="text-muted-foreground">The Forex Signal Bot is currently unavailable.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">AI Trading Bots</h1>
+          <h1 className="text-3xl font-bold text-foreground">AI Trading Bot</h1>
           <p className="text-muted-foreground mt-2">
-            Select a pre-configured bot to trade on your connected accounts
+            Activate the Forex Signal Bot to automatically execute admin signals
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {mockBots.map((bot) => {
-            const IconComponent = bot.icon;
-            return (
-              <Card key={bot.id} className="shadow-card hover:shadow-elevated transition-smooth">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
-                      <IconComponent className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{bot.name}</CardTitle>
-                      <div className="text-sm text-profit font-medium">
-                        {bot.performance} last month
-                      </div>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm text-muted-foreground">{bot.description}</p>
-                  
-                  {/* Performance chart placeholder */}
-                  <div className="h-24 bg-secondary/30 rounded-lg flex items-center justify-center">
-                    <svg width="120" height="60" viewBox="0 0 120 60" className="text-profit">
-                      <polyline
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        points="0,40 20,35 40,25 60,20 80,15 100,10 120,5"
-                      />
-                    </svg>
-                  </div>
+        {/* Info Banner */}
+        <Card className="bg-accent/50 border-border">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <TrendingUp className="w-5 h-5 text-primary mt-1" />
+              <div>
+                <p className="font-medium">How it works</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  This bot automatically executes signals published by admin when the auto-execute toggle is enabled. 
+                  You maintain full control while benefiting from expert trading signals.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-                  <Button 
-                    onClick={() => handleActivateBot(bot)}
-                    className="w-full bg-gradient-primary hover:opacity-90 transition-smooth"
-                  >
-                    Activate Bot
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        {/* Bot Card */}
+        <Card className="shadow-card hover:shadow-elevated transition-smooth">
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-primary rounded-lg flex items-center justify-center">
+                <Bot className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-xl">{bot.bot_name}</CardTitle>
+                <div className="text-sm text-muted-foreground">
+                  {bot.strategy_type} • {bot.risk_level} Risk
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">{bot.description}</p>
+            
+            {/* Performance visualization */}
+            <div className="h-24 bg-secondary/30 rounded-lg flex items-center justify-center">
+              <svg width="160" height="60" viewBox="0 0 160 60" className="text-profit">
+                <polyline
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  points="0,50 20,45 40,38 60,35 80,28 100,25 120,18 140,15 160,10"
+                />
+              </svg>
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleActivateBot}
+                className="flex-1 bg-gradient-primary hover:opacity-90 transition-smooth"
+              >
+                Activate Bot
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => navigate('/signals')}
+                className="flex items-center gap-2"
+              >
+                View Active Signals
+                <ExternalLink className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Activate Trading Bot</DialogTitle>
+              <DialogTitle>Activate Forex Signal Bot</DialogTitle>
             </DialogHeader>
-            {selectedBot && (
-              <div className="space-y-6">
-                <div className="bg-secondary/50 p-4 rounded-lg">
-                  <h3 className="font-medium text-lg">{selectedBot.name}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {selectedBot.description}
-                  </p>
-                  <div className="text-sm text-profit font-medium mt-2">
-                    Performance: {selectedBot.performance} last month
-                  </div>
+            <div className="space-y-6">
+              <div className="bg-secondary/50 p-4 rounded-lg">
+                <h3 className="font-medium text-lg">{bot.bot_name}</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {bot.description}
+                </p>
+                <div className="text-sm font-medium mt-2 text-primary">
+                  Auto-executes admin signals with {bot.risk_level.toLowerCase()} risk management
                 </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Select Trading Account</label>
-                  <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose account for bot trading" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name} ({account.platform.toUpperCase()})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-sm font-medium">
-                    Risk Level: {getRiskLevelText(riskLevel[0])}
-                  </label>
-                  <Slider
-                    value={riskLevel}
-                    onValueChange={setRiskLevel}
-                    max={2}
-                    min={0}
-                    step={1}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Low</span>
-                    <span>Medium</span>
-                    <span>High</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="terms"
-                    checked={agreeTerms}
-                    onCheckedChange={setAgreeTerms}
-                  />
-                  <label htmlFor="terms" className="text-sm">
-                    I agree to the terms and conditions
-                  </label>
-                </div>
-
-                <Button 
-                  onClick={handleConfirmActivation}
-                  disabled={!selectedAccount || !agreeTerms}
-                  className="w-full bg-gradient-primary hover:opacity-90 transition-smooth"
-                >
-                  Activate
-                </Button>
               </div>
-            )}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Select Trading Account</label>
+                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose account for bot trading" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name} ({account.platform.toUpperCase()})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-medium">
+                  Risk Level: {getRiskLevelText(riskLevel[0])}
+                </label>
+                <Slider
+                  value={riskLevel}
+                  onValueChange={setRiskLevel}
+                  max={2}
+                  min={0}
+                  step={1}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Low</span>
+                  <span>Medium</span>
+                  <span>High</span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="terms"
+                  checked={agreeTerms}
+                  onCheckedChange={setAgreeTerms}
+                />
+                <label htmlFor="terms" className="text-sm">
+                  I understand trades will be executed automatically when admin publishes signals with auto-execute enabled
+                </label>
+              </div>
+
+              <Button 
+                onClick={handleConfirmActivation}
+                disabled={!selectedAccount || !agreeTerms}
+                className="w-full bg-gradient-primary hover:opacity-90 transition-smooth"
+              >
+                Activate Bot
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

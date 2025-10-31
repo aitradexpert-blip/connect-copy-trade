@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, TrendingUp, Copy, Settings, Play } from "lucide-react";
+import { Users, TrendingUp, Copy, Settings, Play, Activity } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -28,16 +28,48 @@ interface MasterTrader {
   account_id: string;
 }
 
-export default function CopyTrading() {
+interface CopyStats {
+  copiedTrades: number;
+  totalPL: number;
+  successRate: number;
+}
+
+export default function CopyTradingNew() {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [masterTraders, setMasterTraders] = useState<MasterTrader[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
+  const [copyStats, setCopyStats] = useState<Record<string, CopyStats>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadData();
+    subscribeToTrades();
   }, [user]);
+
+  const subscribeToTrades = () => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('copy-trades')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'trade_history',
+        filter: `user_id=eq.${user.id}`
+      }, (payload: any) => {
+        if (payload.new.copied_from) {
+          toast({
+            title: "Trade Copied!",
+            description: `${payload.new.direction} ${payload.new.volume} lot ${payload.new.symbol} from Master account`,
+          });
+          loadData(); // Refresh stats
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  };
 
   const loadData = async () => {
     if (!user) return;
@@ -52,7 +84,7 @@ export default function CopyTrading() {
       if (accountsError) throw accountsError;
       setAccounts(accountsData || []);
 
-      // Load master traders (accounts marked as masters from other users)
+      // Load master traders
       const { data: mastersData, error: mastersError } = await supabase
         .from("trading_accounts")
         .select(`
@@ -70,13 +102,29 @@ export default function CopyTrading() {
       const masters = (mastersData || []).map((master: any) => ({
         id: master.id,
         name: master.name,
-        user_email: "Master Trader", // Simplified for now
-        performance: 12.5, // This would come from actual performance calculation
-        followers: 0, // This would come from relationships count
+        user_email: "Master Trader",
+        performance: 12.5,
+        followers: 0,
         account_id: master.id
       }));
 
       setMasterTraders(masters);
+
+      // Load copy statistics for each relationship
+      const { data: relationships } = await supabase
+        .from("copy_trading_relationships")
+        .select("id, master_account_id")
+        .eq("follower_user_id", user.id)
+        .eq("status", "active");
+
+      if (relationships && relationships.length > 0) {
+        const stats: Record<string, CopyStats> = {};
+        for (const rel of relationships) {
+          const stat = await fetchCopyStats(rel.id);
+          stats[rel.master_account_id] = stat;
+        }
+        setCopyStats(stats);
+      }
     } catch (error: any) {
       toast({
         title: "Error loading data",
@@ -86,6 +134,23 @@ export default function CopyTrading() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCopyStats = async (relationshipId: string): Promise<CopyStats> => {
+    const { data: trades } = await supabase
+      .from('trade_history')
+      .select('profit_loss, status')
+      .eq('copied_from_relationship_id', relationshipId);
+    
+    const copiedTrades = trades?.length || 0;
+    const totalPL = trades?.reduce((sum, t) => sum + (t.profit_loss || 0), 0) || 0;
+    const closedTrades = trades?.filter(t => t.status === 'closed') || [];
+    const winningTrades = closedTrades.filter(t => (t.profit_loss || 0) > 0);
+    const successRate = closedTrades.length > 0 
+      ? (winningTrades.length / closedTrades.length) * 100 
+      : 0;
+    
+    return { copiedTrades, totalPL, successRate };
   };
 
   const toggleMasterStatus = async (accountId: string, currentStatus: boolean) => {
@@ -170,7 +235,7 @@ export default function CopyTrading() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Copy Trading</h1>
           <p className="text-muted-foreground mt-2">
-            Follow successful traders and copy their trades automatically
+            Follow successful traders and copy their trades automatically with real-time statistics
           </p>
         </div>
 
@@ -275,36 +340,64 @@ export default function CopyTrading() {
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  {masterTraders.map((trader) => (
-                    <Card key={trader.id} className="border border-border">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-1">
-                            <h4 className="font-medium">{trader.name}</h4>
-                            <p className="text-sm text-muted-foreground">Trader: {trader.user_email}</p>
-                            <div className="flex items-center gap-4 text-sm">
-                              <span className="flex items-center gap-1">
-                                <TrendingUp className="w-4 h-4 text-profit" />
-                                +{trader.performance}% return
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Users className="w-4 h-4" />
-                                {trader.followers} followers
-                              </span>
+                  {masterTraders.map((trader) => {
+                    const stats = copyStats[trader.account_id];
+                    return (
+                      <Card key={trader.id} className="border border-border">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="space-y-1">
+                              <h4 className="font-medium">{trader.name}</h4>
+                              <p className="text-sm text-muted-foreground">Trader: {trader.user_email}</p>
+                              <div className="flex items-center gap-4 text-sm">
+                                <span className="flex items-center gap-1">
+                                  <TrendingUp className="w-4 h-4 text-profit" />
+                                  +{trader.performance}% return
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Users className="w-4 h-4" />
+                                  {trader.followers} followers
+                                </span>
+                              </div>
                             </div>
+                            <Button
+                              onClick={() => followTrader(trader.account_id)}
+                              disabled={!selectedAccount}
+                              className="bg-gradient-primary"
+                            >
+                              <Play className="w-4 h-4 mr-2" />
+                              Follow
+                            </Button>
                           </div>
-                          <Button
-                            onClick={() => followTrader(trader.account_id)}
-                            disabled={!selectedAccount}
-                            className="bg-gradient-primary"
-                          >
-                            <Play className="w-4 h-4 mr-2" />
-                            Follow
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                          
+                          {/* Real-time Stats */}
+                          {stats && (
+                            <div className="grid grid-cols-3 gap-4 pt-4 border-t">
+                              <div className="text-center">
+                                <div className="text-xs text-muted-foreground mb-1">Copied Trades</div>
+                                <div className="text-lg font-semibold flex items-center justify-center gap-1">
+                                  <Activity className="w-4 h-4" />
+                                  {stats.copiedTrades}
+                                </div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-xs text-muted-foreground mb-1">Total P/L</div>
+                                <div className={`text-lg font-semibold ${stats.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}>
+                                  ${stats.totalPL.toFixed(2)}
+                                </div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-xs text-muted-foreground mb-1">Success Rate</div>
+                                <div className="text-lg font-semibold">
+                                  {stats.successRate.toFixed(1)}%
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </div>

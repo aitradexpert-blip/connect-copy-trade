@@ -45,7 +45,8 @@ const Admin = () => {
     take_profit: '',
     comment: '',
     scheduled: false,
-    scheduled_at: ''
+    scheduled_at: '',
+    auto_execute_for_bots: false
   });
   const { toast } = useToast();
 
@@ -86,16 +87,37 @@ const Admin = () => {
         scheduled_at: formData.scheduled && formData.scheduled_at ? formData.scheduled_at : null,
       };
 
-      const { error } = await supabase
+      const { data: newSignal, error } = await supabase
         .from('trading_signals')
-        .insert([signalData]);
+        .insert([signalData])
+        .select()
+        .single();
 
       if (error) throw error;
 
-      toast({
-        title: "Signal published successfully!",
-        description: "Signal has been shared to connected social channels.",
-      });
+      // Auto-execute for AI bots if enabled
+      if (formData.auto_execute_for_bots && newSignal) {
+        const { data: autoExecResult, error: autoExecError } = await supabase.functions.invoke('auto-execute-signal', {
+          body: { signal_id: newSignal.id }
+        });
+
+        if (!autoExecError && autoExecResult?.executed_count > 0) {
+          toast({
+            title: "Signal published and auto-executed!",
+            description: `Signal executed on ${autoExecResult.executed_count} AI bot accounts`,
+          });
+        } else {
+          toast({
+            title: "Signal published successfully!",
+            description: "Signal has been shared to connected social channels.",
+          });
+        }
+      } else {
+        toast({
+          title: "Signal published successfully!",
+          description: "Signal has been shared to connected social channels.",
+        });
+      }
 
       // Reset form
       setFormData({
@@ -106,7 +128,8 @@ const Admin = () => {
         take_profit: '',
         comment: '',
         scheduled: false,
-        scheduled_at: ''
+        scheduled_at: '',
+        auto_execute_for_bots: false
       });
 
       fetchSignals();
@@ -273,6 +296,20 @@ const Admin = () => {
                   />
                 </div>
               )}
+
+              <div className="flex items-center space-x-2 p-4 bg-accent/50 rounded-lg border border-border">
+                <Switch
+                  id="auto-execute"
+                  checked={formData.auto_execute_for_bots}
+                  onCheckedChange={(checked) => setFormData({...formData, auto_execute_for_bots: checked})}
+                />
+                <div className="flex-1">
+                  <Label htmlFor="auto-execute" className="font-semibold">Auto-Execute for AI Trading Bots</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    When enabled, this signal will automatically execute on all accounts with active AI bots
+                  </p>
+                </div>
+              </div>
 
               <Button 
                 type="submit" 

@@ -11,7 +11,7 @@ import AIAutoTrading from "./pages/AIAutoTrading";
 import TradingAccounts from "./pages/TradingAccounts";
 import Subscription from "./pages/Subscription";
 import Admin from "./pages/Admin";
-import AdminPanel from "./pages/AdminPanel";
+import { useAdminCheck } from "@/hooks/useAdminCheck";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/Settings";
@@ -29,6 +29,21 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  const { isAdmin, loading: adminLoading } = useAdminCheck();
+  
+  if (loading || adminLoading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+  
+  if (!user || !isAdmin) {
+    return <Navigate to="/" replace />;
   }
   
   return <>{children}</>;
@@ -66,8 +81,7 @@ const App = () => (
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-            <Route path="/admin-panel" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+            <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

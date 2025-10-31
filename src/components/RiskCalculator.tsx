@@ -7,9 +7,10 @@ import { Slider } from "@/components/ui/slider";
 interface RiskCalculatorProps {
   accountBalance?: number;
   stopLossPips?: number;
+  onCalculate?: (lotSize: number) => void;
 }
 
-export default function RiskCalculator({ accountBalance = 10000, stopLossPips = 50 }: RiskCalculatorProps) {
+export default function RiskCalculator({ accountBalance = 10000, stopLossPips = 50, onCalculate }: RiskCalculatorProps) {
   const [balance, setBalance] = useState(accountBalance);
   const [riskPercent, setRiskPercent] = useState(2);
   const [stopLoss, setStopLoss] = useState(stopLossPips);
@@ -17,13 +18,13 @@ export default function RiskCalculator({ accountBalance = 10000, stopLossPips = 
 
   useEffect(() => {
     // Calculate position size
-    // Formula: Position Size = (Account Balance * Risk %) / (Stop Loss Pips * Pip Value)
-    // For standard lot, pip value = $10
     const riskAmount = balance * (riskPercent / 100);
-    const pipValue = 10; // Standard lot
+    const pipValue = 10;
     const calculatedSize = riskAmount / (stopLoss * pipValue);
-    setPositionSize(Number(calculatedSize.toFixed(2)));
-  }, [balance, riskPercent, stopLoss]);
+    const finalSize = Number(calculatedSize.toFixed(2));
+    setPositionSize(finalSize);
+    onCalculate?.(finalSize);
+  }, [balance, riskPercent, stopLoss, onCalculate]);
 
   return (
     <Card>
