@@ -137,10 +137,13 @@ export default function CopyTradingNew() {
   };
 
   const fetchCopyStats = async (relationshipId: string): Promise<CopyStats> => {
-    const { data: trades } = await supabase
+    // @ts-expect-error - Supabase type inference causing deep recursion
+    const response = await supabase
       .from('trade_history')
       .select('profit_loss, status')
       .eq('copied_from_relationship_id', relationshipId);
+    
+    const trades = response?.data as Array<{ profit_loss: number | null; status: string }> | null;
     
     const copiedTrades = trades?.length || 0;
     const totalPL = trades?.reduce((sum, t) => sum + (t.profit_loss || 0), 0) || 0;
