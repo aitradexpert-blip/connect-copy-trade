@@ -217,9 +217,9 @@ const Index = () => {
                 <Play className="w-4 h-4" />
                 Subscribe Now
               </Button>
-              <Button onClick={() => navigate('/signals')} variant="outline" className="flex items-center gap-2">
+              <Button onClick={() => navigate('/ideas')} variant="outline" className="flex items-center gap-2">
                 <Eye className="w-4 h-4" />
-                View Signals
+                View Ideas
               </Button>
             </div>
           </CardContent>
@@ -250,6 +250,19 @@ const Index = () => {
             icon={Users}
           />
         </div>
+
+        {/* HuMi Voice Assistant */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle>HuMi Voice Assistant</CardTitle>
+            <CardDescription>
+              Ask about your balance, ideas, positions, and prepare trades (no advice).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EnhancedVoiceAssistant />
+          </CardContent>
+        </Card>
 
         {/* Recent Activity */}
         <Card className="bg-gradient-card border-border shadow-card">
