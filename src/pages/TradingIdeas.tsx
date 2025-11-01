@@ -29,7 +29,7 @@ interface TradingAccount {
   metaapi_account_id: string;
 }
 
-export default function TradingSignals() {
+export default function TradingIdeas() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
@@ -125,9 +125,9 @@ export default function TradingSignals() {
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Available Trading Signals</h1>
+          <h1 className="text-3xl font-bold text-foreground">Trading Ideas</h1>
           <p className="text-muted-foreground mt-2">
-            Signals are published by the admin and visible while active
+            View and execute active trading ideas
           </p>
         </div>
 
@@ -156,7 +156,7 @@ export default function TradingSignals() {
 
         {signals.length === 0 && !loading && (
           <div className="text-center text-muted-foreground py-16">
-            No active signals at the moment. Check back later.
+            No active ideas at the moment. Check back later.
           </div>
         )}
 
@@ -207,7 +207,7 @@ export default function TradingSignals() {
                   </DialogTrigger>
                   <DialogContent className="max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Execute Trade Signal</DialogTitle>
+                      <DialogTitle>Execute Trading Idea</DialogTitle>
                       <DialogDescription>
                         {signal.direction} {signal.symbol} — Calculate optimal lot size based on your risk
                       </DialogDescription>

@@ -103,8 +103,8 @@ const Admin = () => {
 
         if (!autoExecError && autoExecResult?.executed_count > 0) {
           toast({
-            title: "Signal published and auto-executed!",
-            description: `Signal executed on ${autoExecResult.executed_count} AI bot accounts`,
+            title: "Idea published and auto-executed!",
+            description: `Idea executed on ${autoExecResult.executed_count} AI bot accounts`,
           });
         } else {
           toast({
@@ -113,10 +113,10 @@ const Admin = () => {
           });
         }
       } else {
-        toast({
-          title: "Signal published successfully!",
-          description: "Signal has been shared to connected social channels.",
-        });
+      toast({
+        title: "Idea published successfully!",
+        description: "Trading idea has been published.",
+      });
       }
 
       // Reset form
@@ -135,7 +135,7 @@ const Admin = () => {
       fetchSignals();
     } catch (error: any) {
       toast({
-        title: "Error publishing signal",
+        title: "Error publishing idea",
         description: error.message,
         variant: "destructive",
       });
@@ -154,14 +154,14 @@ const Admin = () => {
       if (error) throw error;
 
       toast({
-        title: "Signal deleted",
-        description: "The trading signal has been removed.",
+        title: "Idea deleted",
+        description: "The trading idea has been removed.",
       });
 
       fetchSignals();
     } catch (error: any) {
       toast({
-        title: "Error deleting signal",
+        title: "Error deleting idea",
         description: error.message,
         variant: "destructive",
       });
@@ -173,8 +173,8 @@ const Admin = () => {
       <div className="space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Admin Portal</h1>
-            <p className="text-muted-foreground">Manage trading signals and platform content</p>
+            <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
+            <p className="text-muted-foreground">Manage trading ideas and platform</p>
           </div>
         </div>
 
@@ -183,10 +183,10 @@ const Admin = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Plus className="w-5 h-5" />
-              Create New Trading Signal
+              Publish Trading Idea
             </CardTitle>
             <CardDescription>
-              Publish a new signal to all connected trading accounts
+              Create a new trading idea for all users
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -317,7 +317,7 @@ const Admin = () => {
                 disabled={isCreating || !formData.symbol}
               >
                 <Send className="w-4 h-4" />
-                {isCreating ? "Publishing..." : "Publish Signal"}
+                {isCreating ? "Publishing..." : "Publish Idea"}
               </Button>
             </form>
           </CardContent>
@@ -326,9 +326,9 @@ const Admin = () => {
         {/* Recent Signals */}
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
-            <CardTitle>Recently Published Signals</CardTitle>
+            <CardTitle>Recently Published Ideas</CardTitle>
             <CardDescription>
-              Manage and edit your published trading signals
+              Manage and edit your published trading ideas
             </CardDescription>
           </CardHeader>
           <CardContent>

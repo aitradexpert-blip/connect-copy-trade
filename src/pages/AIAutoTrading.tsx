@@ -231,10 +231,10 @@ export default function AIAutoTrading() {
               </Button>
               <Button 
                 variant="outline"
-                onClick={() => navigate('/signals')}
+                onClick={() => navigate('/ideas')}
                 className="flex items-center gap-2"
               >
-                View Active Signals
+                View Active Ideas
                 <ExternalLink className="w-4 h-4" />
               </Button>
             </div>

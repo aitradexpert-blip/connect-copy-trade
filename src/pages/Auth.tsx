@@ -86,10 +86,10 @@ const Auth = () => {
       <Card className="w-full max-w-md bg-gradient-card border-border shadow-card">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold text-foreground">
-            Trading Platform
+            HuMi
           </CardTitle>
           <CardDescription>
-            Access your trading dashboard
+            AI-Powered Trading Platform
           </CardDescription>
         </CardHeader>
         <CardContent>

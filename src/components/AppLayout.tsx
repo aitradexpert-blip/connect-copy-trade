@@ -1,6 +1,5 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/AppSidebar";
 import { TopHeader } from "@/components/TopHeader";
+import { BottomNav } from "@/components/BottomNav";
 import FSCADisclaimer from "@/components/FSCADisclaimer";
 
 interface AppLayoutProps {
@@ -9,19 +8,15 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
-        
-        <div className="flex-1 flex flex-col">
-          <TopHeader />
-          
-          <main className="flex-1 p-6">
-            <FSCADisclaimer />
-            {children}
-          </main>
-        </div>
-      </div>
-    </SidebarProvider>
+    <div className="min-h-screen flex flex-col w-full bg-background">
+      <TopHeader />
+      
+      <main className="flex-1 p-6 pb-24">
+        <FSCADisclaimer />
+        {children}
+      </main>
+
+      <BottomNav />
+    </div>
   );
 }

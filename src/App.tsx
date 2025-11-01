@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import Index from "./pages/Index";
-import TradingSignals from "./pages/TradingSignals";
+import TradingIdeas from "./pages/TradingIdeas";
 import CopyTrading from "./pages/CopyTradingNew";
 import AIAutoTrading from "./pages/AIAutoTrading";
 import TradingAccounts from "./pages/TradingAccounts";
@@ -73,7 +73,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/signals" element={<ProtectedRoute><TradingSignals /></ProtectedRoute>} />
+            <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
             <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
             <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
             <Route path="/accounts" element={<ProtectedRoute><TradingAccounts /></ProtectedRoute>} />
