@@ -19,6 +19,7 @@ export default function EnhancedVoiceAssistant() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [recognition, setRecognition] = useState<any>(null);
   const [conversation, setConversation] = useState<Message[]>([]);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -70,6 +71,22 @@ export default function EnhancedVoiceAssistant() {
     };
   }, []);
 
+  // Load available voices for young female voice selection
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      setAvailableVoices(voices);
+      console.log('Available voices:', voices.map(v => `${v.name} (${v.lang})`));
+    };
+    
+    // Voices load asynchronously in some browsers
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    
+    loadVoices();
+  }, []);
+
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive
     if (scrollRef.current) {
@@ -83,6 +100,8 @@ export default function EnhancedVoiceAssistant() {
     setIsProcessing(true);
 
     try {
+      console.log('Invoking voice-ai-assistant with:', { transcript, user_id: user?.id });
+      
       // Call Lovable AI edge function
       const { data, error } = await supabase.functions.invoke('voice-ai-assistant', {
         body: { 
@@ -91,7 +110,17 @@ export default function EnhancedVoiceAssistant() {
         }
       });
 
-      if (error) throw error;
+      console.log('Edge function response:', { data, error });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to process voice command');
+      }
+
+      if (!data || !data.text) {
+        console.error('Invalid response from edge function:', data);
+        throw new Error('Invalid response from AI assistant');
+      }
 
       // Add AI response to conversation
       const assistantMessage: Message = { 
@@ -103,7 +132,7 @@ export default function EnhancedVoiceAssistant() {
       
       setConversation(prev => [...prev, assistantMessage]);
 
-      // Speak response
+      // Speak response with young female voice
       speak(data.text);
 
       // Execute action if present
@@ -116,9 +145,16 @@ export default function EnhancedVoiceAssistant() {
       }
     } catch (error: any) {
       console.error('Command handling error:', error);
-      const errorMessage = 'Sorry, I encountered an error processing your request.';
+      const errorMessage = error.message || 'Sorry, I encountered an error processing your request. Please try again.';
+      
       setConversation(prev => [...prev, { role: 'assistant', text: errorMessage }]);
       speak(errorMessage);
+      
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -126,9 +162,34 @@ export default function EnhancedVoiceAssistant() {
 
   const speak = (text: string) => {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+    
+    // Young female voice settings
+    utterance.pitch = 1.3;  // Higher pitch for young girl voice
+    utterance.rate = 1.1;   // Slightly faster speech
+    utterance.volume = 0.8;
+    
+    // Find and select a young female voice
+    if (availableVoices.length > 0) {
+      // Priority order for voice selection
+      const femaleVoice = availableVoices.find(voice => 
+        voice.name.toLowerCase().includes('samantha') ||
+        voice.name.toLowerCase().includes('victoria') ||
+        voice.name.toLowerCase().includes('karen') ||
+        voice.name.toLowerCase().includes('google us english') && voice.name.toLowerCase().includes('female') ||
+        voice.name.toLowerCase().includes('zira') ||
+        voice.name.toLowerCase().includes('female')
+      ) || availableVoices.find(voice => 
+        voice.lang.startsWith('en') && voice.name.toLowerCase().includes('female')
+      );
+      
+      if (femaleVoice) {
+        console.log('Using voice:', femaleVoice.name);
+        utterance.voice = femaleVoice;
+      } else {
+        console.log('Using default voice, female voice not found');
+      }
+    }
+    
     window.speechSynthesis.speak(utterance);
   };
 
@@ -229,7 +290,10 @@ export default function EnhancedVoiceAssistant() {
         <Card className="bg-accent/50 border-border">
           <CardContent className="pt-6 text-center">
             <p className="text-sm text-muted-foreground">
-              Click the microphone and ask about your balance, positions, or signals
+              Click the microphone and ask about your balance, positions, trading ideas, or market analysis
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Try: "What's my balance?" or "Show me EUR/USD analysis"
             </p>
           </CardContent>
         </Card>

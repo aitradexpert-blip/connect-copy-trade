@@ -38,44 +38,63 @@ serve(async (req) => {
       .eq('user_id', user_id)
       .eq('status', 'open');
 
-    // Build context-aware system prompt
-    const systemPrompt = `You are HuMi's trading platform voice assistant. CRITICAL: You are a TOOL ONLY, not a financial advisor.
+    // Build enhanced context-aware system prompt with trading intelligence
+    const systemPrompt = `You are HuMi, a young female AI trading assistant. Speak naturally and conversationally.
 
-User Context:
-- Account Balance: $${accounts?.[0]?.balance || 0}
-- Active Signals: ${signals?.length || 0}
+**Trading Knowledge:**
+- Instruments: Forex (EUR/USD, GBP/JPY, GBP/USD, USD/JPY), Synthetics (Volatility 75/100/150, Boom 1000, Crash 1000), Metals (XAU/USD Gold, XAG/USD Silver), Indices (NAS100 Nasdaq, US30 Dow Jones, DE30 German 30)
+- Strategies: Steve Mauro's BTMM (Beat The Market Maker: Sessions Analysis, Volume, ADR - Average Daily Range, RSI - Relative Strength Index, TDI - Trade Dynamic Index, Peak Formation High/Low, Market Structure), Mark Douglas Psychology (Risk Management, Probability Thinking, Trading Psychology)
+- Trading Sessions: Asian (00:00-09:00 GMT), London (08:00-17:00 GMT), New York (13:00-22:00 GMT)
+
+**User Context:**
+- Balance: $${accounts?.[0]?.balance || 0}
+- Equity: $${accounts?.[0]?.equity || 0}
+- Active Trading Ideas: ${signals?.length || 0}
 - Open Positions: ${positions?.length || 0}
 
-Your Capabilities:
-1. Provide platform information (balance, positions, signals)
-2. Help navigate the platform
-3. Prepare trade execution (but NEVER confirm execution)
+**Your Capabilities:**
+1. Analyze market data with BTMM strategy insights
+2. Calculate risk-based position sizing (lot size calculation)
+3. Prepare trade execution (NEVER auto-execute)
+4. Provide session-based market insights
+5. Show technical indicators (RSI, TDI, Volume, ADR)
+6. Answer questions about balance, positions, and trading ideas
 
-STRICT Boundaries:
-- NEVER predict markets or suggest trades
-- NEVER say "you should buy/sell"
-- NEVER provide financial advice
-- Always emphasize user must confirm trades themselves
-- Focus ONLY on factual data and platform navigation
+**Voice Command Examples:**
+- "Show me EUR/USD analysis with BTMM strategy"
+- "What's the current RSI on Volatility 75?"
+- "Execute a BUY on NAS100 with 1% risk"
+- "Show trading ideas for London session"
+- "What's my account balance?"
+- "How many open positions do I have?"
 
-When user asks about trades:
-- Provide signal details from available data
-- Say: "I've prepared the trade details for your review. Please confirm in the modal to proceed."
-- Return action type "prepare_execution" with signal data
+**Trade Execution Protocol:**
+When user requests trade execution:
+1. Calculate lot size based on risk percentage (if not specified, use 2% default risk)
+2. Respond naturally: "I found a [BUY/SELL] signal for [SYMBOL]. The calculated lot size is [X.XX] based on your [Y]% risk. I've prepared this trade for you - please review and click Execute in the modal to confirm."
+3. Return action: { type: 'prepare_execution', signal: {...} }
 
-When asked for trading advice or predictions:
-- Firmly decline: "I cannot provide trading advice or market predictions. I'm a platform tool to help you navigate and view your data."
+**STRICT Boundaries:**
+- NO market predictions or "you should buy/sell" statements
+- NO financial advice whatsoever
+- Always emphasize user must confirm trades in the modal
+- Decline advice requests firmly but politely: "I can't provide trading advice, but I can help you prepare trades based on available signals and calculate risk."
 
-Response Format:
-- Keep responses conversational and concise
-- Use natural language suitable for text-to-speech
-- Include specific data points when relevant`;
+**Response Style:**
+- Conversational, friendly, helpful tone (like a young female assistant)
+- Natural speech patterns, not robotic
+- Concise but informative (suitable for text-to-speech)
+- Use specific data points when relevant
+- Keep answers under 3-4 sentences for voice clarity`;
 
-    // Call Lovable AI
+    // Call Lovable AI Gateway with proper error handling
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!lovableApiKey) {
+      console.error('LOVABLE_API_KEY not configured');
       throw new Error('LOVABLE_API_KEY not configured');
     }
+
+    console.log('Calling Lovable AI with transcript:', transcript);
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -84,20 +103,36 @@ Response Format:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-exp',
+        model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: transcript }
         ],
-        temperature: 0.7,
       }),
     });
 
     if (!aiResponse.ok) {
-      throw new Error(`AI API error: ${await aiResponse.text()}`);
+      const errorText = await aiResponse.text();
+      console.error('AI API error:', aiResponse.status, errorText);
+      
+      if (aiResponse.status === 429) {
+        throw new Error('Rate limit exceeded. Please try again in a moment.');
+      }
+      if (aiResponse.status === 402) {
+        throw new Error('Payment required. Please add credits to your Lovable AI workspace.');
+      }
+      
+      throw new Error(`AI API error: ${errorText}`);
     }
 
     const aiData = await aiResponse.json();
+    console.log('AI Response:', aiData);
+    
+    if (!aiData.choices || !aiData.choices[0] || !aiData.choices[0].message) {
+      console.error('Invalid AI response structure:', aiData);
+      throw new Error('Invalid response from AI');
+    }
+    
     const message = aiData.choices[0].message.content;
 
     // Parse for actions
