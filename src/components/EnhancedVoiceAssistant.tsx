@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Loader2 } from "lucide-react";
+import { Mic, MicOff, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +21,7 @@ export default function EnhancedVoiceAssistant() {
   const [recognition, setRecognition] = useState<any>(null);
   const [conversation, setConversation] = useState<Message[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [textInput, setTextInput] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -216,35 +218,23 @@ export default function EnhancedVoiceAssistant() {
     }
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Mic Button with Animation */}
-      <div className="flex justify-center">
-        <div className="relative">
-          <Button
-            onClick={toggleListening}
-            variant={isListening ? "destructive" : "default"}
-            size="icon"
-            className="rounded-full h-16 w-16 shadow-lg relative overflow-hidden"
-            title="Voice Assistant"
-          >
-            {isListening ? (
-              <>
-                <MicOff className="h-7 w-7 animate-pulse relative z-10" />
-                <div className="absolute inset-0 bg-destructive animate-ping opacity-75" />
-              </>
-            ) : (
-              <Mic className="h-7 w-7" />
-            )}
-          </Button>
-        </div>
-      </div>
+  const handleTextSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    
+    if (!textInput.trim() || isProcessing) return;
+    
+    const message = textInput.trim();
+    setTextInput("");
+    await handleCommand(message);
+  };
 
-      {/* Conversation Display */}
-      {conversation.length > 0 && (
-        <Card className="bg-card border-border">
-          <CardContent className="p-0">
-            <ScrollArea className="h-96" ref={scrollRef}>
+  return (
+    <div className="flex flex-col h-full space-y-4">
+      {/* Chat Messages Area */}
+      <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col">
+        <CardContent className="p-0 flex-1 flex flex-col">
+          {conversation.length > 0 ? (
+            <ScrollArea className="flex-1" ref={scrollRef}>
               <div className="space-y-4 p-4">
                 {conversation.map((msg, idx) => (
                   <div 
@@ -276,28 +266,69 @@ export default function EnhancedVoiceAssistant() {
                   <div className="flex justify-start">
                     <div className="bg-muted rounded-lg p-3 flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">Processing...</span>
+                      <span className="text-sm">HuMi is thinking...</span>
                     </div>
                   </div>
                 )}
               </div>
             </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="text-center space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Start a conversation with HuMi! Use voice or type your message.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Try: "What's my balance?" or "Show me EUR/USD analysis"
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {conversation.length === 0 && (
-        <Card className="bg-accent/50 border-border">
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Click the microphone and ask about your balance, positions, trading ideas, or market analysis
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">
-              Try: "What's my balance?" or "Show me EUR/USD analysis"
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Input Area */}
+      <Card className="bg-card border-border">
+        <CardContent className="p-4">
+          <form onSubmit={handleTextSubmit} className="flex items-center gap-2">
+            {/* Voice Button */}
+            <Button
+              type="button"
+              onClick={toggleListening}
+              variant={isListening ? "destructive" : "outline"}
+              size="icon"
+              className="rounded-full h-10 w-10 flex-shrink-0"
+              title="Voice Input"
+              disabled={isProcessing}
+            >
+              {isListening ? (
+                <MicOff className="h-5 w-5 animate-pulse" />
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
+            </Button>
+
+            {/* Text Input */}
+            <Input
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder="Type a message or use voice..."
+              className="flex-1"
+              disabled={isProcessing || isListening}
+            />
+
+            {/* Send Button */}
+            <Button
+              type="submit"
+              size="icon"
+              className="rounded-full h-10 w-10 flex-shrink-0"
+              disabled={!textInput.trim() || isProcessing || isListening}
+            >
+              <Send className="h-5 w-5" />
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
