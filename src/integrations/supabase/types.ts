@@ -252,6 +252,48 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_trades: {
+        Row: {
+          awaiting_confirmation: boolean | null
+          created_at: string | null
+          direction: string
+          expires_at: string | null
+          id: string
+          lot_size: number | null
+          risk_percent: number | null
+          stop_loss: number | null
+          symbol: string
+          take_profit: number | null
+          user_id: string
+        }
+        Insert: {
+          awaiting_confirmation?: boolean | null
+          created_at?: string | null
+          direction: string
+          expires_at?: string | null
+          id?: string
+          lot_size?: number | null
+          risk_percent?: number | null
+          stop_loss?: number | null
+          symbol: string
+          take_profit?: number | null
+          user_id: string
+        }
+        Update: {
+          awaiting_confirmation?: boolean | null
+          created_at?: string | null
+          direction?: string
+          expires_at?: string | null
+          id?: string
+          lot_size?: number | null
+          risk_percent?: number | null
+          stop_loss?: number | null
+          symbol?: string
+          take_profit?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -524,6 +566,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_expired_pending_trades: { Args: never; Returns: undefined }
       has_role: { Args: { _role: string; _user_id: string }; Returns: boolean }
     }
     Enums: {

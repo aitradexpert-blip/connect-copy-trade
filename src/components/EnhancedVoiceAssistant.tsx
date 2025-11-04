@@ -22,12 +22,12 @@ export default function EnhancedVoiceAssistant() {
   const [conversation, setConversation] = useState<Message[]>([]);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [textInput, setTextInput] = useState("");
+  const [pendingConfirmation, setPendingConfirmation] = useState<any>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Check if browser supports Web Speech API
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       console.warn('Web Speech API not supported');
       return;
@@ -73,7 +73,6 @@ export default function EnhancedVoiceAssistant() {
     };
   }, []);
 
-  // Load available voices for young female voice selection
   useEffect(() => {
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
@@ -81,7 +80,6 @@ export default function EnhancedVoiceAssistant() {
       console.log('Available voices:', voices.map(v => `${v.name} (${v.lang})`));
     };
     
-    // Voices load asynchronously in some browsers
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
@@ -90,21 +88,18 @@ export default function EnhancedVoiceAssistant() {
   }, []);
 
   useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [conversation]);
 
   const handleCommand = async (transcript: string) => {
-    // Add user message to conversation
     setConversation(prev => [...prev, { role: 'user', text: transcript }]);
     setIsProcessing(true);
 
     try {
       console.log('Invoking voice-ai-assistant with:', { transcript, user_id: user?.id });
       
-      // Call Lovable AI edge function
       const { data, error } = await supabase.functions.invoke('voice-ai-assistant', {
         body: { 
           transcript,
@@ -124,7 +119,6 @@ export default function EnhancedVoiceAssistant() {
         throw new Error('Invalid response from AI assistant');
       }
 
-      // Add AI response to conversation
       const assistantMessage: Message = { 
         role: 'assistant', 
         text: data.text,
@@ -134,16 +128,28 @@ export default function EnhancedVoiceAssistant() {
       
       setConversation(prev => [...prev, assistantMessage]);
 
-      // Speak response with young female voice
-      speak(data.text);
+      // Clean text for speech - remove emojis and markdown
+      const cleanText = data.text
+        .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
+        .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
+        .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
+        .replace(/[\u{2600}-\u{26FF}]/gu, '')
+        .replace(/[\u{2700}-\u{27BF}]/gu, '')
+        .replace(/\*/g, '')
+        .replace(/#/g, '')
+        .replace(/\[.*?\]/g, '')
+        .trim();
+      speak(cleanText);
 
-      // Execute action if present
-      if (data.action?.type === 'prepare_execution') {
+      // Handle actions
+      if (data.action?.type === 'request_confirmation') {
+        setPendingConfirmation(data.action.trade);
+      } else if (data.action?.type === 'prepare_execution') {
+        setPendingConfirmation(null);
         toast({
           title: "Trade Prepared",
           description: "Review the trade details and click Execute to confirm",
         });
-        // Note: The actual modal opening would be handled by parent component
       }
     } catch (error: any) {
       console.error('Command handling error:', error);
@@ -163,22 +169,26 @@ export default function EnhancedVoiceAssistant() {
   };
 
   const speak = (text: string) => {
-    const utterance = new SpeechSynthesisUtterance(text);
+    const cleanedText = text
+      .replace(/\*/g, '')
+      .replace(/#/g, '')
+      .replace(/\[.*?\]/g, '')
+      .replace(/\(.*?\)/g, '')
+      .trim();
     
-    // Young female voice settings
-    utterance.pitch = 1.3;  // Higher pitch for young girl voice
-    utterance.rate = 1.1;   // Slightly faster speech
+    const utterance = new SpeechSynthesisUtterance(cleanedText);
+    utterance.pitch = 1.3;
+    utterance.rate = 1.1;
     utterance.volume = 0.8;
     
-    // Find and select a young female voice
     if (availableVoices.length > 0) {
-      // Priority order for voice selection
       const femaleVoice = availableVoices.find(voice => 
         voice.name.toLowerCase().includes('samantha') ||
         voice.name.toLowerCase().includes('victoria') ||
         voice.name.toLowerCase().includes('karen') ||
         voice.name.toLowerCase().includes('google us english') && voice.name.toLowerCase().includes('female') ||
         voice.name.toLowerCase().includes('zira') ||
+        voice.name.toLowerCase().includes('tessa') ||
         voice.name.toLowerCase().includes('female')
       ) || availableVoices.find(voice => 
         voice.lang.startsWith('en') && voice.name.toLowerCase().includes('female')
@@ -187,8 +197,6 @@ export default function EnhancedVoiceAssistant() {
       if (femaleVoice) {
         console.log('Using voice:', femaleVoice.name);
         utterance.voice = femaleVoice;
-      } else {
-        console.log('Using default voice, female voice not found');
       }
     }
     
@@ -230,8 +238,21 @@ export default function EnhancedVoiceAssistant() {
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      {/* Chat Messages Area */}
       <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col">
+        <CardContent className="p-4 border-b">
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold">HuMi - Your AI Trading Assistant</h3>
+            <p className="text-sm text-muted-foreground">
+              Hey there! I'm HuMi, your friendly trading assistant. Ask me about your balance, positions, signals, or any trading pair!
+            </p>
+            {pendingConfirmation && (
+              <div className="mt-2 p-2 bg-primary/10 rounded text-xs text-primary font-medium">
+                ⏳ Awaiting your confirmation for {pendingConfirmation.symbol} {pendingConfirmation.direction}
+              </div>
+            )}
+          </div>
+        </CardContent>
+        
         <CardContent className="p-0 flex-1 flex flex-col">
           {conversation.length > 0 ? (
             <ScrollArea className="flex-1" ref={scrollRef}>
@@ -248,7 +269,6 @@ export default function EnhancedVoiceAssistant() {
                     }`}>
                       <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
                       
-                      {/* Display signal data if present */}
                       {msg.data?.signals && msg.data.signals.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
                           {msg.data.signals.slice(0, 3).map((signal: any) => (
@@ -275,11 +295,12 @@ export default function EnhancedVoiceAssistant() {
           ) : (
             <div className="flex-1 flex items-center justify-center p-6">
               <div className="text-center space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Start a conversation with HuMi! Use voice or type your message.
-                </p>
+                <p className="text-sm font-medium">Hey there!</p>
                 <p className="text-xs text-muted-foreground">
-                  Try: "What's my balance?" or "Show me EUR/USD analysis"
+                  I can help with your balance, positions, signals, or any trading pairs (Forex, Indices, Metals, Synthetics). Try voice or text!
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-4">
+                  Examples: "What's my balance?", "Show me EUR/USD", "Execute buy on gold"
                 </p>
               </div>
             </div>
@@ -287,11 +308,9 @@ export default function EnhancedVoiceAssistant() {
         </CardContent>
       </Card>
 
-      {/* Input Area */}
       <Card className="bg-card border-border">
         <CardContent className="p-4">
           <form onSubmit={handleTextSubmit} className="flex items-center gap-2">
-            {/* Voice Button */}
             <Button
               type="button"
               onClick={toggleListening}
@@ -308,7 +327,6 @@ export default function EnhancedVoiceAssistant() {
               )}
             </Button>
 
-            {/* Text Input */}
             <Input
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
@@ -317,7 +335,6 @@ export default function EnhancedVoiceAssistant() {
               disabled={isProcessing || isListening}
             />
 
-            {/* Send Button */}
             <Button
               type="submit"
               size="icon"
