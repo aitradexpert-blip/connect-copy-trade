@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Bell, Shield, Globe, Palette, Database } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Bell, Shield, Globe, Palette, Database, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -45,10 +46,52 @@ export default function Settings() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [voicePrefs, setVoicePrefs] = useState({
+    type: 'female',
+    name: '',
+    rate: 1.1,
+    pitch: 1.3,
+    volume: 0.8
+  });
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
     loadSettings();
+    loadVoicePreferences();
+    loadAvailableVoices();
   }, [user]);
+
+  const loadAvailableVoices = () => {
+    const voices = window.speechSynthesis.getVoices();
+    setAvailableVoices(voices);
+  };
+
+  useEffect(() => {
+    loadAvailableVoices();
+    window.speechSynthesis.onvoiceschanged = loadAvailableVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  const loadVoicePreferences = () => {
+    const saved = localStorage.getItem('voice_preferences');
+    if (saved) {
+      try {
+        setVoicePrefs(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load voice preferences');
+      }
+    }
+  };
+
+  const saveVoicePreferences = () => {
+    localStorage.setItem('voice_preferences', JSON.stringify(voicePrefs));
+    toast({
+      title: "Voice settings saved",
+      description: "Your voice assistant preferences have been updated.",
+    });
+  };
 
   const loadSettings = async () => {
     if (!user) return;
@@ -150,6 +193,112 @@ export default function Settings() {
           <h1 className="text-3xl font-bold text-foreground">Settings</h1>
           <p className="text-muted-foreground mt-2">Manage your application preferences and notifications</p>
         </div>
+
+        {/* Voice Assistant Settings */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mic className="w-5 h-5" />
+              Voice Assistant
+            </CardTitle>
+            <CardDescription>Customize HuMi's voice and speech settings</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label>Voice Type</Label>
+              <Select
+                value={voicePrefs.type}
+                onValueChange={(value) => setVoicePrefs(prev => ({ ...prev, type: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="female">Female (Default)</SelectItem>
+                  <SelectItem value="male">Male</SelectItem>
+                  <SelectItem value="custom">Custom Voice</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {voicePrefs.type === 'custom' && (
+              <div className="space-y-2">
+                <Label>Select Voice</Label>
+                <Select
+                  value={voicePrefs.name}
+                  onValueChange={(value) => setVoicePrefs(prev => ({ ...prev, name: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a voice..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableVoices.map((voice) => (
+                      <SelectItem key={voice.name} value={voice.name}>
+                        {voice.name} ({voice.lang})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availableVoices.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Refresh the page if voices don't appear
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <Label>Speech Rate</Label>
+                  <span className="text-sm text-muted-foreground">{voicePrefs.rate.toFixed(1)}</span>
+                </div>
+                <Slider
+                  value={[voicePrefs.rate]}
+                  onValueChange={([value]) => setVoicePrefs(prev => ({ ...prev, rate: value }))}
+                  min={0.8}
+                  max={1.3}
+                  step={0.1}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <Label>Pitch</Label>
+                  <span className="text-sm text-muted-foreground">{voicePrefs.pitch.toFixed(1)}</span>
+                </div>
+                <Slider
+                  value={[voicePrefs.pitch]}
+                  onValueChange={([value]) => setVoicePrefs(prev => ({ ...prev, pitch: value }))}
+                  min={0.9}
+                  max={1.5}
+                  step={0.1}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <Label>Volume</Label>
+                  <span className="text-sm text-muted-foreground">{voicePrefs.volume.toFixed(1)}</span>
+                </div>
+                <Slider
+                  value={[voicePrefs.volume]}
+                  onValueChange={([value]) => setVoicePrefs(prev => ({ ...prev, volume: value }))}
+                  min={0.6}
+                  max={1.0}
+                  step={0.1}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
+            <Button onClick={saveVoicePreferences} variant="outline" className="w-full">
+              Save Voice Settings
+            </Button>
+          </CardContent>
+        </Card>
 
         {/* Appearance Settings */}
         <Card className="bg-gradient-card border-border shadow-card">

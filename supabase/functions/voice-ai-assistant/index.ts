@@ -49,7 +49,11 @@ serve(async (req) => {
     }
 
     // Clean up expired pending trades
-    await supabase.rpc('delete_expired_pending_trades').catch(() => {});
+    try {
+      await supabase.rpc('delete_expired_pending_trades');
+    } catch (error) {
+      console.error('Cleanup error (non-critical):', error);
+    }
 
     // Check for pending trade confirmation
     const { data: pendingTrade } = await supabase
@@ -234,8 +238,43 @@ You understand BTMM (Break, Test, Move, Manipulate), Mark Douglas psychology, Lo
     });
 
     if (!response.ok) {
-      console.error('AI gateway error:', response.status, await response.text());
-      throw new Error(`AI gateway error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('AI gateway error:', response.status, errorText);
+      
+      // Return HTTP 200 with friendly error message
+      if (response.status === 429) {
+        return new Response(JSON.stringify({
+          text: "I'm getting a temporary limit on my AI. Please try again in a moment.",
+          error: { code: 429, message: "Rate limit exceeded" },
+          action: null,
+          links: []
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (response.status === 402) {
+        return new Response(JSON.stringify({
+          text: "I need more credits to continue. Please contact support or add credits to continue using voice features.",
+          error: { code: 402, message: "Payment required" },
+          action: null,
+          links: []
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      return new Response(JSON.stringify({
+        text: "I hit a temporary issue on my side. Let's try that again in a few seconds.",
+        error: { code: response.status, message: errorText },
+        action: null,
+        links: []
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     const aiResponse = await response.json();
@@ -255,6 +294,29 @@ You understand BTMM (Break, Test, Move, Manipulate), Mark Douglas psychology, Lo
       .trim();
     
     let action: any = null;
+    let links: any[] = [];
+    
+    // Check for in-app navigation requests
+    const lowerTranscript = normalizedTranscript.toLowerCase();
+    
+    if (lowerTranscript.match(/(pairs available|available pairs|today'?s? ideas?|show signals?|trade ideas?|open ideas?)/i)) {
+      links = [
+        { label: "View Today's Ideas", path: "/ideas", description: "Latest signals and market context" }
+      ];
+      action = { type: 'navigate', path: '/ideas' };
+    } else if (lowerTranscript.match(/(settings?|preferences?|configure|voice settings)/i)) {
+      links = [{ label: "Open Settings", path: "/settings", description: "Manage your preferences" }];
+      action = { type: 'navigate', path: '/settings' };
+    } else if (lowerTranscript.match(/(trading accounts?|my accounts?|connect account)/i)) {
+      links = [{ label: "Trading Accounts", path: "/trading-accounts", description: "Manage connected accounts" }];
+      action = { type: 'navigate', path: '/trading-accounts' };
+    } else if (lowerTranscript.match(/(analytics?|stats|statistics|performance)/i)) {
+      links = [{ label: "View Analytics", path: "/analytics", description: "Your trading performance" }];
+      action = { type: 'navigate', path: '/analytics' };
+    } else if (lowerTranscript.match(/(copy trading|copy trades?)/i)) {
+      links = [{ label: "Copy Trading", path: "/copy-trading", description: "Follow expert traders" }];
+      action = { type: 'navigate', path: '/copy-trading' };
+    }
 
     // Detect user intent for trade preparation
     const tradeKeywords = ['execute', 'trade', 'buy', 'sell', 'open position', 'place order', 'enter', 'go long', 'go short'];
@@ -306,21 +368,25 @@ You understand BTMM (Break, Test, Move, Manipulate), Mark Douglas psychology, Lo
     return new Response(JSON.stringify({
       text: responseText,
       action: action,
+      links: links,
       data: {
         signals: signals || [],
         balance: accounts?.[0]?.balance || 0,
         positions: positions || []
       }
     }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (error) {
     console.error('Error:', error);
     return new Response(JSON.stringify({ 
-      error: error.message,
-      text: "I encountered an error processing your request. Please try again."
+      text: "I hit a temporary issue. Let's try that again in a moment.",
+      error: { message: error.message },
+      action: null,
+      links: []
     }), {
-      status: 500,
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }

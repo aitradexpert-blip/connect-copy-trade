@@ -35,16 +35,22 @@ Deno.serve(async (req) => {
 
     const { accountId, trade } = await req.json()
     if (!accountId || !trade) {
-      return new Response(JSON.stringify({ error: 'Missing accountId or trade data' }), {
-        status: 400,
+      return new Response(JSON.stringify({ 
+        text: "I need both an account and trade details to execute. Please try again.",
+        error: 'Missing accountId or trade data' 
+      }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
     }
 
     const token = Deno.env.get('METAAPI_TOKEN')
     if (!token) {
-      return new Response(JSON.stringify({ error: 'Server misconfiguration: METAAPI_TOKEN not set' }), {
-        status: 500,
+      return new Response(JSON.stringify({ 
+        text: "I couldn't connect to the trading platform. Please contact support.",
+        error: 'MetaAPI token not configured' 
+      }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
     }
@@ -77,30 +83,45 @@ Deno.serve(async (req) => {
 
     console.log(`Executing trade for account ${accountId}:`, tradeData)
 
-    const resp = await fetch(`${CLIENT_API_URL}/users/current/accounts/${accountId}/trade`, {
-      method: 'POST',
-      headers: {
-        'auth-token': token,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(tradeData)
-    })
+    let resp;
+    let result;
+    
+    try {
+      resp = await fetch(`${CLIENT_API_URL}/users/current/accounts/${accountId}/trade`, {
+        method: 'POST',
+        headers: {
+          'auth-token': token,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tradeData)
+      })
 
-    if (!resp.ok) {
-      const text = await resp.text()
-      console.error('MetaAPI trade error', resp.status, text)
+      if (!resp.ok) {
+        const text = await resp.text()
+        console.error('MetaAPI trade error', resp.status, text)
+        return new Response(JSON.stringify({ 
+          text: "I couldn't reach the broker just now. Let's try again shortly.",
+          error: 'Failed to execute trade', 
+          status: resp.status, 
+          details: text 
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      result = await resp.json()
+    } catch (fetchError) {
+      console.error('MetaAPI connection error:', fetchError)
       return new Response(JSON.stringify({ 
-        error: 'Failed to execute trade', 
-        status: resp.status, 
-        details: text 
+        text: "I couldn't connect to the broker. Please check your connection and try again.",
+        error: fetchError.message 
       }), {
-        status: 502,
+        status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
     }
-
-    const result = await resp.json()
     console.log('Trade executed successfully:', result)
 
     // Log trade to trade_history
@@ -143,8 +164,12 @@ Deno.serve(async (req) => {
     })
   } catch (e) {
     console.error('Function error:', e)
-    return new Response(JSON.stringify({ error: 'Unexpected error', message: String(e) }), {
-      status: 500,
+    return new Response(JSON.stringify({ 
+      text: "I hit an unexpected issue while executing. Let's try that again.",
+      error: 'Unexpected error', 
+      message: String(e) 
+    }), {
+      status: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     })
   }

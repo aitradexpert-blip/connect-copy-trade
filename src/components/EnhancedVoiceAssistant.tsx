@@ -13,6 +13,11 @@ interface Message {
   text: string;
   action?: any;
   data?: any;
+  links?: Array<{
+    label: string;
+    path: string;
+    description?: string;
+  }>;
 }
 
 export default function EnhancedVoiceAssistant() {
@@ -23,6 +28,13 @@ export default function EnhancedVoiceAssistant() {
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [textInput, setTextInput] = useState("");
   const [pendingConfirmation, setPendingConfirmation] = useState<any>(null);
+  const [voicePreference, setVoicePreference] = useState({
+    type: 'female',
+    name: '',
+    rate: 1.1,
+    pitch: 1.3,
+    volume: 0.8
+  });
   const { toast } = useToast();
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -74,6 +86,16 @@ export default function EnhancedVoiceAssistant() {
   }, []);
 
   useEffect(() => {
+    // Load voice preferences from localStorage
+    const savedPrefs = localStorage.getItem('voice_preferences');
+    if (savedPrefs) {
+      try {
+        setVoicePreference(JSON.parse(savedPrefs));
+      } catch (e) {
+        console.error('Failed to load voice preferences:', e);
+      }
+    }
+
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       setAvailableVoices(voices);
@@ -109,9 +131,21 @@ export default function EnhancedVoiceAssistant() {
 
       console.log('Edge function response:', { data, error });
 
-      if (error) {
-        console.error('Edge function error:', error);
-        throw new Error(error.message || 'Failed to process voice command');
+      // Handle structured errors (server returns 200 with error field)
+      if (data?.error) {
+        const errorMessage = data.text || "I'm having trouble right now. Please try again in a moment.";
+        setConversation(prev => [...prev, {
+          role: 'assistant',
+          text: errorMessage
+        }]);
+        speak(errorMessage);
+        toast({
+          title: "Temporary Issue",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setIsProcessing(false);
+        return;
       }
 
       if (!data || !data.text) {
@@ -123,7 +157,8 @@ export default function EnhancedVoiceAssistant() {
         role: 'assistant', 
         text: data.text,
         action: data.action,
-        data: data.data
+        data: data.data,
+        links: data.links
       };
       
       setConversation(prev => [...prev, assistantMessage]);
@@ -169,6 +204,9 @@ export default function EnhancedVoiceAssistant() {
   };
 
   const speak = (text: string) => {
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
     const cleanedText = text
       .replace(/\*/g, '')
       .replace(/#/g, '')
@@ -177,27 +215,55 @@ export default function EnhancedVoiceAssistant() {
       .trim();
     
     const utterance = new SpeechSynthesisUtterance(cleanedText);
-    utterance.pitch = 1.3;
-    utterance.rate = 1.1;
-    utterance.volume = 0.8;
+    utterance.pitch = voicePreference.pitch;
+    utterance.rate = voicePreference.rate;
+    utterance.volume = voicePreference.volume;
     
-    if (availableVoices.length > 0) {
-      const femaleVoice = availableVoices.find(voice => 
+    // Select voice based on preferences
+    let selectedVoice = null;
+
+    if (voicePreference.name && voicePreference.type === 'custom') {
+      // Use custom selected voice
+      selectedVoice = availableVoices.find(v => v.name === voicePreference.name);
+    } else if (voicePreference.type === 'female') {
+      // Female voice selection
+      const femaleVoices = availableVoices.filter(voice => 
         voice.name.toLowerCase().includes('samantha') ||
         voice.name.toLowerCase().includes('victoria') ||
         voice.name.toLowerCase().includes('karen') ||
-        voice.name.toLowerCase().includes('google us english') && voice.name.toLowerCase().includes('female') ||
         voice.name.toLowerCase().includes('zira') ||
         voice.name.toLowerCase().includes('tessa') ||
-        voice.name.toLowerCase().includes('female')
-      ) || availableVoices.find(voice => 
-        voice.lang.startsWith('en') && voice.name.toLowerCase().includes('female')
+        voice.name.toLowerCase().includes('allison') ||
+        voice.name.toLowerCase().includes('joanna') ||
+        voice.name.toLowerCase().includes('fiona') ||
+        (voice.name.toLowerCase().includes('google') && voice.name.toLowerCase().includes('female'))
       );
-      
-      if (femaleVoice) {
-        console.log('Using voice:', femaleVoice.name);
-        utterance.voice = femaleVoice;
-      }
+      selectedVoice = femaleVoices[0];
+    } else if (voicePreference.type === 'male') {
+      // Male voice selection
+      const maleVoices = availableVoices.filter(voice =>
+        voice.name.toLowerCase().includes('alex') ||
+        voice.name.toLowerCase().includes('fred') ||
+        voice.name.toLowerCase().includes('daniel') ||
+        voice.name.toLowerCase().includes('diego') ||
+        (voice.name.toLowerCase().includes('google') && voice.name.toLowerCase().includes('male'))
+      );
+      selectedVoice = maleVoices[0];
+    }
+
+    // Fallback to English voice if preference didn't match
+    if (!selectedVoice) {
+      selectedVoice = availableVoices.find(v => v.lang.startsWith('en'));
+    }
+
+    // Final fallback to first available
+    if (!selectedVoice && availableVoices.length > 0) {
+      selectedVoice = availableVoices[0];
+    }
+
+    if (selectedVoice) {
+      console.log('Using voice:', selectedVoice.name);
+      utterance.voice = selectedVoice;
     }
     
     window.speechSynthesis.speak(utterance);
@@ -269,6 +335,22 @@ export default function EnhancedVoiceAssistant() {
                     }`}>
                       <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
                       
+                      {msg.links && msg.links.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {msg.links.map((link: any, linkIndex: number) => (
+                            <Button
+                              key={linkIndex}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.location.href = link.path}
+                              className="text-xs"
+                            >
+                              {link.label}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+
                       {msg.data?.signals && msg.data.signals.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
                           {msg.data.signals.slice(0, 3).map((signal: any) => (
