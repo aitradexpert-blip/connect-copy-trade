@@ -147,6 +147,114 @@ export type Database = {
           },
         ]
       }
+      credit_usage: {
+        Row: {
+          created_at: string | null
+          credits_used: number
+          description: string | null
+          id: string
+          service: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          credits_used: number
+          description?: string | null
+          id?: string
+          service: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          credits_used?: number
+          description?: string | null
+          id?: string
+          service?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      crypto_transactions: {
+        Row: {
+          broker_name: string | null
+          created_at: string | null
+          fee: number | null
+          from_address: string | null
+          from_amount: number | null
+          from_currency: string | null
+          id: string
+          notes: string | null
+          status: string | null
+          to_address: string | null
+          to_amount: number | null
+          to_currency: string | null
+          transaction_type: string | null
+          user_id: string | null
+        }
+        Insert: {
+          broker_name?: string | null
+          created_at?: string | null
+          fee?: number | null
+          from_address?: string | null
+          from_amount?: number | null
+          from_currency?: string | null
+          id?: string
+          notes?: string | null
+          status?: string | null
+          to_address?: string | null
+          to_amount?: number | null
+          to_currency?: string | null
+          transaction_type?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          broker_name?: string | null
+          created_at?: string | null
+          fee?: number | null
+          from_address?: string | null
+          from_amount?: number | null
+          from_currency?: string | null
+          id?: string
+          notes?: string | null
+          status?: string | null
+          to_address?: string | null
+          to_amount?: number | null
+          to_currency?: string | null
+          transaction_type?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      crypto_wallets: {
+        Row: {
+          address: string | null
+          balance: number | null
+          created_at: string | null
+          currency: string
+          id: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          balance?: number | null
+          created_at?: string | null
+          currency: string
+          id?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          balance?: number | null
+          created_at?: string | null
+          currency?: string
+          id?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       kyc_documents: {
         Row: {
           approved_at: string | null
@@ -321,6 +429,51 @@ export type Database = {
           subscription_status?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      subscription_plans: {
+        Row: {
+          ai_bots_enabled: boolean | null
+          auto_trades_limit: number | null
+          copy_accounts_limit: number | null
+          created_at: string | null
+          custom_risk_enabled: boolean | null
+          features: Json | null
+          id: string
+          name: string
+          price_usd: number
+          price_zar: number
+          priority_support: boolean | null
+          trading_accounts_limit: number | null
+        }
+        Insert: {
+          ai_bots_enabled?: boolean | null
+          auto_trades_limit?: number | null
+          copy_accounts_limit?: number | null
+          created_at?: string | null
+          custom_risk_enabled?: boolean | null
+          features?: Json | null
+          id?: string
+          name: string
+          price_usd: number
+          price_zar: number
+          priority_support?: boolean | null
+          trading_accounts_limit?: number | null
+        }
+        Update: {
+          ai_bots_enabled?: boolean | null
+          auto_trades_limit?: number | null
+          copy_accounts_limit?: number | null
+          created_at?: string | null
+          custom_risk_enabled?: boolean | null
+          features?: Json | null
+          id?: string
+          name?: string
+          price_usd?: number
+          price_zar?: number
+          priority_support?: boolean | null
+          trading_accounts_limit?: number | null
         }
         Relationships: []
       }
@@ -561,6 +714,53 @@ export type Database = {
         }
         Relationships: []
       }
+      user_subscriptions: {
+        Row: {
+          auto_trades_used: number | null
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          last_reset_at: string | null
+          plan_name: string | null
+          started_at: string | null
+          status: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          auto_trades_used?: number | null
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_reset_at?: string | null
+          plan_name?: string | null
+          started_at?: string | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          auto_trades_used?: number | null
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          last_reset_at?: string | null
+          plan_name?: string | null
+          started_at?: string | null
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_subscriptions_plan_name_fkey"
+            columns: ["plan_name"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["name"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -568,6 +768,11 @@ export type Database = {
     Functions: {
       delete_expired_pending_trades: { Args: never; Returns: undefined }
       has_role: { Args: { _role: string; _user_id: string }; Returns: boolean }
+      has_subscription_access: {
+        Args: { _feature: string; _user_id: string }
+        Returns: boolean
+      }
+      reset_monthly_limits: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

@@ -12,6 +12,7 @@ import { Bell, Shield, Globe, Palette, Database, Mic } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { useTheme } from "next-themes";
 
 interface UserSettings {
   email_notifications: {
@@ -30,6 +31,7 @@ interface UserSettings {
 
 export default function Settings() {
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<UserSettings>({
     email_notifications: {
       trading_signals: true,
@@ -313,8 +315,8 @@ export default function Settings() {
             <div className="space-y-2">
               <Label>Theme</Label>
               <Select
-                value={settings.appearance_theme}
-                onValueChange={(value) => setSettings(prev => ({ ...prev, appearance_theme: value }))}
+                value={theme}
+                onValueChange={setTheme}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -325,6 +327,9 @@ export default function Settings() {
                   <SelectItem value="system">System</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Choose how HuMi looks to you. Select a single theme, or sync with your system and automatically switch between day and night themes.
+              </p>
             </div>
           </CardContent>
         </Card>

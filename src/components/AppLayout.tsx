@@ -1,6 +1,7 @@
 import { TopHeader } from "@/components/TopHeader";
 import { BottomNav } from "@/components/BottomNav";
 import FSCADisclaimer from "@/components/FSCADisclaimer";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -17,6 +18,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </main>
 
       <BottomNav />
+      <PWAInstallPrompt />
     </div>
   );
 }

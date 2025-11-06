@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
 import TradingIdeas from "./pages/TradingIdeas";
 import CopyTrading from "./pages/CopyTradingNew";
@@ -17,6 +18,8 @@ import NotFound from "./pages/NotFound";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
+import CryptoWallet from "./pages/CryptoWallet";
+import CreditUsage from "./pages/CreditUsage";
 
 const queryClient = new QueryClient();
 
@@ -65,12 +68,13 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
@@ -81,12 +85,15 @@ const App = () => (
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+            <Route path="/wallet" element={<ProtectedRoute><CryptoWallet /></ProtectedRoute>} />
+            <Route path="/credits" element={<ProtectedRoute><CreditUsage /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

@@ -28,43 +28,46 @@ interface Plan {
 const plans: Plan[] = [
   {
     name: "Basic",
-    price: 100,
+    price: 9.90,
     description: "Perfect for getting started with copy trading",
     yocoLink: "https://pay.yoco.com/r/78avpk",
     features: [
-      { text: "2 Auto-Trades per month", included: true },
-      { text: "Up to 3 Copy Accounts", included: true },
-      { text: "Basic market signals", included: true },
+      { text: "10 Auto-Trades per month", included: true },
+      { text: "Add up to 2 Trading Accounts", included: true },
+      { text: "Up to 1 Copy Account", included: true },
+      { text: "Premium Trading Signals", included: true },
       { text: "Email support", included: true },
       { text: "Advanced AI bots", included: false },
-      { text: "Priority signals", included: false },
+      { text: "Priority Ideas", included: false },
       { text: "Custom risk management", included: false },
     ],
   },
   {
     name: "Professional",
-    price: 300,
+    price: 29.90,
     description: "For serious traders who need more features",
     yocoLink: "https://pay.yoco.com/r/731Eg5",
     features: [
-      { text: "Unlimited Auto-Trades", included: true },
-      { text: "Up to 10 Copy Accounts", included: true },
-      { text: "Premium market signals", included: true },
+      { text: "Up to 30 Auto-Trades", included: true },
+      { text: "Add up to 5 Trading Accounts", included: true },
+      { text: "Up to 3 Copy Accounts", included: true },
+      { text: "Premium Trading Ideas", included: true },
       { text: "Priority email support", included: true },
       { text: "Advanced AI bots", included: true },
-      { text: "Priority signals", included: true },
+      { text: "Priority Ideas", included: true },
       { text: "Custom risk management", included: false },
     ],
     popular: true,
   },
   {
     name: "Enterprise",
-    price: 500,
+    price: 39.99,
     description: "Complete trading solution for professionals",
     yocoLink: "https://pay.yoco.com/r/2YaDjW",
     features: [
       { text: "Unlimited Auto-Trades", included: true },
-      { text: "Unlimited Copy Accounts", included: true },
+      { text: "Add up to 10 Trading Accounts", included: true },
+      { text: "Up to 5 Copy Accounts", included: true },
       { text: "VIP market signals", included: true },
       { text: "24/7 phone & email support", included: true },
       { text: "Advanced AI bots", included: true },
@@ -187,7 +190,7 @@ const Subscription = () => {
               <CardHeader className="text-center">
                 <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
                 <div className="text-3xl font-bold text-primary">
-                  R{plan.price}<span className="text-sm text-muted-foreground">/mo</span>
+                  ${plan.price}<span className="text-sm text-muted-foreground">/mo</span>
                 </div>
                 <CardDescription>{plan.description}</CardDescription>
               </CardHeader>
@@ -241,7 +244,7 @@ const Subscription = () => {
                 Submit Proof of Payment
               </DialogTitle>
               <DialogDescription>
-                Upload a screenshot of your payment confirmation for {selectedPlan?.name} plan (R{selectedPlan?.price}/month)
+                Upload a screenshot of your payment confirmation for {selectedPlan?.name} plan (${selectedPlan?.price}/month)
               </DialogDescription>
             </DialogHeader>
             
