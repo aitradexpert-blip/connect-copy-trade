@@ -7,13 +7,18 @@ import {
   Plus,
   Eye,
   Play,
-  RefreshCw
+  RefreshCw,
+  Building,
+  ExternalLink,
+  HelpCircle
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/MetricCard";
+import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
+import FSCADisclaimer from "@/components/FSCADisclaimer";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -184,6 +189,8 @@ const Index = () => {
   return (
     <AppLayout>
       <div className="space-y-8">
+        <FSCADisclaimer />
+        
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -195,6 +202,47 @@ const Index = () => {
             Refresh Data
           </Button>
         </div>
+
+        {/* Broker Operations */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building className="w-5 h-5" />
+              Broker Operations
+            </CardTitle>
+            <CardDescription>
+              Open accounts with our affiliated brokers
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Button variant="outline" onClick={() => window.open('https://track.deriv.com/_8yTvQnk19iB0QQMXeD9If2Nd7ZgqdRLk/1/', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                Deriv
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://octa.click/b3gtWBN3fii?ib=44960573', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                OctaFx
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://my.trade245.com/live_signup/?sidc=7A86688F-3777-49CD-8E69-ADBEA58A6220', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                Trade245
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://one.exnesstrack.com/a/8gbs5isoe8', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                Exness
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://secure.cwg-vu.com/#/signup/90105/F0/B0', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                CWG Markets
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://www.hfm.com/za/?refid=10377190', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                HFM
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Quick Actions */}
         <Card className="bg-gradient-card border-border shadow-card">

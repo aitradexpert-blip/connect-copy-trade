@@ -1,4 +1,4 @@
-import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart } from "lucide-react";
+import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
@@ -73,12 +73,45 @@ export function BottomNav() {
                 variant="ghost"
                 className="justify-start"
                 onClick={() => {
+                  navigate("/wallet");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <Wallet className="mr-2 h-4 w-4" />
+                Crypto Wallet
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
+                  navigate("/credits");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <Zap className="mr-2 h-4 w-4" />
+                Credit Usage
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
                   navigate("/analytics");
                   setIsMenuOpen(false);
                 }}
               >
                 <BarChart className="mr-2 h-4 w-4" />
                 Analytics
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
+                  navigate("/charts");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <TrendingUp className="mr-2 h-4 w-4" />
+                Market Charts
               </Button>
               <Button
                 variant="ghost"

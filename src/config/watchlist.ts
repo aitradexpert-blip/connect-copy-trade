@@ -1,0 +1,48 @@
+export const COMPREHENSIVE_WATCHLIST = {
+  "MAJOR FOREX (28)": [
+    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF", "NZD/USD",
+    "EUR/GBP", "EUR/JPY", "EUR/CHF", "EUR/AUD", "EUR/CAD", "EUR/NZD",
+    "GBP/JPY", "GBP/CHF", "GBP/AUD", "GBP/CAD", "GBP/NZD",
+    "AUD/JPY", "AUD/CAD", "AUD/CHF", "AUD/NZD",
+    "CAD/JPY", "CHF/JPY", "NZD/JPY", "NZD/CAD", "NZD/CHF", "USD/SGD"
+  ],
+  "MINOR FOREX (15)": [
+    "USD/SEK", "USD/NOK", "USD/DKK", "USD/ZAR", "USD/TRY", "USD/MXN", "USD/PLN",
+    "USD/HUF", "USD/CZK", "USD/HKD", "USD/CNH", "EUR/SEK", "EUR/NOK", "EUR/TRY", "EUR/PLN"
+  ],
+  "INDICES (25)": [
+    "US30", "NAS100", "SPX500", "DJI", "RUSSELL2000", "FTSE100", "DAX40", "CAC40",
+    "ESTX50", "FTSE250", "IBEX35", "FTSE_MIB", "SMI20", "AEX25", "OMXS30",
+    "NIKKEI225", "TOPIX", "ASX200", "HSI50", "SSE50", "SZSE100", "KOSPI200",
+    "SENSEX", "NIFTY50", "TSX60"
+  ],
+  "METALS (12)": [
+    "XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD", "XAU/EUR", "XAG/EUR",
+    "XAU/GBP", "XAG/GBP", "XAU/JPY", "XAG/JPY", "XAU/AUD", "XAG/AUD"
+  ],
+  "SYNTHETIC INDEXES (25)": [
+    "VOLATILITY_25", "VOLATILITY_50", "VOLATILITY_75", "VOLATILITY_100", "VOLATILITY_150", "VOLATILITY_200",
+    "BOOM_300", "BOOM_500", "BOOM_600", "BOOM_1000",
+    "CRASH_300", "CRASH_500", "CRASH_600", "CRASH_1000",
+    "JUMP_10", "JUMP_25", "JUMP_50", "JUMP_75", "JUMP_100",
+    "STEP_50", "STEP_100", "STEP_150", "STEP_200",
+    "RANGE_BREAK_100", "RANGE_BREAK_200"
+  ],
+  "CRYPTO (35)": [
+    "BTC/USD", "ETH/USD", "LTC/USD", "XRP/USD", "BCH/USD", "ADA/USD", "DOT/USD",
+    "LINK/USD", "DOGE/USD", "SOL/USD", "MATIC/USD", "AVAX/USD", "ATOM/USD",
+    "FIL/USD", "ETC/USD", "XLM/USD", "XMR/USD", "ZEC/USD", "DASH/USD",
+    "EOS/USD", "TRX/USD", "XTZ/USD", "ALGO/USD", "NEAR/USD", "FTM/USD",
+    "SAND/USD", "MANA/USD", "GALA/USD", "ENJ/USD", "BAT/USD",
+    "COMP/USD", "UNI/USD", "AAVE/USD", "MKR/USD", "YFI/USD"
+  ],
+  "STOCKS (50)": [
+    "AAPL", "TSLA", "MSFT", "AMZN", "GOOGL", "META", "NFLX", "NVDA", "AMD", "INTC",
+    "IBM", "ORCL", "CSCO", "ADBE", "CRM", "PYPL", "SQ", "SHOP", "UBER", "LYFT",
+    "BA", "CAT", "DE", "XOM", "CVX", "COP", "BP", "T", "VZ", "DIS",
+    "NKE", "WMT", "TGT", "HD", "LOW", "MCD", "SBUX", "KO", "PEP", "JNJ",
+    "PFE", "MRK", "ABT", "UNH", "JPM", "BAC", "WFC", "GS", "MS", "V", "MA"
+  ]
+};
+
+export const ALL_SYMBOLS = Object.values(COMPREHENSIVE_WATCHLIST).flat();

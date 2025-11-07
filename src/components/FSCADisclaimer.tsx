@@ -9,7 +9,7 @@ export default function FSCADisclaimer() {
           <p className="text-sm text-amber-900 dark:text-amber-100 leading-relaxed">
             <strong className="font-semibold">Important Disclosure:</strong> This is a technology platform only. 
             We do not provide financial advice. All trading carries risk of loss. 
-            Trade at your own risk. Platform regulated by FSCA.
+            Trade at your own risk.
           </p>
         </div>
       </div>

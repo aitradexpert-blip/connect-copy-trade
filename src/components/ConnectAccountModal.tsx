@@ -36,7 +36,6 @@ export function ConnectAccountModal({
     name: "",
     login: "",
     server: "",
-    metaapiAccountId: "",
     platform: "",
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -49,8 +48,8 @@ export function ConnectAccountModal({
     setIsLoading(true);
 
     try {
-      // 1) Insert trading account
-      const { data: inserted, error: insertError } = await supabase
+      // Insert trading account with pending status (admin will add MetaAPI ID)
+      const { error: insertError } = await supabase
         .from("trading_accounts")
         .insert([
           {
@@ -58,49 +57,25 @@ export function ConnectAccountModal({
             name: formData.name,
             login: formData.login,
             server: formData.server,
-            metaapi_account_id: formData.metaapiAccountId,
             platform: formData.platform,
-            connection_status: "connected",
+            connection_status: "pending_approval",
+            metaapi_account_id: null,
+            balance: 0,
+            equity: 0,
           },
-        ])
-        .select("id")
-        .single();
+        ]);
 
       if (insertError) throw insertError;
 
-      // 2) Fetch live balance/equity from MetaAPI via Edge Function
-      const { data: info, error: fnError } = await supabase.functions.invoke(
-        "metaapi-account-info",
-        {
-          body: { accountId: formData.metaapiAccountId },
-        }
-      );
-
-      if (fnError) {
-        console.error(fnError);
-      }
-
-      const balance = Number(info?.balance || 0);
-      const equity = Number(info?.equity || 0);
-
-      // 3) Update record with live balances
-      if (inserted?.id) {
-        await supabase
-          .from("trading_accounts")
-          .update({ balance, equity })
-          .eq("id", inserted.id);
-      }
-
       toast({
-        title: "Account connected successfully!",
-        description: `${formData.name} has been connected to your trading dashboard.`,
+        title: "Account submitted for approval!",
+        description: `${formData.name} will be connected once admin approves and adds MetaAPI credentials.`,
       });
 
       setFormData({ 
         name: "", 
         login: "", 
         server: "", 
-        metaapiAccountId: "", 
         platform: "" 
       });
       setIsLoading(false);
@@ -119,7 +94,7 @@ export function ConnectAccountModal({
         <DialogHeader>
           <DialogTitle>Connect Trading Account</DialogTitle>
           <DialogDescription>
-            Connect your MetaTrader account using MetaAPI account ID.
+            Submit your account details. Admin will connect it to MetaAPI after approval.
           </DialogDescription>
         </DialogHeader>
         
@@ -156,17 +131,6 @@ export function ConnectAccountModal({
                 required
               />
             </div>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="metaapiAccountId">MetaAPI Account ID</Label>
-            <Input
-              id="metaapiAccountId"
-              placeholder="e.g. 12345678:abcf-..."
-              value={formData.metaapiAccountId}
-              onChange={(e) => setFormData({ ...formData, metaapiAccountId: e.target.value })}
-              required
-            />
           </div>
           
           <div className="space-y-2">

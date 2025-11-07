@@ -219,14 +219,16 @@ export default function EnhancedVoiceAssistant() {
     utterance.rate = voicePreference.rate;
     utterance.volume = voicePreference.volume;
     
-    // Select voice based on preferences
+    // Always select voice based on current preferences (consistent for both text and voice)
     let selectedVoice = null;
 
-    if (voicePreference.name && voicePreference.type === 'custom') {
-      // Use custom selected voice
+    // If custom voice name is set, use it
+    if (voicePreference.name) {
       selectedVoice = availableVoices.find(v => v.name === voicePreference.name);
-    } else if (voicePreference.type === 'female') {
-      // Female voice selection
+    }
+    
+    // Otherwise select by type preference
+    if (!selectedVoice && voicePreference.type === 'female') {
       const femaleVoices = availableVoices.filter(voice => 
         voice.name.toLowerCase().includes('samantha') ||
         voice.name.toLowerCase().includes('victoria') ||
@@ -239,8 +241,7 @@ export default function EnhancedVoiceAssistant() {
         (voice.name.toLowerCase().includes('google') && voice.name.toLowerCase().includes('female'))
       );
       selectedVoice = femaleVoices[0];
-    } else if (voicePreference.type === 'male') {
-      // Male voice selection
+    } else if (!selectedVoice && voicePreference.type === 'male') {
       const maleVoices = availableVoices.filter(voice =>
         voice.name.toLowerCase().includes('alex') ||
         voice.name.toLowerCase().includes('fred') ||
@@ -251,12 +252,12 @@ export default function EnhancedVoiceAssistant() {
       selectedVoice = maleVoices[0];
     }
 
-    // Fallback to English voice if preference didn't match
+    // Fallback to any English voice
     if (!selectedVoice) {
       selectedVoice = availableVoices.find(v => v.lang.startsWith('en'));
     }
 
-    // Final fallback to first available
+    // Final fallback
     if (!selectedVoice && availableVoices.length > 0) {
       selectedVoice = availableVoices[0];
     }

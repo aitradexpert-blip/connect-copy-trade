@@ -13,8 +13,9 @@ import TradingAccounts from "./pages/TradingAccounts";
 import Subscription from "./pages/Subscription";
 import Admin from "./pages/Admin";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
-import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import Auth from "./pages/Auth";
+import Charts from "./pages/Charts";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
@@ -87,6 +88,7 @@ const App = () => (
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/wallet" element={<ProtectedRoute><CryptoWallet /></ProtectedRoute>} />
             <Route path="/credits" element={<ProtectedRoute><CreditUsage /></ProtectedRoute>} />
+            <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
