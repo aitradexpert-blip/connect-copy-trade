@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
+import { SupportWidget } from "@/components/SupportWidget";
 
 interface UserSettings {
   email_notifications: {
@@ -528,12 +529,8 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <Button onClick={saveSettings} disabled={saving} className="bg-gradient-primary">
-            {saving ? "Saving..." : "Save Changes"}
-          </Button>
-        </div>
+        {/* Support Channels */}
+        <SupportWidget />
       </div>
     </AppLayout>
   );

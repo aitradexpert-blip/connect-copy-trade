@@ -25,12 +25,14 @@ interface Plan {
   yocoLink: string;
 }
 
+const USD_TO_ZAR = 18;
+
 const plans: Plan[] = [
   {
     name: "Basic",
     price: 9.90,
     description: "Perfect for getting started with copy trading",
-    yocoLink: "https://pay.yoco.com/r/78avpk",
+    yocoLink: `https://pay.yoco.com/r/78avpk?amount=${Math.round(9.90 * USD_TO_ZAR * 100)}`,
     features: [
       { text: "10 Auto-Trades per month", included: true },
       { text: "Add up to 2 Trading Accounts", included: true },
@@ -46,7 +48,7 @@ const plans: Plan[] = [
     name: "Professional",
     price: 29.90,
     description: "For serious traders who need more features",
-    yocoLink: "https://pay.yoco.com/r/731Eg5",
+    yocoLink: `https://pay.yoco.com/r/731Eg5?amount=${Math.round(29.90 * USD_TO_ZAR * 100)}`,
     features: [
       { text: "Up to 30 Auto-Trades", included: true },
       { text: "Add up to 5 Trading Accounts", included: true },
@@ -63,7 +65,7 @@ const plans: Plan[] = [
     name: "Enterprise",
     price: 39.99,
     description: "Complete trading solution for professionals",
-    yocoLink: "https://pay.yoco.com/r/2YaDjW",
+    yocoLink: `https://pay.yoco.com/r/2YaDjW?amount=${Math.round(39.99 * USD_TO_ZAR * 100)}`,
     features: [
       { text: "Unlimited Auto-Trades", included: true },
       { text: "Add up to 10 Trading Accounts", included: true },
@@ -191,6 +193,9 @@ const Subscription = () => {
                 <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
                 <div className="text-3xl font-bold text-primary">
                   ${plan.price}<span className="text-sm text-muted-foreground">/mo</span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  R{Math.round(plan.price * USD_TO_ZAR)} ZAR
                 </div>
                 <CardDescription>{plan.description}</CardDescription>
               </CardHeader>

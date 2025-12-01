@@ -4,12 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, XCircle, Eye, FileText, CreditCard } from "lucide-react";
+import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
+import { UserManagementTab } from "@/components/admin/UserManagementTab";
 
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -170,8 +171,12 @@ export default function AdminPanel() {
           </p>
         </div>
 
-        <Tabs defaultValue="payments" className="space-y-6">
+        <Tabs defaultValue="users" className="space-y-6">
           <TabsList>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              User Management
+            </TabsTrigger>
             <TabsTrigger value="payments" className="flex items-center gap-2">
               <CreditCard className="w-4 h-4" />
               Payment Proofs
@@ -181,6 +186,10 @@ export default function AdminPanel() {
               KYC Documents
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="users">
+            <UserManagementTab />
+          </TabsContent>
 
           <TabsContent value="payments">
             <Card className="bg-gradient-card border-border shadow-card">

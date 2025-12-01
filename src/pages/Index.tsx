@@ -10,7 +10,10 @@ import {
   RefreshCw,
   Building,
   ExternalLink,
-  HelpCircle
+  HelpCircle,
+  Wallet,
+  Send,
+  ArrowDownUp
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import { Button } from "@/components/ui/button";
@@ -18,7 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MetricCard } from "@/components/MetricCard";
 import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
-import FSCADisclaimer from "@/components/FSCADisclaimer";
+
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -189,8 +192,6 @@ const Index = () => {
   return (
     <AppLayout>
       <div className="space-y-8">
-        <FSCADisclaimer />
-        
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -299,6 +300,33 @@ const Index = () => {
           />
         </div>
 
+        {/* Crypto Wallet Actions */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="w-5 h-5" />
+              Crypto Wallet
+            </CardTitle>
+            <CardDescription>Manage your crypto holdings and transfers</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-4">
+              <Button onClick={() => navigate('/wallet')} variant="outline" className="flex items-center gap-2">
+                <Wallet className="w-4 h-4" />
+                View Wallet
+              </Button>
+              <Button onClick={() => navigate('/wallet?action=transfer')} variant="outline" className="flex items-center gap-2">
+                <Send className="w-4 h-4" />
+                Transfer Funds
+              </Button>
+              <Button onClick={() => navigate('/wallet?action=exchange')} variant="outline" className="flex items-center gap-2">
+                <ArrowDownUp className="w-4 h-4" />
+                Exchange Crypto
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* HuMi Voice Assistant */}
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
@@ -328,6 +356,9 @@ const Index = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Support Widget */}
+        <SupportWidget />
       </div>
 
     </AppLayout>
