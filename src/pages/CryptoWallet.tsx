@@ -4,10 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, Send, ArrowDownUp, TrendingUp, Bitcoin } from "lucide-react";
+import { Wallet, Send, ArrowDownUp, TrendingUp, Bitcoin, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InternalTransferModal } from "@/components/crypto-wallet/InternalTransferModal";
+import { CrossBrokerTransferModal } from "@/components/crypto-wallet/CrossBrokerTransferModal";
+import { WithdrawModal } from "@/components/crypto-wallet/WithdrawModal";
+import { ExchangeModal } from "@/components/crypto-wallet/ExchangeModal";
 
 interface CryptoWallet {
   currency: string;
@@ -44,6 +48,7 @@ export default function CryptoWallet() {
   const [wallets, setWallets] = useState<CryptoWallet[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalValue, setTotalValue] = useState(0);
+  const [activeModal, setActiveModal] = useState<'internal' | 'cross' | 'withdraw' | 'exchange' | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -156,23 +161,22 @@ export default function CryptoWallet() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
-              <Button className="bg-gradient-primary">
+              <Button className="bg-gradient-primary" onClick={() => setActiveModal('internal')}>
                 <Send className="w-4 h-4 mr-2" />
-                Transfer to Broker
+                Internal Transfer
               </Button>
-              <Button variant="outline">
+              <Button variant="outline" onClick={() => setActiveModal('cross')}>
+                <Building2 className="w-4 h-4 mr-2" />
+                Cross-Broker Transfer
+              </Button>
+              <Button variant="outline" onClick={() => setActiveModal('exchange')}>
                 <ArrowDownUp className="w-4 h-4 mr-2" />
                 Exchange Currency
               </Button>
-              <Button variant="outline">
+              <Button variant="outline" onClick={() => setActiveModal('withdraw')}>
                 <Wallet className="w-4 h-4 mr-2" />
                 Withdraw to External Wallet
               </Button>
-            </div>
-            <div className="mt-4 p-3 bg-amber-900/20 border border-amber-700 rounded-lg">
-              <p className="text-sm text-amber-200">
-                💡 <strong>Coming Soon:</strong> Full wallet integration with broker APIs for seamless transfers
-              </p>
             </div>
           </CardContent>
         </Card>
@@ -204,6 +208,12 @@ export default function CryptoWallet() {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Modals */}
+        {activeModal === 'internal' && <InternalTransferModal onClose={() => setActiveModal(null)} />}
+        {activeModal === 'cross' && <CrossBrokerTransferModal onClose={() => setActiveModal(null)} />}
+        {activeModal === 'withdraw' && <WithdrawModal onClose={() => setActiveModal(null)} />}
+        {activeModal === 'exchange' && <ExchangeModal onClose={() => setActiveModal(null)} />}
       </div>
     </AppLayout>
   );
