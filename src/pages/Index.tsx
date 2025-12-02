@@ -13,7 +13,8 @@ import {
   HelpCircle,
   Wallet,
   Send,
-  ArrowDownUp
+  ArrowDownUp,
+  LineChart
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import { Button } from "@/components/ui/button";
@@ -240,6 +241,43 @@ const Index = () => {
               <Button variant="outline" onClick={() => window.open('https://www.hfm.com/za/?refid=10377190', '_blank')} className="flex items-center gap-2">
                 <ExternalLink className="w-4 h-4" />
                 HFM
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://direct-fxpro.com/en/partner/NUN98hUc', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                FXPro
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Market Charts Quick Access */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <LineChart className="w-5 h-5" />
+              Market Charts
+            </CardTitle>
+            <CardDescription>
+              View live market data for 170+ instruments
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => navigate('/charts?symbol=EUR/USD')} variant="outline" size="sm">
+                EUR/USD
+              </Button>
+              <Button onClick={() => navigate('/charts?symbol=XAU/USD')} variant="outline" size="sm">
+                Gold
+              </Button>
+              <Button onClick={() => navigate('/charts?symbol=BTC/USD')} variant="outline" size="sm">
+                Bitcoin
+              </Button>
+              <Button onClick={() => navigate('/charts?symbol=US30')} variant="outline" size="sm">
+                US30
+              </Button>
+              <Button onClick={() => navigate('/charts')} className="bg-gradient-primary">
+                <LineChart className="w-4 h-4 mr-2" />
+                Open Charts
               </Button>
             </div>
           </CardContent>

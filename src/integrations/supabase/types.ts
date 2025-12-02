@@ -102,6 +102,83 @@ export type Database = {
         }
         Relationships: []
       }
+      bankii_wallets: {
+        Row: {
+          balance: number | null
+          bankii_user_id: string | null
+          created_at: string | null
+          currency: string | null
+          deposit_address: string | null
+          id: string
+          last_synced_at: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          balance?: number | null
+          bankii_user_id?: string | null
+          created_at?: string | null
+          currency?: string | null
+          deposit_address?: string | null
+          id?: string
+          last_synced_at?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          balance?: number | null
+          bankii_user_id?: string | null
+          created_at?: string | null
+          currency?: string | null
+          deposit_address?: string | null
+          id?: string
+          last_synced_at?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      broker_deposit_addresses: {
+        Row: {
+          address: string
+          broker_name: string | null
+          cached_at: string | null
+          currency: string | null
+          expires_at: string | null
+          id: string
+          trading_account_id: string | null
+          user_id: string
+        }
+        Insert: {
+          address: string
+          broker_name?: string | null
+          cached_at?: string | null
+          currency?: string | null
+          expires_at?: string | null
+          id?: string
+          trading_account_id?: string | null
+          user_id: string
+        }
+        Update: {
+          address?: string
+          broker_name?: string | null
+          cached_at?: string | null
+          currency?: string | null
+          expires_at?: string | null
+          id?: string
+          trading_account_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broker_deposit_addresses_trading_account_id_fkey"
+            columns: ["trading_account_id"]
+            isOneToOne: false
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       copy_trading_relationships: {
         Row: {
           created_at: string
@@ -252,6 +329,87 @@ export type Database = {
           id?: string
           updated_at?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      fund_transfers: {
+        Row: {
+          amount: number
+          completed_at: string | null
+          created_at: string | null
+          currency: string | null
+          current_step: number | null
+          deposit_address: string | null
+          dest_id: string | null
+          dest_name: string | null
+          dest_type: string
+          error_message: string | null
+          estimated_completion_at: string | null
+          fee: number | null
+          id: string
+          net_amount: number | null
+          source_id: string | null
+          source_name: string | null
+          source_type: string
+          status: string | null
+          step_details: Json | null
+          total_steps: number | null
+          transaction_hash: string | null
+          transfer_type: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          completed_at?: string | null
+          created_at?: string | null
+          currency?: string | null
+          current_step?: number | null
+          deposit_address?: string | null
+          dest_id?: string | null
+          dest_name?: string | null
+          dest_type: string
+          error_message?: string | null
+          estimated_completion_at?: string | null
+          fee?: number | null
+          id?: string
+          net_amount?: number | null
+          source_id?: string | null
+          source_name?: string | null
+          source_type: string
+          status?: string | null
+          step_details?: Json | null
+          total_steps?: number | null
+          transaction_hash?: string | null
+          transfer_type: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          completed_at?: string | null
+          created_at?: string | null
+          currency?: string | null
+          current_step?: number | null
+          deposit_address?: string | null
+          dest_id?: string | null
+          dest_name?: string | null
+          dest_type?: string
+          error_message?: string | null
+          estimated_completion_at?: string | null
+          fee?: number | null
+          id?: string
+          net_amount?: number | null
+          source_id?: string | null
+          source_name?: string | null
+          source_type?: string
+          status?: string | null
+          step_details?: Json | null
+          total_steps?: number | null
+          transaction_hash?: string | null
+          transfer_type?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
