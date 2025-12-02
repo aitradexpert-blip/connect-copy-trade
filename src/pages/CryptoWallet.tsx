@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, Send, ArrowDownUp, TrendingUp, Bitcoin, Building2 } from "lucide-react";
+import { Wallet, Send, ArrowDownUp, TrendingUp, Bitcoin, Building2, Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +12,8 @@ import { InternalTransferModal } from "@/components/crypto-wallet/InternalTransf
 import { CrossBrokerTransferModal } from "@/components/crypto-wallet/CrossBrokerTransferModal";
 import { WithdrawModal } from "@/components/crypto-wallet/WithdrawModal";
 import { ExchangeModal } from "@/components/crypto-wallet/ExchangeModal";
+import { DepositToBrokerModal } from "@/components/crypto-wallet/DepositToBrokerModal";
+import { TransferHistory } from "@/components/crypto-wallet/TransferHistory";
 
 interface CryptoWallet {
   currency: string;

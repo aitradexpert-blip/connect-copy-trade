@@ -102,16 +102,17 @@ export function UserManagementTab() {
 
   const openApprovalModal = (user: User) => {
     setSelectedUser(user);
+    // Pre-fill existing subscription if modifying
+    setSelectedPlan(user.subscription?.plan_name || "basic");
     setMetaapiId("");
-    setSelectedPlan("basic");
     setShowApprovalModal(true);
   };
 
   const approveUser = async () => {
-    if (!selectedUser || !metaapiId) {
+    if (!selectedUser) {
       toast({
         title: 'Missing information',
-        description: 'Please provide MetaAPI Account ID',
+        description: 'No user selected',
         variant: 'destructive'
       });
       return;
@@ -295,14 +296,11 @@ export function UserManagementTab() {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
                     onClick={() => openApprovalModal(user)}
-                    disabled={!user.trading_accounts?.some(
-                      acc => acc.connection_status === 'pending_approval'
-                    )}
+                    className="bg-profit text-white hover:bg-profit/80"
                   >
                     <CheckCircle className="w-4 h-4 mr-1" />
-                    Approve
+                    {user.subscription?.status === 'active' ? 'Modify' : 'Approve'}
                   </Button>
                   <Button
                     size="sm"
@@ -378,9 +376,9 @@ export function UserManagementTab() {
               <Button
                 onClick={approveUser}
                 className="flex-1 bg-gradient-primary"
-                disabled={processing || !metaapiId}
+                disabled={processing}
               >
-                {processing ? 'Processing...' : 'Approve & Activate'}
+                {processing ? 'Processing...' : (selectedUser?.subscription?.status === 'active' ? 'Update Subscription' : 'Approve & Activate')}
               </Button>
             </div>
           </div>
