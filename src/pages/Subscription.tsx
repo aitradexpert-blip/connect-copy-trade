@@ -1,179 +1,213 @@
 import { useState } from "react";
-import { Check, Upload, ExternalLink, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Check, Loader2, CreditCard, Upload } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import AppLayout from "@/components/AppLayout";
 
-interface PlanFeature {
-  text: string;
-  included: boolean;
-}
+const USD_TO_ZAR = 18;
 
 interface Plan {
   name: string;
-  price: number;
-  description: string;
-  features: PlanFeature[];
+  priceUsd: number;
+  priceZar: number;
+  tier: string;
+  features: string[];
   popular?: boolean;
-  yocoLink: string;
 }
-
-const USD_TO_ZAR = 18;
 
 const plans: Plan[] = [
   {
     name: "Basic",
-    price: 9.90,
-    description: "Perfect for getting started with copy trading",
-    yocoLink: `https://pay.yoco.com/r/78avpk?amount=${Math.round(9.90 * USD_TO_ZAR * 100)}`,
+    priceUsd: 9.90,
+    priceZar: 9.90 * USD_TO_ZAR,
+    tier: "basic",
     features: [
-      { text: "10 Auto-Trades per month", included: true },
-      { text: "Add up to 2 Trading Accounts", included: true },
-      { text: "Up to 1 Copy Account", included: true },
-      { text: "Premium Trading Signals", included: true },
-      { text: "Email support", included: true },
-      { text: "Advanced AI bots", included: false },
-      { text: "Priority Ideas", included: false },
-      { text: "Custom risk management", included: false },
-    ],
+      "10 Auto-trades per month",
+      "2 Trading accounts",
+      "1 Copy trading connection",
+      "Email support (48h response)",
+      "Basic analytics"
+    ]
   },
   {
     name: "Professional",
-    price: 29.90,
-    description: "For serious traders who need more features",
-    yocoLink: `https://pay.yoco.com/r/731Eg5?amount=${Math.round(29.90 * USD_TO_ZAR * 100)}`,
-    features: [
-      { text: "Up to 30 Auto-Trades", included: true },
-      { text: "Add up to 5 Trading Accounts", included: true },
-      { text: "Up to 3 Copy Accounts", included: true },
-      { text: "Premium Trading Ideas", included: true },
-      { text: "Priority email support", included: true },
-      { text: "Advanced AI bots", included: true },
-      { text: "Priority Ideas", included: true },
-      { text: "Custom risk management", included: false },
-    ],
+    priceUsd: 29.90,
+    priceZar: 29.90 * USD_TO_ZAR,
+    tier: "professional",
     popular: true,
+    features: [
+      "30 Auto-trades per month",
+      "5 Trading accounts",
+      "3 Copy trading connections",
+      "Priority email + Live chat",
+      "Advanced analytics",
+      "Custom risk settings",
+      "AI Bot access"
+    ]
   },
   {
     name: "Enterprise",
-    price: 39.99,
-    description: "Complete trading solution for professionals",
-    yocoLink: `https://pay.yoco.com/r/2YaDjW?amount=${Math.round(39.99 * USD_TO_ZAR * 100)}`,
+    priceUsd: 39.99,
+    priceZar: 39.99 * USD_TO_ZAR,
+    tier: "enterprise",
     features: [
-      { text: "Unlimited Auto-Trades", included: true },
-      { text: "Add up to 10 Trading Accounts", included: true },
-      { text: "Up to 5 Copy Accounts", included: true },
-      { text: "VIP market signals", included: true },
-      { text: "24/7 phone & email support", included: true },
-      { text: "Advanced AI bots", included: true },
-      { text: "Priority signals", included: true },
-      { text: "Custom risk management", included: true },
-    ],
-  },
+      "Unlimited Auto-trades",
+      "10 Trading accounts",
+      "5 Copy trading connections",
+      "24/7 Phone + VIP support",
+      "Full analytics suite",
+      "Custom risk settings",
+      "All AI Bots",
+      "Dedicated account manager"
+    ]
+  }
 ];
 
-const Subscription = () => {
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [showProofDialog, setShowProofDialog] = useState(false);
-  const { toast } = useToast();
+export default function Subscription() {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [showProofDialog, setShowProofDialog] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  const handleYocoPayment = (plan: Plan) => {
-    setSelectedPlan(plan);
-    // Open Yoco payment link in new tab
-    window.open(plan.yocoLink, '_blank');
-    // Show proof of payment dialog
-    setTimeout(() => setShowProofDialog(true), 1000);
+  const handleYocoPayment = async (plan: Plan) => {
+    if (!user) {
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to subscribe",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(plan.tier);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('create-yoco-checkout', {
+        body: {
+          tier: plan.tier,
+          userId: user.id,
+          userEmail: user.email,
+          successUrl: `${window.location.origin}/subscription?success=true`,
+          cancelUrl: `${window.location.origin}/subscription?cancelled=true`,
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        throw new Error('No redirect URL received');
+      }
+    } catch (error: any) {
+      console.error('[Subscription] Yoco checkout error:', error);
+      toast({
+        title: "Payment Error",
+        description: error.message || "Failed to create checkout session. Please try again.",
+        variant: "destructive"
+      });
+      
+      // Fallback: Open proof upload dialog
+      setSelectedPlan(plan);
+      setShowProofDialog(true);
+    } finally {
+      setLoading(null);
+    }
   };
 
   const handleProofUpload = async () => {
-    if (!paymentProofFile || !selectedPlan || !user) return;
-    
-    setIsUploading(true);
-    
+    if (!proofFile || !selectedPlan || !user) return;
+
+    setUploading(true);
     try {
-      // Upload file to storage
-      const fileName = `${user.id}/${Date.now()}-${paymentProofFile.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const fileExt = proofFile.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
         .from('payment-proofs')
-        .upload(fileName, paymentProofFile);
+        .upload(fileName, proofFile);
 
       if (uploadError) throw uploadError;
 
-      // Create payment proof record
+      const { data: urlData } = supabase.storage
+        .from('payment-proofs')
+        .getPublicUrl(fileName);
+
       const { error: dbError } = await supabase
         .from('payment_proofs')
         .insert({
           user_id: user.id,
-          email: user.email!,
-          plan: selectedPlan.name,
-          amount: selectedPlan.price,
-          image_url: uploadData.path,
+          email: user.email || '',
+          plan: selectedPlan.tier,
+          amount: selectedPlan.priceZar,
+          image_url: urlData.publicUrl,
           status: 'pending'
         });
 
       if (dbError) throw dbError;
 
       toast({
-        title: "Proof of payment submitted!",
-        description: "Your payment will be reviewed by our team within 24 hours.",
+        title: "Proof uploaded",
+        description: "Your payment proof has been submitted for review. We'll activate your subscription within 24 hours."
       });
 
       setShowProofDialog(false);
-      setPaymentProofFile(null);
+      setProofFile(null);
       setSelectedPlan(null);
     } catch (error: any) {
       toast({
         title: "Upload failed",
         description: error.message,
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
-      setIsUploading(false);
+      setUploading(false);
     }
   };
 
-  const formatCardNumber = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    const matches = v.match(/\d{4,16}/g);
-    const match = matches && matches[0] || '';
-    const parts = [];
-    for (let i = 0, len = match.length; i < len; i += 4) {
-      parts.push(match.substring(i, i + 4));
-    }
-    if (parts.length) {
-      return parts.join(' ');
-    } else {
-      return v;
-    }
-  };
-
-  const formatExpiry = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    if (v.length >= 2) {
-      return v.substring(0, 2) + '/' + v.substring(2, 4);
-    }
-    return v;
-  };
+  const urlParams = new URLSearchParams(window.location.search);
+  const paymentSuccess = urlParams.get('success') === 'true';
+  const paymentCancelled = urlParams.get('cancelled') === 'true';
+  const paymentFailed = urlParams.get('failed') === 'true';
 
   return (
     <AppLayout>
       <div className="space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-foreground mb-4">Choose Your Plan</h1>
-          <p className="text-muted-foreground">
-            Unlock premium trading features with our subscription plans
+          <h1 className="text-3xl font-bold text-foreground">Choose Your Plan</h1>
+          <p className="text-muted-foreground mt-2">
+            Select a subscription that fits your trading needs
           </p>
         </div>
+
+        {paymentSuccess && (
+          <div className="bg-profit/10 border border-profit rounded-lg p-4 text-center">
+            <h3 className="text-profit font-semibold">Payment Successful!</h3>
+            <p className="text-sm text-muted-foreground">Your subscription is being activated.</p>
+          </div>
+        )}
+        {paymentCancelled && (
+          <div className="bg-amber-500/10 border border-amber-500 rounded-lg p-4 text-center">
+            <h3 className="text-amber-500 font-semibold">Payment Cancelled</h3>
+            <p className="text-sm text-muted-foreground">You can try again whenever you're ready.</p>
+          </div>
+        )}
+        {paymentFailed && (
+          <div className="bg-loss/10 border border-loss rounded-lg p-4 text-center">
+            <h3 className="text-loss font-semibold">Payment Failed</h3>
+            <p className="text-sm text-muted-foreground">Please try again or contact support.</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {plans.map((plan) => (
@@ -184,112 +218,113 @@ const Subscription = () => {
               }`}
             >
               {plan.popular && (
-                <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-primary text-primary-foreground">
+                <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-primary">
                   Most Popular
                 </Badge>
               )}
-              
               <CardHeader className="text-center">
-                <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
-                <div className="text-3xl font-bold text-primary">
-                  ${plan.price}<span className="text-sm text-muted-foreground">/mo</span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  R{Math.round(plan.price * USD_TO_ZAR)} ZAR
-                </div>
-                <CardDescription>{plan.description}</CardDescription>
+                <CardTitle className="text-xl">{plan.name}</CardTitle>
+                <CardDescription>
+                  <span className="text-3xl font-bold text-foreground">
+                    R{plan.priceZar.toFixed(2)}
+                  </span>
+                  <span className="text-muted-foreground">/month</span>
+                  <br />
+                  <span className="text-sm text-muted-foreground">
+                    (${plan.priceUsd.toFixed(2)} USD)
+                  </span>
+                </CardDescription>
               </CardHeader>
-              
               <CardContent className="space-y-4">
-                <ul className="space-y-3">
-                  {plan.features.map((feature, index) => (
-                    <li key={index} className="flex items-center gap-2">
-                      <Check 
-                        className={`w-4 h-4 ${
-                          feature.included 
-                            ? 'text-profit' 
-                            : 'text-muted-foreground opacity-50'
-                        }`} 
-                      />
-                      <span 
-                        className={`text-sm ${
-                          feature.included 
-                            ? 'text-foreground' 
-                            : 'text-muted-foreground line-through'
-                        }`}
-                      >
-                        {feature.text}
-                      </span>
+                <ul className="space-y-2">
+                  {plan.features.map((feature, idx) => (
+                    <li key={idx} className="flex items-center gap-2 text-sm">
+                      <Check className="w-4 h-4 text-profit flex-shrink-0" />
+                      <span>{feature}</span>
                     </li>
                   ))}
                 </ul>
                 
                 <Button 
-                  className={`w-full ${
-                    plan.popular 
-                      ? 'bg-gradient-primary' 
-                      : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                  }`}
+                  className="w-full" 
+                  variant={plan.popular ? "default" : "outline"}
                   onClick={() => handleYocoPayment(plan)}
+                  disabled={loading !== null}
                 >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Subscribe to {plan.name}
+                  {loading === plan.tier ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      Subscribe
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* Proof of Payment Dialog */}
-        <Dialog open={showProofDialog} onOpenChange={setShowProofDialog}>
-          <DialogContent className="bg-gradient-card border-border">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Camera className="w-5 h-5" />
-                Submit Proof of Payment
-              </DialogTitle>
-              <DialogDescription>
-                Upload a screenshot of your payment confirmation for {selectedPlan?.name} plan (${selectedPlan?.price}/month)
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="payment-proof">Payment Proof Screenshot</Label>
-                <Input
-                  id="payment-proof"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setPaymentProofFile(e.target.files?.[0] || null)}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Please upload a clear screenshot of your Yoco payment confirmation
-                </p>
-              </div>
-              
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline"
-                  onClick={() => setShowProofDialog(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleProofUpload}
-                  className="flex-1 bg-gradient-primary"
-                  disabled={isUploading || !paymentProofFile}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  {isUploading ? "Uploading..." : "Submit Proof"}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <div className="text-center text-sm text-muted-foreground">
+          <p>All payments are processed securely via Yoco.</p>
+          <p>Subscriptions are billed monthly. Cancel anytime.</p>
+        </div>
       </div>
+
+      <Dialog open={showProofDialog} onOpenChange={setShowProofDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Payment Proof</DialogTitle>
+            <DialogDescription>
+              If automatic payment failed, you can upload your payment proof for manual verification.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Selected Plan</Label>
+              <p className="text-sm font-medium">{selectedPlan?.name} - R{selectedPlan?.priceZar.toFixed(2)}/month</p>
+            </div>
+            <div>
+              <Label htmlFor="proof">Payment Screenshot</Label>
+              <Input 
+                id="proof"
+                type="file" 
+                accept="image/*"
+                onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowProofDialog(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleProofUpload}
+                disabled={!proofFile || uploading}
+                className="flex-1"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Proof
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
-};
-
-export default Subscription;
+}
