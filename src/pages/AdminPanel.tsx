@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users } from "lucide-react";
+import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { UserManagementTab } from "@/components/admin/UserManagementTab";
+import { TransferMonitoringTab } from "@/components/admin/TransferMonitoringTab";
 
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -19,16 +20,59 @@ export default function AdminPanel() {
   const [paymentProofs, setPaymentProofs] = useState<any[]>([]);
   const [kycDocuments, setKycDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState({
+    pendingUsers: 0,
+    pendingPayments: 0,
+    pendingTransfers: 0,
+    activeTrades: 0
+  });
 
   useEffect(() => {
     if (!isAdmin || adminLoading) return;
     loadData();
+    loadCounts();
   }, [isAdmin, adminLoading]);
+
+  const loadCounts = async () => {
+    try {
+      // Count pending payment proofs
+      const { count: paymentCount } = await supabase
+        .from('payment_proofs')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      // Count pending transfers
+      const { count: transferCount } = await supabase
+        .from('fund_transfers')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['pending', 'processing']);
+
+      // Count pending KYC (approximate pending users)
+      const { count: kycCount } = await supabase
+        .from('kyc_documents')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      // Count active trading ideas
+      const { count: tradesCount } = await supabase
+        .from('trading_signals')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active');
+
+      setCounts({
+        pendingUsers: kycCount || 0,
+        pendingPayments: paymentCount || 0,
+        pendingTransfers: transferCount || 0,
+        activeTrades: tradesCount || 0
+      });
+    } catch (error) {
+      console.error('Error loading counts:', error);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      // Load payment proofs
       const { data: proofs, error: proofsError } = await supabase
         .from('payment_proofs')
         .select('*')
@@ -37,7 +81,6 @@ export default function AdminPanel() {
       if (proofsError) throw proofsError;
       setPaymentProofs(proofs || []);
 
-      // Load KYC documents
       const { data: kyc, error: kycError } = await supabase
         .from('kyc_documents')
         .select('*')
@@ -75,6 +118,7 @@ export default function AdminPanel() {
       });
 
       loadData();
+      loadCounts();
     } catch (error: any) {
       toast({
         title: 'Error approving payment',
@@ -103,6 +147,7 @@ export default function AdminPanel() {
       });
 
       loadData();
+      loadCounts();
     } catch (error: any) {
       toast({
         title: 'Error approving KYC',
@@ -128,6 +173,7 @@ export default function AdminPanel() {
       });
 
       loadData();
+      loadCounts();
     } catch (error: any) {
       toast({
         title: 'Error rejecting document',
@@ -163,27 +209,72 @@ export default function AdminPanel() {
 
   return (
     <AppLayout>
-      <div className="space-y-8">
+      <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
           <p className="text-muted-foreground mt-2">
-            Manage payment approvals and KYC document reviews
+            Manage users, payments, and transfers
           </p>
         </div>
 
+        {/* Quick Action Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:bg-accent/50 transition-colors">
+            <CardContent className="p-4 text-center">
+              <Users className="w-8 h-8 mx-auto text-primary mb-2" />
+              <div className="text-2xl font-bold">{counts.pendingUsers}</div>
+              <div className="text-sm text-muted-foreground">Pending KYC</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:bg-accent/50 transition-colors">
+            <CardContent className="p-4 text-center">
+              <CreditCard className="w-8 h-8 mx-auto text-profit mb-2" />
+              <div className="text-2xl font-bold">{counts.pendingPayments}</div>
+              <div className="text-sm text-muted-foreground">Payment Proofs</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:bg-accent/50 transition-colors">
+            <CardContent className="p-4 text-center">
+              <ArrowLeftRight className="w-8 h-8 mx-auto text-blue-500 mb-2" />
+              <div className="text-2xl font-bold">{counts.pendingTransfers}</div>
+              <div className="text-sm text-muted-foreground">Pending Transfers</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:bg-accent/50 transition-colors">
+            <CardContent className="p-4 text-center">
+              <TrendingUp className="w-8 h-8 mx-auto text-amber-500 mb-2" />
+              <div className="text-2xl font-bold">{counts.activeTrades}</div>
+              <div className="text-sm text-muted-foreground">Active Ideas</div>
+            </CardContent>
+          </Card>
+        </div>
+
         <Tabs defaultValue="users" className="space-y-6">
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="w-4 h-4" />
-              User Management
+              Users
             </TabsTrigger>
             <TabsTrigger value="payments" className="flex items-center gap-2">
               <CreditCard className="w-4 h-4" />
-              Payment Proofs
+              Payments
+              {counts.pendingPayments > 0 && (
+                <Badge variant="secondary" className="ml-1">{counts.pendingPayments}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="kyc" className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
-              KYC Documents
+              KYC
+              {counts.pendingUsers > 0 && (
+                <Badge variant="secondary" className="ml-1">{counts.pendingUsers}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="transfers" className="flex items-center gap-2">
+              <ArrowLeftRight className="w-4 h-4" />
+              Transfers
+              {counts.pendingTransfers > 0 && (
+                <Badge variant="secondary" className="ml-1">{counts.pendingTransfers}</Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -333,6 +424,10 @@ export default function AdminPanel() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="transfers">
+            <TransferMonitoringTab />
           </TabsContent>
         </Tabs>
       </div>

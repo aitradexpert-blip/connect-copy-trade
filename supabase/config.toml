@@ -20,3 +20,12 @@ verify_jwt = false
 
 [functions.voice-ai-assistant]
 verify_jwt = false
+
+[functions.bankii-api]
+verify_jwt = false
+
+[functions.yoco-webhook]
+verify_jwt = false
+
+[functions.create-yoco-checkout]
+verify_jwt = false
