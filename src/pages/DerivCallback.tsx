@@ -104,7 +104,17 @@ export default function DerivCallback() {
         .select();
 
       if (insertError) {
-        console.error("[DerivCallback] Insert error:", insertError);
+        console.error("[DerivCallback] Insert error details:", {
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        });
+        
+        // Check for specific RLS error
+        if (insertError.code === '42501') {
+          throw new Error("Permission denied. Please ensure you are logged in and try again.");
+        }
         throw insertError;
       }
       

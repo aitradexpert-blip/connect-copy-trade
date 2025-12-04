@@ -23,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MetricCard } from "@/components/MetricCard";
 import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
+import { BrokerActionModal } from "@/components/BrokerActionModal";
 
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,6 +41,7 @@ const Index = () => {
   });
   const [loading, setLoading] = useState(true);
   const [hasDerivAccounts, setHasDerivAccounts] = useState(false);
+  const [brokerAction, setBrokerAction] = useState<'deposit' | 'withdraw' | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -332,19 +334,19 @@ const Index = () => {
                 Add Account
               </Button>
               <Button 
-                onClick={() => navigate('/accounts')} 
+                onClick={() => setBrokerAction('deposit')} 
                 variant="secondary" 
                 className="flex items-center gap-2"
-                title="Manage deposits in Trading Accounts"
+                title="Deposit to trading account"
               >
                 <ArrowDown className="w-4 h-4" />
                 Deposit
               </Button>
               <Button 
-                onClick={() => navigate('/accounts')} 
+                onClick={() => setBrokerAction('withdraw')} 
                 variant="secondary" 
                 className="flex items-center gap-2"
-                title="Manage withdrawals in Trading Accounts"
+                title="Withdraw from trading account"
               >
                 <ArrowUp className="w-4 h-4" />
                 Withdraw
@@ -360,6 +362,13 @@ const Index = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Broker Action Modal */}
+        <BrokerActionModal
+          open={!!brokerAction}
+          onOpenChange={(open) => !open && setBrokerAction(null)}
+          action={brokerAction || 'deposit'}
+        />
 
         {/* Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
