@@ -14,7 +14,9 @@ import {
   Wallet,
   Send,
   ArrowDownUp,
-  LineChart
+  LineChart,
+  ArrowDown,
+  ArrowUp
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import { Button } from "@/components/ui/button";
@@ -295,14 +297,22 @@ const Index = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-wrap gap-4">
               <Button onClick={() => navigate('/accounts?connect=1')} className="flex items-center gap-2 bg-gradient-primary">
                 <Plus className="w-4 h-4" />
-                Add Brokerage Account
+                Add Account
               </Button>
-              <Button onClick={() => navigate('/subscription')} variant="secondary" className="flex items-center gap-2">
+              <Button onClick={() => navigate('/wallet?action=deposit')} variant="secondary" className="flex items-center gap-2">
+                <ArrowDown className="w-4 h-4" />
+                Deposit
+              </Button>
+              <Button onClick={() => navigate('/wallet?action=withdraw')} variant="secondary" className="flex items-center gap-2">
+                <ArrowUp className="w-4 h-4" />
+                Withdraw
+              </Button>
+              <Button onClick={() => navigate('/subscription')} variant="outline" className="flex items-center gap-2">
                 <Play className="w-4 h-4" />
-                Subscribe Now
+                Subscribe
               </Button>
               <Button onClick={() => navigate('/ideas')} variant="outline" className="flex items-center gap-2">
                 <Eye className="w-4 h-4" />

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Plus, Edit, Trash2, Calendar, Send } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Edit, Trash2, Calendar, Send, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ const forexPairs = [
 ];
 
 const Admin = () => {
+  const navigate = useNavigate();
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({
@@ -173,9 +175,13 @@ const Admin = () => {
       <div className="space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
-            <p className="text-muted-foreground">Manage trading ideas and platform</p>
+            <h1 className="text-3xl font-bold text-foreground">Publish Trading Ideas</h1>
+            <p className="text-muted-foreground">Create and manage trading ideas for users</p>
           </div>
+          <Button onClick={() => navigate('/admin-panel')} variant="outline" className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            Admin Panel
+          </Button>
         </div>
 
         {/* Create Signal Form */}
