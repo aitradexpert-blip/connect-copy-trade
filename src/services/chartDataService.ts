@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getHistoricalCandles } from './derivMarketData';
+import { DERIV_SYMBOL_MAP } from './derivWebSocket';
 
 interface CandleData {
   time: number;
@@ -31,32 +33,38 @@ class ChartDataService {
       return localCached;
     }
 
-    // 3. Fetch fresh data
+    // 3. Try Deriv API first (free real-time data)
     try {
-      console.log(`[Chart] Fetching fresh data for ${symbol}`);
-      const data = await this.fetchFromTradingView(symbol, timeframe);
+      console.log(`[Chart] Fetching from Deriv for ${symbol}`);
+      const data = await this.fetchFromDeriv(symbol, timeframe);
       
-      // Cache in both memory and localStorage
-      this.memoryCache.set(cacheKey, { data, timestamp: Date.now() });
-      this.saveToLocalStorage(cacheKey, data);
-      
-      return data;
+      if (data.length > 0) {
+        this.memoryCache.set(cacheKey, { data, timestamp: Date.now() });
+        this.saveToLocalStorage(cacheKey, data);
+        return data;
+      }
     } catch (error) {
-      console.warn(`[Chart] TradingView failed for ${symbol}, trying MetaAPI fallback`, error);
-      
-      try {
-        const fallbackData = await this.fetchFromMetaAPI(symbol, timeframe);
+      console.warn(`[Chart] Deriv failed for ${symbol}:`, error);
+    }
+
+    // 4. Try MetaAPI fallback
+    try {
+      console.log(`[Chart] Trying MetaAPI fallback for ${symbol}`);
+      const fallbackData = await this.fetchFromMetaAPI(symbol, timeframe);
+      if (fallbackData.length > 0) {
         this.memoryCache.set(cacheKey, { data: fallbackData, timestamp: Date.now() });
         this.saveToLocalStorage(cacheKey, fallbackData);
         return fallbackData;
-      } catch (metaError) {
-        console.warn(`[Chart] MetaAPI also failed, using generated data`);
-        const generatedData = this.generateMockData(symbol);
-        // Don't cache generated data in localStorage - it's not real
-        this.memoryCache.set(cacheKey, { data: generatedData, timestamp: Date.now() });
-        return generatedData;
       }
+    } catch (metaError) {
+      console.warn(`[Chart] MetaAPI also failed:`, metaError);
     }
+
+    // 5. Generate mock data as last resort
+    console.log(`[Chart] Using generated data for ${symbol}`);
+    const generatedData = this.generateMockData(symbol);
+    this.memoryCache.set(cacheKey, { data: generatedData, timestamp: Date.now() });
+    return generatedData;
   }
 
   async getCurrentPrice(symbol: string): Promise<number> {
@@ -70,6 +78,64 @@ class ChartDataService {
       console.error('[Chart] Error getting current price:', error);
       return 0;
     }
+  }
+
+  private mapSymbolToDeriv(symbol: string): string | null {
+    const normalized = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    
+    // Check direct mapping first
+    if (DERIV_SYMBOL_MAP[normalized]) {
+      return DERIV_SYMBOL_MAP[normalized];
+    }
+    
+    // Try common variations
+    const variations = [
+      symbol.toUpperCase(),
+      symbol.replace('/', ''),
+      symbol.replace(/\s+/g, ''),
+    ];
+    
+    for (const variant of variations) {
+      if (DERIV_SYMBOL_MAP[variant]) {
+        return DERIV_SYMBOL_MAP[variant];
+      }
+    }
+    
+    return null;
+  }
+
+  private async fetchFromDeriv(symbol: string, timeframe: string): Promise<CandleData[]> {
+    const derivSymbol = this.mapSymbolToDeriv(symbol);
+    
+    if (!derivSymbol) {
+      console.log(`[Chart] No Deriv mapping for ${symbol}`);
+      throw new Error(`No Deriv symbol mapping for ${symbol}`);
+    }
+
+    const granularityMap: Record<string, number> = {
+      '1m': 60,
+      '5m': 300,
+      '15m': 900,
+      '30m': 1800,
+      '1H': 3600,
+      '4H': 14400,
+      '1D': 86400,
+      '1W': 604800,
+    };
+
+    const granularity = granularityMap[timeframe] || 3600;
+    const endTime = Math.floor(Date.now() / 1000);
+    const startTime = endTime - (500 * granularity); // 500 candles back
+
+    const candles = await getHistoricalCandles(derivSymbol, startTime, endTime, granularity);
+    
+    return candles.map(c => ({
+      time: c.epoch,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
   }
 
   private getFromLocalStorage(cacheKey: string): CandleData[] | null {
@@ -109,12 +175,6 @@ class ChartDataService {
     } catch (e) {
       console.warn('[Chart] Failed to clear old cache entries');
     }
-  }
-
-  private async fetchFromTradingView(symbol: string, timeframe: string): Promise<CandleData[]> {
-    // TradingView widget provides free delayed data
-    // For now, generate realistic mock data - in production integrate TradingView API
-    return this.generateMockData(symbol);
   }
 
   private async fetchFromMetaAPI(symbol: string, timeframe: string): Promise<CandleData[]> {

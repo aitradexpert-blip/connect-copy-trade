@@ -23,8 +23,11 @@ export default function DerivCallback() {
   const [accountDetails, setAccountDetails] = useState<Record<string, any>>({});
 
   useEffect(() => {
+    console.log("[DerivCallback] Location search:", location.search);
+    
     // Parse tokens from URL
     const parsed = parseDerivRedirectTokens(location.search);
+    console.log("[DerivCallback] Parsed accounts:", parsed);
     
     if (parsed.length === 0) {
       setError("No accounts found in redirect. Please try connecting again.");
@@ -41,48 +44,71 @@ export default function DerivCallback() {
     // Fetch details for each account
     parsed.forEach(async (acc) => {
       try {
+        console.log(`[DerivCallback] Authorizing account ${acc.account}...`);
         const authResponse = await authorizeDerivAccount(acc.token);
+        console.log(`[DerivCallback] Auth response for ${acc.account}:`, authResponse);
         setAccountDetails(prev => ({
           ...prev,
           [acc.account]: authResponse.authorize
         }));
       } catch (err) {
-        console.error(`Failed to get details for ${acc.account}:`, err);
+        console.error(`[DerivCallback] Failed to get details for ${acc.account}:`, err);
       }
     });
   }, [location.search]);
 
   const handleConnectAccount = async () => {
-    if (!selectedAccount || !user) return;
+    if (!selectedAccount) {
+      toast({ title: "Please select an account", variant: "destructive" });
+      return;
+    }
+    
+    if (!user) {
+      toast({ title: "Please log in first", variant: "destructive" });
+      navigate('/auth');
+      return;
+    }
     
     setIsConnecting(true);
+    console.log("[DerivCallback] Connecting account:", selectedAccount);
     
     try {
       // Authorize to get full account info
       const authResponse = await authorizeDerivAccount(selectedAccount.token);
       const authData = authResponse.authorize;
+      console.log("[DerivCallback] Full auth data:", authData);
+      
+      // Prepare insert data
+      const insertData = {
+        user_id: user.id,
+        provider: 'deriv',
+        provider_account_id: selectedAccount.account,
+        name: `Deriv ${getAccountTypeLabel(selectedAccount.account)} (${selectedAccount.account})`,
+        login: selectedAccount.account,
+        server: 'Deriv',
+        platform: 'deriv',
+        deriv_token: selectedAccount.token,
+        deriv_currency: selectedAccount.currency || authData.currency,
+        is_virtual: isVirtualAccount(selectedAccount.account),
+        balance: authData.balance || 0,
+        equity: authData.balance || 0,
+        connection_status: 'connected',
+      };
+      
+      console.log("[DerivCallback] Inserting into trading_accounts:", insertData);
       
       // Insert into trading_accounts with Deriv provider
-      const { error: insertError } = await supabase
+      const { data: insertedData, error: insertError } = await supabase
         .from("trading_accounts")
-        .insert({
-          user_id: user.id,
-          provider: 'deriv',
-          provider_account_id: selectedAccount.account,
-          name: `Deriv ${getAccountTypeLabel(selectedAccount.account)} (${selectedAccount.account})`,
-          login: selectedAccount.account,
-          server: 'Deriv',
-          platform: 'deriv',
-          deriv_token: selectedAccount.token,
-          deriv_currency: selectedAccount.currency || authData.currency,
-          is_virtual: isVirtualAccount(selectedAccount.account),
-          balance: authData.balance,
-          equity: authData.balance,
-          connection_status: 'connected',
-          metaapi_account_id: null, // Not applicable for Deriv
-        });
+        .insert(insertData)
+        .select();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error("[DerivCallback] Insert error:", insertError);
+        throw insertError;
+      }
+      
+      console.log("[DerivCallback] Insert successful:", insertedData);
 
       toast({
         title: "Deriv account connected!",
@@ -91,10 +117,10 @@ export default function DerivCallback() {
 
       navigate('/accounts');
     } catch (err: any) {
-      console.error('Failed to connect Deriv account:', err);
+      console.error('[DerivCallback] Failed to connect Deriv account:', err);
       toast({
         title: "Failed to connect account",
-        description: err.message,
+        description: err.message || "Unknown error occurred",
         variant: "destructive",
       });
     } finally {
