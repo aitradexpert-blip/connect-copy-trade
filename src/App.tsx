@@ -13,6 +13,7 @@ import TradingAccounts from "./pages/TradingAccounts";
 import Subscription from "./pages/Subscription";
 import Admin from "./pages/Admin";
 import AdminPanel from "./pages/AdminPanel";
+import DerivCallback from "./pages/DerivCallback";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
@@ -92,6 +93,7 @@ const App = () => (
             <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="/admin-panel" element={<AdminRoute><AdminPanel /></AdminRoute>} />
+            <Route path="/deriv-callback" element={<ProtectedRoute><DerivCallback /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
