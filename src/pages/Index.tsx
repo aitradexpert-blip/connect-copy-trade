@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Building,
   ExternalLink,
-  HelpCircle,
   Wallet,
   Send,
   ArrowDownUp,
@@ -28,6 +27,7 @@ import AppLayout from "@/components/AppLayout";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { authorizeDerivAccount, getDerivBalance } from "@/services/derivBroker";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -39,6 +39,7 @@ const Index = () => {
     dailyPnL: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [hasDerivAccounts, setHasDerivAccounts] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -49,7 +50,7 @@ const Index = () => {
         // Get all trading accounts for the user
         const { data: accounts, error } = await supabase
           .from("trading_accounts")
-          .select("id,metaapi_account_id,balance,equity")
+          .select("id,metaapi_account_id,balance,equity,provider,deriv_token")
           .eq("user_id", user.id);
 
         if (error) throw error;
@@ -57,48 +58,66 @@ const Index = () => {
         let totalBalance = 0;
         let totalEquity = 0;
         let totalPositions = 0;
+        let hasDeriv = false;
 
-        // Refresh each account's data from MetaAPI
+        // Refresh each account's data
         for (const account of accounts || []) {
           try {
-            const { data: info, error: fnError } = await supabase.functions.invoke(
-              "metaapi-account-info",
-              { body: { accountId: account.metaapi_account_id } }
-            );
-
-            if (!fnError && info) {
-              const balance = Number(info.balance || 0);
-              const equity = Number(info.equity || 0);
+            if (account.provider === 'deriv' && account.deriv_token) {
+              hasDeriv = true;
+              // Refresh Deriv account
+              await authorizeDerivAccount(account.deriv_token);
+              const balanceResponse = await getDerivBalance();
+              const balance = Number(balanceResponse.balance?.balance || 0);
               
-              // Get positions count from MetaAPI positions endpoint
-              const { data: positionsData } = await supabase.functions.invoke(
-                "metaapi-get-positions",
-                { body: { accountId: account.metaapi_account_id } }
-              );
-              const positions = Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
-
               totalBalance += balance;
-              totalEquity += equity;
-              totalPositions += positions;
-
-              // Update the account in the database
+              totalEquity += balance;
+              
+              // Update in database
               await supabase
                 .from("trading_accounts")
-                .update({ balance, equity })
+                .update({ balance, equity: balance })
                 .eq("id", account.id);
+            } else if (account.metaapi_account_id) {
+              // Refresh MetaAPI account
+              const { data: info, error: fnError } = await supabase.functions.invoke(
+                "metaapi-account-info",
+                { body: { accountId: account.metaapi_account_id } }
+              );
+
+              if (!fnError && info) {
+                const balance = Number(info.balance || 0);
+                const equity = Number(info.equity || 0);
+                
+                const { data: positionsData } = await supabase.functions.invoke(
+                  "metaapi-get-positions",
+                  { body: { accountId: account.metaapi_account_id } }
+                );
+                const positions = Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
+
+                totalBalance += balance;
+                totalEquity += equity;
+                totalPositions += positions;
+
+                await supabase
+                  .from("trading_accounts")
+                  .update({ balance, equity })
+                  .eq("id", account.id);
+              } else {
+                totalBalance += Number(account.balance || 0);
+                totalEquity += Number(account.equity || 0);
+              }
             } else {
-              // Use cached values if API fails
               totalBalance += Number(account.balance || 0);
               totalEquity += Number(account.equity || 0);
             }
           } catch (err) {
-            // Use cached values if API fails
             totalBalance += Number(account.balance || 0);
             totalEquity += Number(account.equity || 0);
           }
         }
 
-        // Calculate daily P&L (simplified - difference between equity and balance)
+        setHasDerivAccounts(hasDeriv);
         const dailyPnL = totalEquity - totalBalance;
 
         setMetrics({
@@ -121,10 +140,9 @@ const Index = () => {
     setLoading(true);
     
     try {
-      // Get all trading accounts for the user
       const { data: accounts, error } = await supabase
         .from("trading_accounts")
-        .select("id,metaapi_account_id,balance,equity")
+        .select("id,metaapi_account_id,balance,equity,provider,deriv_token")
         .eq("user_id", user.id);
 
       if (error) throw error;
@@ -133,47 +151,58 @@ const Index = () => {
       let totalEquity = 0;
       let totalPositions = 0;
 
-      // Refresh each account's data from MetaAPI
       for (const account of accounts || []) {
         try {
-          const { data: info, error: fnError } = await supabase.functions.invoke(
-            "metaapi-account-info",
-            { body: { accountId: account.metaapi_account_id } }
-          );
-
-          if (!fnError && info) {
-            const balance = Number(info.balance || 0);
-            const equity = Number(info.equity || 0);
+          if (account.provider === 'deriv' && account.deriv_token) {
+            await authorizeDerivAccount(account.deriv_token);
+            const balanceResponse = await getDerivBalance();
+            const balance = Number(balanceResponse.balance?.balance || 0);
             
-            // Get positions count from MetaAPI positions endpoint
-            const { data: positionsData } = await supabase.functions.invoke(
-              "metaapi-get-positions",
-              { body: { accountId: account.metaapi_account_id } }
-            );
-            const positions = Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
-
             totalBalance += balance;
-            totalEquity += equity;
-            totalPositions += positions;
-
-            // Update the account in the database
+            totalEquity += balance;
+            
             await supabase
               .from("trading_accounts")
-              .update({ balance, equity })
+              .update({ balance, equity: balance })
               .eq("id", account.id);
+          } else if (account.metaapi_account_id) {
+            const { data: info, error: fnError } = await supabase.functions.invoke(
+              "metaapi-account-info",
+              { body: { accountId: account.metaapi_account_id } }
+            );
+
+            if (!fnError && info) {
+              const balance = Number(info.balance || 0);
+              const equity = Number(info.equity || 0);
+              
+              const { data: positionsData } = await supabase.functions.invoke(
+                "metaapi-get-positions",
+                { body: { accountId: account.metaapi_account_id } }
+              );
+              const positions = Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
+
+              totalBalance += balance;
+              totalEquity += equity;
+              totalPositions += positions;
+
+              await supabase
+                .from("trading_accounts")
+                .update({ balance, equity })
+                .eq("id", account.id);
+            } else {
+              totalBalance += Number(account.balance || 0);
+              totalEquity += Number(account.equity || 0);
+            }
           } else {
-            // Use cached values if API fails
             totalBalance += Number(account.balance || 0);
             totalEquity += Number(account.equity || 0);
           }
         } catch (err) {
-          // Use cached values if API fails
           totalBalance += Number(account.balance || 0);
           totalEquity += Number(account.equity || 0);
         }
       }
 
-      // Calculate daily P&L (simplified - difference between equity and balance)
       const dailyPnL = totalEquity - totalBalance;
 
       setMetrics({
@@ -302,11 +331,21 @@ const Index = () => {
                 <Plus className="w-4 h-4" />
                 Add Account
               </Button>
-              <Button onClick={() => navigate('/wallet?action=deposit')} variant="secondary" className="flex items-center gap-2">
+              <Button 
+                onClick={() => navigate('/accounts')} 
+                variant="secondary" 
+                className="flex items-center gap-2"
+                title="Manage deposits in Trading Accounts"
+              >
                 <ArrowDown className="w-4 h-4" />
                 Deposit
               </Button>
-              <Button onClick={() => navigate('/wallet?action=withdraw')} variant="secondary" className="flex items-center gap-2">
+              <Button 
+                onClick={() => navigate('/accounts')} 
+                variant="secondary" 
+                className="flex items-center gap-2"
+                title="Manage withdrawals in Trading Accounts"
+              >
                 <ArrowUp className="w-4 h-4" />
                 Withdraw
               </Button>
