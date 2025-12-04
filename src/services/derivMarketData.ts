@@ -153,10 +153,15 @@ export async function getHistoricalCandles(
   const derivSymbol = getDerivSymbol(symbol) || symbol;
   
   try {
+    // startTime and endTime should be in seconds for Deriv API
+    // If they're in milliseconds (>1e10), convert them
+    const startSeconds = startTime > 1e10 ? Math.floor(startTime / 1000) : startTime;
+    const endSeconds = endTime > 1e10 ? Math.floor(endTime / 1000) : endTime;
+    
     const response = await client.send({
       ticks_history: derivSymbol,
-      start: Math.floor(startTime / 1000),
-      end: Math.floor(endTime / 1000),
+      start: startSeconds,
+      end: endSeconds,
       style: 'candles',
       granularity
     });
