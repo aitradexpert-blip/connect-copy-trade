@@ -718,13 +718,18 @@ export type Database = {
           balance: number | null
           connection_status: string | null
           created_at: string
+          deriv_currency: string | null
+          deriv_token: string | null
           equity: number | null
           id: string
           is_master: boolean | null
+          is_virtual: boolean | null
           login: string
-          metaapi_account_id: string
+          metaapi_account_id: string | null
           name: string
           platform: string
+          provider: string
+          provider_account_id: string | null
           server: string
           updated_at: string
           user_id: string
@@ -733,13 +738,18 @@ export type Database = {
           balance?: number | null
           connection_status?: string | null
           created_at?: string
+          deriv_currency?: string | null
+          deriv_token?: string | null
           equity?: number | null
           id?: string
           is_master?: boolean | null
+          is_virtual?: boolean | null
           login: string
-          metaapi_account_id: string
+          metaapi_account_id?: string | null
           name: string
           platform: string
+          provider?: string
+          provider_account_id?: string | null
           server: string
           updated_at?: string
           user_id: string
@@ -748,13 +758,18 @@ export type Database = {
           balance?: number | null
           connection_status?: string | null
           created_at?: string
+          deriv_currency?: string | null
+          deriv_token?: string | null
           equity?: number | null
           id?: string
           is_master?: boolean | null
+          is_virtual?: boolean | null
           login?: string
-          metaapi_account_id?: string
+          metaapi_account_id?: string | null
           name?: string
           platform?: string
+          provider?: string
+          provider_account_id?: string | null
           server?: string
           updated_at?: string
           user_id?: string

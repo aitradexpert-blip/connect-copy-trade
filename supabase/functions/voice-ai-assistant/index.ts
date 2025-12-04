@@ -6,6 +6,91 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Deriv WebSocket for market data
+const DERIV_WS_URL = 'wss://ws.derivws.com/websockets/v3?app_id=90127';
+
+// Deriv symbol mapping
+const DERIV_SYMBOL_MAP: Record<string, string> = {
+  'EUR/USD': 'frxEURUSD', 'GBP/USD': 'frxGBPUSD', 'USD/JPY': 'frxUSDJPY',
+  'USD/CHF': 'frxUSDCHF', 'AUD/USD': 'frxAUDUSD', 'USD/CAD': 'frxUSDCAD',
+  'NZD/USD': 'frxNZDUSD', 'EUR/GBP': 'frxEURGBP', 'EUR/JPY': 'frxEURJPY',
+  'GBP/JPY': 'frxGBPJPY', 'XAU/USD': 'frxXAUUSD', 'XAG/USD': 'frxXAGUSD',
+  'BTC/USD': 'cryBTCUSD', 'ETH/USD': 'cryETHUSD',
+  'Volatility 75': '1HZ75V', 'Volatility 100': '1HZ100V',
+  'Boom 300': 'BOOM300N', 'Crash 300': 'CRASH300N',
+};
+
+// Fetch live price from Deriv WebSocket
+async function fetchDerivPrice(symbol: string): Promise<{ price: number; high24h?: number; low24h?: number } | null> {
+  const derivSymbol = DERIV_SYMBOL_MAP[symbol];
+  if (!derivSymbol) return null;
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      ws.close();
+      resolve(null);
+    }, 5000);
+
+    const ws = new WebSocket(DERIV_WS_URL);
+    
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ ticks: derivSymbol }));
+    };
+    
+    ws.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.tick?.quote) {
+          clearTimeout(timeout);
+          
+          // Also fetch 24h stats
+          ws.send(JSON.stringify({
+            ticks_history: derivSymbol,
+            start: Math.floor(Date.now() / 1000) - 86400,
+            end: 'latest',
+            style: 'candles',
+            granularity: 3600
+          }));
+          
+          // Wait for candles response
+          ws.onmessage = (candleEvent) => {
+            try {
+              const candleData = JSON.parse(candleEvent.data);
+              const candles = candleData.candles || [];
+              const highs = candles.map((c: any) => c.high);
+              const lows = candles.map((c: any) => c.low);
+              
+              ws.close();
+              resolve({
+                price: data.tick.quote,
+                high24h: highs.length ? Math.max(...highs) : undefined,
+                low24h: lows.length ? Math.min(...lows) : undefined
+              });
+            } catch {
+              ws.close();
+              resolve({ price: data.tick.quote });
+            }
+          };
+        }
+        if (data.error) {
+          clearTimeout(timeout);
+          ws.close();
+          resolve(null);
+        }
+      } catch {
+        clearTimeout(timeout);
+        ws.close();
+        resolve(null);
+      }
+    };
+    
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      resolve(null);
+    };
+  });
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -39,6 +124,8 @@ serve(async (req) => {
         'vol 100': 'Volatility 100', 'v100': 'Volatility 100',
         'boom 300': 'Boom 300', 'b300': 'Boom 300',
         'crash 300': 'Crash 300', 'c300': 'Crash 300',
+        'bitcoin': 'BTC/USD', 'btc': 'BTC/USD',
+        'ethereum': 'ETH/USD', 'eth': 'ETH/USD',
       };
       
       let normalized = text.toLowerCase();
@@ -176,6 +263,12 @@ You understand ALL name variations:
 
 When user mentions ANY variation, recognize it immediately!
 
+**Live Market Data (Deriv WebSocket):**
+You have access to REAL-TIME prices from Deriv. When users ask about prices, you can provide:
+- Current live price
+- 24-hour high and low
+Format: "EUR/USD is currently trading at 1.0950, with a 24h high of 1.0980 and low of 1.0920"
+
 **User Context:**
 - Balance: $${accounts?.[0]?.balance || 0}
 - Equity: $${accounts?.[0]?.equity || 0}
@@ -207,6 +300,7 @@ You understand BTMM (Break, Test, Move, Manipulate), Mark Douglas psychology, Lo
 - Explain BTMM concepts and trading psychology
 - Provide market context (NOT predictions)
 - Prepare trade executions (after verbal confirmation)
+- Fetch LIVE market prices via Deriv API
 
 **BOUNDARIES:**
 - NO predictions: ❌ "EUR/USD will go up"
@@ -215,6 +309,33 @@ You understand BTMM (Break, Test, Move, Manipulate), Mark Douglas psychology, Lo
 - Friendly refusals: "I can't make predictions, but I can show you current signals!"
 - Never suggest risky strategies or promise profits
 - You are here to inform, not to advise`;
+
+    // Check if user is asking for price data
+    const priceKeywords = ['price', 'trading at', 'current', 'what is', "what's", 'how much', 'quote', 'level'];
+    const isPriceQuery = priceKeywords.some(kw => normalizedTranscript.toLowerCase().includes(kw));
+    
+    let liveMarketData: any = null;
+    if (isPriceQuery) {
+      // Find which symbol they're asking about
+      const symbolsToCheck = Object.keys(DERIV_SYMBOL_MAP);
+      for (const symbol of symbolsToCheck) {
+        const symbolNorm = symbol.replace('/', '').toLowerCase();
+        if (normalizedTranscript.toLowerCase().includes(symbolNorm) ||
+            normalizedTranscript.toLowerCase().includes(symbol.toLowerCase())) {
+          console.log(`[Voice AI] Fetching live price for ${symbol}`);
+          liveMarketData = await fetchDerivPrice(symbol);
+          if (liveMarketData) {
+            liveMarketData.symbol = symbol;
+          }
+          break;
+        }
+      }
+    }
+
+    // Include live data in system prompt if available
+    const marketDataContext = liveMarketData 
+      ? `\n\n**LIVE DATA (just fetched):**\n${liveMarketData.symbol}: ${liveMarketData.price}${liveMarketData.high24h ? `, 24h High: ${liveMarketData.high24h}, 24h Low: ${liveMarketData.low24h}` : ''}`
+      : '';
 
     // Call Lovable AI Gateway
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
@@ -231,7 +352,7 @@ You understand BTMM (Break, Test, Move, Manipulate), Mark Douglas psychology, Lo
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: systemPrompt + marketDataContext },
           { role: 'user', content: normalizedTranscript }
         ]
       })
