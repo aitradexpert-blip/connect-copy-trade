@@ -1,4 +1,4 @@
-import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap } from "lucide-react";
+import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap, Send } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
@@ -125,17 +125,30 @@ export function BottomNav() {
                 Settings
               </Button>
               {isAdmin && (
-                <Button
-                  variant="ghost"
-                  className="justify-start"
-                  onClick={() => {
-                    navigate("/admin");
-                    setIsMenuOpen(false);
-                  }}
-                >
-                  <Shield className="mr-2 h-4 w-4" />
-                  Admin
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    className="justify-start"
+                    onClick={() => {
+                      navigate("/admin");
+                      setIsMenuOpen(false);
+                    }}
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    Publish Ideas
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="justify-start"
+                    onClick={() => {
+                      navigate("/admin-panel");
+                      setIsMenuOpen(false);
+                    }}
+                  >
+                    <Shield className="mr-2 h-4 w-4" />
+                    Admin Panel
+                  </Button>
+                </>
               )}
               <Button
                 variant="ghost"
