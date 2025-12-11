@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export default function DerivCallback() {
   const location = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
+  const mountedRef = useRef(true);
   
   const [accounts, setAccounts] = useState<DerivAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<DerivAccount | null>(null);
@@ -41,38 +42,52 @@ export default function DerivCallback() {
   const [correlationId] = useState(() => `cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
 
   useEffect(() => {
+    mountedRef.current = true;
+    
     // Log for debugging with correlation ID
     console.log("[DerivCallback] CID:", correlationId);
     console.log("[DerivCallback] Full URL:", window.location.href);
     console.log("[DerivCallback] Search:", location.search);
     console.log("[DerivCallback] Hash:", location.hash);
     
-    // Store debug info in localStorage for QA tracing
-    localStorage.setItem('deriv_debug', JSON.stringify({
+    // Store debug info in localStorage (no sensitive data)
+    const debugInfo = {
       timestamp: new Date().toISOString(),
-      search: location.search,
-      hash: location.hash,
+      search: location.search ? '[present]' : '[empty]',
+      hash: location.hash ? '[present]' : '[empty]',
+      searchLength: location.search?.length || 0,
+      hashLength: location.hash?.length || 0,
       cid: correlationId,
-    }));
+      userId: user?.id || 'not_logged_in',
+    };
+    localStorage.setItem('deriv_debug', JSON.stringify(debugInfo));
     
     // Parse tokens from BOTH query params AND hash params
     const parsed = parseDerivRedirectTokens(location.search, location.hash);
-    console.log("[DerivCallback] Parsed accounts:", parsed, "CID:", correlationId);
+    console.log("[DerivCallback] Parsed accounts count:", parsed.length, "CID:", correlationId);
+    
+    // Log account IDs only (not tokens)
+    if (parsed.length > 0) {
+      console.log("[DerivCallback] Account IDs:", parsed.map(a => a.account), "CID:", correlationId);
+    }
     
     // Update localStorage with accounts found
     localStorage.setItem('deriv_debug', JSON.stringify({
-      timestamp: new Date().toISOString(),
-      search: location.search,
-      hash: location.hash,
+      ...debugInfo,
       accountsFound: parsed.length,
-      cid: correlationId,
+      accountIds: parsed.map(a => a.account),
     }));
     
     if (parsed.length === 0) {
-      setError("No accounts found in redirect. Please try connecting again.");
+      const errorMsg = "No Deriv accounts found in redirect URL. This may happen if:\n" +
+        "• The OAuth redirect URL is not registered in Deriv app settings\n" +
+        "• You cancelled the authorization\n" +
+        "• The browser blocked the redirect";
+      setError(errorMsg);
       return;
     }
     
+    if (!mountedRef.current) return;
     setAccounts(parsed);
     
     // Auto-select if only one account
@@ -85,16 +100,21 @@ export default function DerivCallback() {
       try {
         console.log(`[DerivCallback] Authorizing account ${acc.account}... CID:`, correlationId);
         const authResponse = await authorizeDerivAccount(acc.token);
-        console.log(`[DerivCallback] Auth response for ${acc.account}:`, authResponse, "CID:", correlationId);
+        if (!mountedRef.current) return;
+        console.log(`[DerivCallback] Auth success for ${acc.account}, balance: ${authResponse.authorize?.balance}`, "CID:", correlationId);
         setAccountDetails(prev => ({
           ...prev,
           [acc.account]: authResponse.authorize
         }));
-      } catch (err) {
-        console.error(`[DerivCallback] Failed to get details for ${acc.account}:`, err, "CID:", correlationId);
+      } catch (err: any) {
+        console.error(`[DerivCallback] Failed to get details for ${acc.account}:`, err?.message, "CID:", correlationId);
       }
     });
-  }, [location.search, location.hash, correlationId]);
+    
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [location.search, location.hash, correlationId, user?.id]);
 
   const handleConnectAccount = async () => {
     if (!selectedAccount) {
@@ -103,19 +123,23 @@ export default function DerivCallback() {
     }
     
     if (!user) {
-      toast({ title: "Please log in first", variant: "destructive" });
+      toast({ 
+        title: "Not logged in", 
+        description: "Please log in first to connect your Deriv account.",
+        variant: "destructive" 
+      });
       navigate('/auth');
       return;
     }
     
     setIsConnecting(true);
-    console.log("[DerivCallback] Connecting account:", selectedAccount, "CID:", correlationId);
+    console.log("[DerivCallback] Connecting account:", selectedAccount.account, "CID:", correlationId);
     
     try {
       // Authorize to get full account info
       const authResponse = await authorizeDerivAccount(selectedAccount.token);
       const authData = authResponse.authorize;
-      console.log("[DerivCallback] Full auth data:", authData, "CID:", correlationId);
+      console.log("[DerivCallback] Full auth data received, balance:", authData?.balance, "CID:", correlationId);
       
       // Prepare upsert data
       const upsertData = {
@@ -134,7 +158,7 @@ export default function DerivCallback() {
         connection_status: 'connected',
       };
       
-      console.log("[DerivCallback] Upserting into trading_accounts:", { ...upsertData, deriv_token: '[REDACTED]' }, "CID:", correlationId);
+      console.log("[DerivCallback] Upserting account:", selectedAccount.account, "for user:", user.id, "CID:", correlationId);
       
       // Upsert with retry and exponential backoff
       const upsertFn = async () => {
@@ -147,10 +171,15 @@ export default function DerivCallback() {
           .select()
           .single();
 
-        console.log("[DerivCallback] Upsert result:", { data: upsertedData, error: upsertError, cid: correlationId });
+        console.log("[DerivCallback] Upsert result:", { 
+          success: !upsertError, 
+          dataId: upsertedData?.id,
+          errorCode: upsertError?.code,
+          cid: correlationId 
+        });
 
         if (upsertError) {
-          console.error("[DerivCallback] Upsert error details:", {
+          console.error("[DerivCallback] Upsert error:", {
             code: upsertError.code,
             message: upsertError.message,
             details: upsertError.details,
@@ -158,27 +187,50 @@ export default function DerivCallback() {
             cid: correlationId
           });
           
-          // Check for specific RLS error
+          // Provide specific error messages
           if (upsertError.code === '42501') {
-            throw new Error("Permission denied. Please ensure you are logged in and try again.");
+            throw new Error("Permission denied. This usually means Row Level Security blocked the insert. Please ensure you are logged in and try again.");
           }
-          throw upsertError;
+          if (upsertError.code === '23505') {
+            throw new Error("This account is already connected. Refreshing your accounts list...");
+          }
+          if (upsertError.code === '23503') {
+            throw new Error("Database constraint error. Please contact support.");
+          }
+          throw new Error(upsertError.message || "Failed to save account to database.");
         }
         
         return upsertedData;
       };
       
       const insertedData = await retryAsync(upsertFn, 3);
-      console.log("[DerivCallback] Upsert successful:", insertedData, "CID:", correlationId);
+      
+      if (!mountedRef.current) return;
+      
+      console.log("[DerivCallback] Upsert successful, account ID:", insertedData?.id, "CID:", correlationId);
 
       toast({
         title: "Deriv account connected!",
         description: `${selectedAccount.account} has been added to your trading accounts.`,
       });
 
+      // Navigate to accounts page
       navigate('/accounts');
     } catch (err: any) {
-      console.error('[DerivCallback] Failed to connect Deriv account:', err, "CID:", correlationId);
+      console.error('[DerivCallback] Failed to connect Deriv account:', err?.message, "CID:", correlationId);
+      
+      if (!mountedRef.current) return;
+      
+      // For duplicate key error, still navigate to accounts
+      if (err.message?.includes('already connected')) {
+        toast({
+          title: "Account already exists",
+          description: "This Deriv account is already in your list.",
+        });
+        navigate('/accounts');
+        return;
+      }
+      
       setError(err.message || "Failed to connect account. Please try again.");
       toast({
         title: "Failed to connect account",
@@ -186,7 +238,7 @@ export default function DerivCallback() {
         variant: "destructive",
       });
     } finally {
-      setIsConnecting(false);
+      if (mountedRef.current) setIsConnecting(false);
     }
   };
 
@@ -199,12 +251,15 @@ export default function DerivCallback() {
               <AlertCircle className="w-5 h-5" />
               Connection Error
             </CardTitle>
-            <CardDescription>{error}</CardDescription>
+            <CardDescription className="whitespace-pre-line">{error}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Correlation ID: {correlationId}
+            </p>
             <Button onClick={() => window.location.reload()} className="w-full" variant="outline">
               <RefreshCw className="w-4 h-4 mr-2" />
-              Retry
+              Retry Authorization
             </Button>
             <Button onClick={() => navigate('/accounts')} className="w-full">
               Back to Accounts

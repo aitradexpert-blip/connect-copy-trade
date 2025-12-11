@@ -61,6 +61,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<any>(null);
+  const mountedRef = useRef(true);
   const initAttemptedRef = useRef(false);
   const [timeframe, setTimeframe] = useState('1H');
   const [loading, setLoading] = useState(true);
@@ -96,7 +97,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
   // Initialize chart when dimensions are valid
   const initChart = useCallback(async (width: number, height: number) => {
     const container = chartContainerRef.current;
-    if (!container || initAttemptedRef.current) return;
+    if (!container || initAttemptedRef.current || !mountedRef.current) return;
     
     // Visibility check - don't init when tab is hidden (common mobile cause of 0×0)
     if (document.visibilityState === 'hidden') {
@@ -107,20 +108,27 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
     // Minimum dimension check
     if (width < 150 || height < 150) {
       console.log('[Chart] Container too small:', width, height);
-      setError('Chart container too small. Resize or rotate your device.');
-      setLoading(false);
+      if (mountedRef.current) {
+        setError('Chart container too small. Resize or rotate your device.');
+        setLoading(false);
+      }
       return;
     }
     
     initAttemptedRef.current = true;
-    setError(null);
+    if (mountedRef.current) setError(null);
     
-    // Wait for layout to be ready via requestAnimationFrame
-    await new Promise(res => requestAnimationFrame(res));
+    // Double requestAnimationFrame for layout stability
+    await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+    
+    // Check if still mounted after RAF
+    if (!mountedRef.current) return;
     
     try {
       const isDark = theme === 'dark';
 
+      console.log('[Chart] Creating chart with dimensions:', width, height);
+      
       const chart = createChart(container, {
         width,
         height: Math.max(height, 500),
@@ -142,6 +150,11 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
         },
       });
 
+      if (!mountedRef.current) {
+        chart.remove();
+        return;
+      }
+
       // Try to add candlestick series with fallback for different API versions
       let candlestickSeries;
       try {
@@ -162,7 +175,13 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
       }
 
       if (!candlestickSeries) {
+        chart.remove();
         throw new Error('Failed to create candlestick series');
+      }
+
+      if (!mountedRef.current) {
+        chart.remove();
+        return;
       }
 
       chartRef.current = chart;
@@ -175,13 +194,16 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
       console.log('[Chart] Initialized successfully', width, height);
     } catch (err: any) {
       console.error('[Chart] Creation error:', err);
-      setError('Chart initialization failed. Please retry.');
-      setLoading(false);
+      if (mountedRef.current) {
+        setError(`Chart initialization failed: ${err.message || 'Unknown error'}. Please retry.`);
+        setLoading(false);
+      }
     }
   }, [symbol, timeframe, theme]);
 
   // Check container dimensions with debounced ResizeObserver
   useEffect(() => {
+    mountedRef.current = true;
     const container = chartContainerRef.current;
     if (!container) return;
 
@@ -203,6 +225,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
 
     // Debounced ResizeObserver (120ms) to avoid thrashing
     const debouncedHandler = debounce((entries: ResizeObserverEntry[]) => {
+      if (!mountedRef.current) return;
       const entry = entries[0];
       if (entry) {
         const { width, height } = entry.contentRect;
@@ -222,6 +245,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
 
     // Visibility change listener - init when tab becomes visible
     const onVisibilityChange = () => {
+      if (!mountedRef.current) return;
       if (document.visibilityState === 'visible' && !chartRef.current) {
         const rect = container.getBoundingClientRect();
         if (rect.width > 150) {
@@ -233,6 +257,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
 
     // Fallback timeout (increased to 500ms for slow devices)
     const timeout = setTimeout(() => {
+      if (!mountedRef.current) return;
       if (!chartRef.current) {
         const rect = container.getBoundingClientRect();
         initChart(rect.width || 800, Math.max(rect.height, 500));
@@ -240,6 +265,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
     }, 500);
 
     return () => {
+      mountedRef.current = false;
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       clearTimeout(timeout);
@@ -249,6 +275,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
   // Cleanup on unmount or symbol/timeframe change
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       if (chartRef.current) {
         try {
           chartRef.current.remove();
@@ -263,7 +290,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
 
   // Update theme when it changes
   useEffect(() => {
-    if (chartRef.current && chartReady) {
+    if (chartRef.current && chartReady && mountedRef.current) {
       const isDark = theme === 'dark';
       chartRef.current.applyOptions({
         layout: {
@@ -279,6 +306,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
   }, [theme, chartReady]);
 
   const loadChartData = async (sym: string, tf: string, series: any) => {
+    if (!mountedRef.current) return;
     setLoading(true);
     setUsingFallback(false);
     
@@ -288,13 +316,15 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
       if (cachedData && cachedData.length > 0) {
         series.setData(cachedData);
         chartRef.current?.timeScale().fitContent();
-        setLoading(false);
+        if (mountedRef.current) setLoading(false);
         return;
       }
 
       // 2. Try to fetch from service
       console.log('[Chart] Fetching data for:', sym, tf);
       const data = await chartDataService.getChartData(sym, tf);
+      
+      if (!mountedRef.current) return;
       
       if (data && data.length > 0) {
         console.log('[Chart] Data loaded:', data.length);
@@ -308,6 +338,8 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
     } catch (err) {
       console.warn('[Chart] API failed, using fallback data:', err);
       
+      if (!mountedRef.current) return;
+      
       // 3. Use hardcoded fallback data (zero API credits)
       const fallbackData = generateFallbackData(sym);
       series.setData(fallbackData);
@@ -315,7 +347,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
       setUsingFallback(true);
       setError(null);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
@@ -349,7 +381,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
 
   const handleTimeframeChange = (tf: string) => {
     setTimeframe(tf);
-    if (seriesRef.current) {
+    if (seriesRef.current && mountedRef.current) {
       loadChartData(symbol, tf, seriesRef.current);
     }
   };
