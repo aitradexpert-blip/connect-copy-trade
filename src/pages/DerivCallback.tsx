@@ -8,7 +8,24 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, DerivAccount } from "@/services/derivAuth";
 import { authorizeDerivAccount } from "@/services/derivBroker";
-import { Loader2, Check, AlertCircle, Wallet } from "lucide-react";
+import { Loader2, Check, AlertCircle, Wallet, RefreshCw } from "lucide-react";
+
+// Retry helper with exponential backoff + jitter
+function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+function jitter(ms: number) { return ms + Math.floor(Math.random() * 100); }
+
+async function retryAsync<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i < attempts; i++) {
+    try { 
+      return await fn(); 
+    } catch (err) {
+      lastError = err;
+      await sleep(jitter(400 * Math.pow(2, i))); // 400ms, 800ms, 1600ms + jitter
+    }
+  }
+  throw lastError;
+}
 
 export default function DerivCallback() {
   const navigate = useNavigate();
@@ -21,13 +38,35 @@ export default function DerivCallback() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accountDetails, setAccountDetails] = useState<Record<string, any>>({});
+  const [correlationId] = useState(() => `cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
 
   useEffect(() => {
-    console.log("[DerivCallback] Location search:", location.search);
+    // Log for debugging with correlation ID
+    console.log("[DerivCallback] CID:", correlationId);
+    console.log("[DerivCallback] Full URL:", window.location.href);
+    console.log("[DerivCallback] Search:", location.search);
+    console.log("[DerivCallback] Hash:", location.hash);
     
-    // Parse tokens from URL
-    const parsed = parseDerivRedirectTokens(location.search);
-    console.log("[DerivCallback] Parsed accounts:", parsed);
+    // Store debug info in localStorage for QA tracing
+    localStorage.setItem('deriv_debug', JSON.stringify({
+      timestamp: new Date().toISOString(),
+      search: location.search,
+      hash: location.hash,
+      cid: correlationId,
+    }));
+    
+    // Parse tokens from BOTH query params AND hash params
+    const parsed = parseDerivRedirectTokens(location.search, location.hash);
+    console.log("[DerivCallback] Parsed accounts:", parsed, "CID:", correlationId);
+    
+    // Update localStorage with accounts found
+    localStorage.setItem('deriv_debug', JSON.stringify({
+      timestamp: new Date().toISOString(),
+      search: location.search,
+      hash: location.hash,
+      accountsFound: parsed.length,
+      cid: correlationId,
+    }));
     
     if (parsed.length === 0) {
       setError("No accounts found in redirect. Please try connecting again.");
@@ -44,18 +83,18 @@ export default function DerivCallback() {
     // Fetch details for each account
     parsed.forEach(async (acc) => {
       try {
-        console.log(`[DerivCallback] Authorizing account ${acc.account}...`);
+        console.log(`[DerivCallback] Authorizing account ${acc.account}... CID:`, correlationId);
         const authResponse = await authorizeDerivAccount(acc.token);
-        console.log(`[DerivCallback] Auth response for ${acc.account}:`, authResponse);
+        console.log(`[DerivCallback] Auth response for ${acc.account}:`, authResponse, "CID:", correlationId);
         setAccountDetails(prev => ({
           ...prev,
           [acc.account]: authResponse.authorize
         }));
       } catch (err) {
-        console.error(`[DerivCallback] Failed to get details for ${acc.account}:`, err);
+        console.error(`[DerivCallback] Failed to get details for ${acc.account}:`, err, "CID:", correlationId);
       }
     });
-  }, [location.search]);
+  }, [location.search, location.hash, correlationId]);
 
   const handleConnectAccount = async () => {
     if (!selectedAccount) {
@@ -70,16 +109,16 @@ export default function DerivCallback() {
     }
     
     setIsConnecting(true);
-    console.log("[DerivCallback] Connecting account:", selectedAccount);
+    console.log("[DerivCallback] Connecting account:", selectedAccount, "CID:", correlationId);
     
     try {
       // Authorize to get full account info
       const authResponse = await authorizeDerivAccount(selectedAccount.token);
       const authData = authResponse.authorize;
-      console.log("[DerivCallback] Full auth data:", authData);
+      console.log("[DerivCallback] Full auth data:", authData, "CID:", correlationId);
       
-      // Prepare insert data
-      const insertData = {
+      // Prepare upsert data
+      const upsertData = {
         user_id: user.id,
         provider: 'deriv',
         provider_account_id: selectedAccount.account,
@@ -95,30 +134,42 @@ export default function DerivCallback() {
         connection_status: 'connected',
       };
       
-      console.log("[DerivCallback] Inserting into trading_accounts:", insertData);
+      console.log("[DerivCallback] Upserting into trading_accounts:", { ...upsertData, deriv_token: '[REDACTED]' }, "CID:", correlationId);
       
-      // Insert into trading_accounts with Deriv provider
-      const { data: insertedData, error: insertError } = await supabase
-        .from("trading_accounts")
-        .insert(insertData)
-        .select();
+      // Upsert with retry and exponential backoff
+      const upsertFn = async () => {
+        const { data: upsertedData, error: upsertError } = await supabase
+          .from("trading_accounts")
+          .upsert(upsertData, { 
+            onConflict: 'user_id,provider,provider_account_id',
+            ignoreDuplicates: false 
+          })
+          .select()
+          .single();
 
-      if (insertError) {
-        console.error("[DerivCallback] Insert error details:", {
-          code: insertError.code,
-          message: insertError.message,
-          details: insertError.details,
-          hint: insertError.hint
-        });
-        
-        // Check for specific RLS error
-        if (insertError.code === '42501') {
-          throw new Error("Permission denied. Please ensure you are logged in and try again.");
+        console.log("[DerivCallback] Upsert result:", { data: upsertedData, error: upsertError, cid: correlationId });
+
+        if (upsertError) {
+          console.error("[DerivCallback] Upsert error details:", {
+            code: upsertError.code,
+            message: upsertError.message,
+            details: upsertError.details,
+            hint: upsertError.hint,
+            cid: correlationId
+          });
+          
+          // Check for specific RLS error
+          if (upsertError.code === '42501') {
+            throw new Error("Permission denied. Please ensure you are logged in and try again.");
+          }
+          throw upsertError;
         }
-        throw insertError;
-      }
+        
+        return upsertedData;
+      };
       
-      console.log("[DerivCallback] Insert successful:", insertedData);
+      const insertedData = await retryAsync(upsertFn, 3);
+      console.log("[DerivCallback] Upsert successful:", insertedData, "CID:", correlationId);
 
       toast({
         title: "Deriv account connected!",
@@ -127,7 +178,8 @@ export default function DerivCallback() {
 
       navigate('/accounts');
     } catch (err: any) {
-      console.error('[DerivCallback] Failed to connect Deriv account:', err);
+      console.error('[DerivCallback] Failed to connect Deriv account:', err, "CID:", correlationId);
+      setError(err.message || "Failed to connect account. Please try again.");
       toast({
         title: "Failed to connect account",
         description: err.message || "Unknown error occurred",
@@ -149,7 +201,11 @@ export default function DerivCallback() {
             </CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <Button onClick={() => window.location.reload()} className="w-full" variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
             <Button onClick={() => navigate('/accounts')} className="w-full">
               Back to Accounts
             </Button>
