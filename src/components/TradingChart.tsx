@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, ColorType, IChartApi } from 'lightweight-charts';
 import { Button } from '@/components/ui/button';
 import { chartDataService } from '@/services/chartDataService';
@@ -48,10 +48,20 @@ const generateFallbackData = (symbol: string): CandleData[] => {
   return data;
 };
 
+// Debounce helper
+function debounce<T extends (...args: any[]) => void>(fn: T, ms: number) {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return (...args: Parameters<T>) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<any>(null);
+  const initAttemptedRef = useRef(false);
   const [timeframe, setTimeframe] = useState('1H');
   const [loading, setLoading] = useState(true);
   const [chartReady, setChartReady] = useState(false);
@@ -83,67 +93,37 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
     }
   };
 
-  // Check container dimensions
-  useEffect(() => {
+  // Initialize chart when dimensions are valid
+  const initChart = useCallback(async (width: number, height: number) => {
     const container = chartContainerRef.current;
-    if (!container) return;
-
-    const checkDimensions = () => {
-      const { clientWidth } = container;
-      if (clientWidth > 0) {
-        setChartReady(true);
-        return true;
-      }
-      return false;
-    };
-
-    if (checkDimensions()) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry && entry.contentRect.width > 0) {
-        setChartReady(true);
-        resizeObserver.disconnect();
-      }
-    });
-
-    resizeObserver.observe(container);
-
-    const timeout = setTimeout(() => {
-      setChartReady(true);
-    }, 300);
-
-    return () => {
-      resizeObserver.disconnect();
-      clearTimeout(timeout);
-    };
-  }, []);
-
-  // Create chart when ready
-  useEffect(() => {
-    if (!chartReady || !chartContainerRef.current) return;
-
-    const container = chartContainerRef.current;
-    const width = container.clientWidth || 800;
-    const height = 500;
-
-    // Cleanup existing chart
-    if (chartRef.current) {
-      try {
-        chartRef.current.remove();
-      } catch (e) {
-        console.warn('[Chart] Cleanup error:', e);
-      }
-      chartRef.current = null;
-      seriesRef.current = null;
+    if (!container || initAttemptedRef.current) return;
+    
+    // Visibility check - don't init when tab is hidden (common mobile cause of 0×0)
+    if (document.visibilityState === 'hidden') {
+      console.log('[Chart] Deferred - tab hidden');
+      return;
     }
-
+    
+    // Minimum dimension check
+    if (width < 150 || height < 150) {
+      console.log('[Chart] Container too small:', width, height);
+      setError('Chart container too small. Resize or rotate your device.');
+      setLoading(false);
+      return;
+    }
+    
+    initAttemptedRef.current = true;
+    setError(null);
+    
+    // Wait for layout to be ready via requestAnimationFrame
+    await new Promise(res => requestAnimationFrame(res));
+    
     try {
       const isDark = theme === 'dark';
 
       const chart = createChart(container, {
         width,
-        height,
+        height: Math.max(height, 500),
         layout: {
           background: { type: ColorType.Solid, color: 'transparent' },
           textColor: isDark ? '#d1d5db' : '#1f2937',
@@ -187,35 +167,116 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
 
       chartRef.current = chart;
       seriesRef.current = candlestickSeries;
-      setError(null);
+      setChartReady(true);
 
       // Load data
-      loadChartData(symbol, timeframe, candlestickSeries);
-
-      const handleResize = () => {
-        if (chartContainerRef.current && chart) {
-          const newWidth = chartContainerRef.current.clientWidth;
-          if (newWidth > 0) {
-            chart.applyOptions({ width: newWidth });
-          }
-        }
-      };
-      window.addEventListener('resize', handleResize);
-
-      return () => {
-        window.removeEventListener('resize', handleResize);
-        try {
-          chart.remove();
-        } catch (e) {
-          console.warn('[Chart] Final cleanup error:', e);
-        }
-      };
+      await loadChartData(symbol, timeframe, candlestickSeries);
+      
+      console.log('[Chart] Initialized successfully', width, height);
     } catch (err: any) {
       console.error('[Chart] Creation error:', err);
-      setError('Chart initialization failed');
+      setError('Chart initialization failed. Please retry.');
       setLoading(false);
     }
-  }, [chartReady, symbol, timeframe, theme]);
+  }, [symbol, timeframe, theme]);
+
+  // Check container dimensions with debounced ResizeObserver
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    // Reset init flag when symbol/timeframe changes
+    initAttemptedRef.current = false;
+    
+    const checkDimensions = () => {
+      const { clientWidth, clientHeight } = container;
+      console.log('[Chart] Container dimensions:', clientWidth, clientHeight);
+      if (clientWidth > 150 && clientHeight > 150) {
+        initChart(clientWidth, Math.max(clientHeight, 500));
+        return true;
+      }
+      return false;
+    };
+
+    // Immediate check
+    if (checkDimensions()) return;
+
+    // Debounced ResizeObserver (120ms) to avoid thrashing
+    const debouncedHandler = debounce((entries: ResizeObserverEntry[]) => {
+      const entry = entries[0];
+      if (entry) {
+        const { width, height } = entry.contentRect;
+        console.log('[Chart] Resize observed:', width, height);
+        
+        if (!chartRef.current) {
+          initChart(width, Math.max(height, 500));
+        } else {
+          // Just resize existing chart
+          chartRef.current.applyOptions({ width });
+        }
+      }
+    }, 120);
+
+    const resizeObserver = new ResizeObserver(debouncedHandler);
+    resizeObserver.observe(container);
+
+    // Visibility change listener - init when tab becomes visible
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !chartRef.current) {
+        const rect = container.getBoundingClientRect();
+        if (rect.width > 150) {
+          initChart(rect.width, Math.max(rect.height, 500));
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    // Fallback timeout (increased to 500ms for slow devices)
+    const timeout = setTimeout(() => {
+      if (!chartRef.current) {
+        const rect = container.getBoundingClientRect();
+        initChart(rect.width || 800, Math.max(rect.height, 500));
+      }
+    }, 500);
+
+    return () => {
+      resizeObserver.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      clearTimeout(timeout);
+    };
+  }, [initChart]);
+
+  // Cleanup on unmount or symbol/timeframe change
+  useEffect(() => {
+    return () => {
+      if (chartRef.current) {
+        try {
+          chartRef.current.remove();
+        } catch (e) {
+          console.warn('[Chart] Cleanup error:', e);
+        }
+        chartRef.current = null;
+        seriesRef.current = null;
+      }
+    };
+  }, [symbol, timeframe]);
+
+  // Update theme when it changes
+  useEffect(() => {
+    if (chartRef.current && chartReady) {
+      const isDark = theme === 'dark';
+      chartRef.current.applyOptions({
+        layout: {
+          background: { type: ColorType.Solid, color: 'transparent' },
+          textColor: isDark ? '#d1d5db' : '#1f2937',
+        },
+        grid: {
+          vertLines: { color: isDark ? '#334155' : '#e5e7eb' },
+          horzLines: { color: isDark ? '#334155' : '#e5e7eb' },
+        },
+      });
+    }
+  }, [theme, chartReady]);
 
   const loadChartData = async (sym: string, tf: string, series: any) => {
     setLoading(true);
@@ -236,6 +297,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
       const data = await chartDataService.getChartData(sym, tf);
       
       if (data && data.length > 0) {
+        console.log('[Chart] Data loaded:', data.length);
         series.setData(data);
         chartRef.current?.timeScale().fitContent();
         setCachedData(sym, tf, data);
@@ -258,13 +320,37 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
   };
 
   const handleRetry = () => {
-    if (seriesRef.current) {
-      // Clear cache to force fresh fetch
+    // Reset and reinitialize
+    initAttemptedRef.current = false;
+    if (chartRef.current) {
       try {
-        const cacheKey = `chart_${symbol}_${timeframe}_${new Date().toDateString()}`;
-        localStorage.removeItem(cacheKey);
+        chartRef.current.remove();
       } catch (e) {}
-      loadChartData(symbol, timeframe, seriesRef.current);
+      chartRef.current = null;
+      seriesRef.current = null;
+    }
+    setChartReady(false);
+    setError(null);
+    setLoading(true);
+    
+    // Clear cache to force fresh fetch
+    try {
+      const cacheKey = `chart_${symbol}_${timeframe}_${new Date().toDateString()}`;
+      localStorage.removeItem(cacheKey);
+    } catch (e) {}
+    
+    // Re-trigger initialization
+    const container = chartContainerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      initChart(rect.width || 800, Math.max(rect.height, 500));
+    }
+  };
+
+  const handleTimeframeChange = (tf: string) => {
+    setTimeframe(tf);
+    if (seriesRef.current) {
+      loadChartData(symbol, tf, seriesRef.current);
     }
   };
 
@@ -299,7 +385,7 @@ export const TradingChart = ({ symbol, onTradeClick }: TradingChartProps) => {
           {['1m', '5m', '15m', '1H', '4H', '1D', '1W'].map(tf => (
             <button
               key={tf}
-              onClick={() => setTimeframe(tf)}
+              onClick={() => handleTimeframeChange(tf)}
               className={`px-3 py-1 rounded text-sm transition-colors ${
                 timeframe === tf 
                   ? 'bg-primary text-primary-foreground' 

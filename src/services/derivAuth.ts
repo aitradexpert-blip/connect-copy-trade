@@ -22,24 +22,42 @@ export function getDerivLoginUrl(callbackUrl?: string): string {
 /**
  * Parse tokens from Deriv OAuth redirect URL
  * Deriv returns: ?acct1=XXX&token1=YYY&cur1=USD&acct2=...
+ * Also supports hash parameters: #acct1=XXX&token1=YYY
  */
-export function parseDerivRedirectTokens(search: string): DerivAccount[] {
-  const params = new URLSearchParams(search);
+export function parseDerivRedirectTokens(search: string, hash: string = ''): DerivAccount[] {
   const accounts: DerivAccount[] = [];
   
-  // Deriv can return up to 10 accounts
+  // Parse BOTH query params and hash params
+  const queryParams = new URLSearchParams(search || '');
+  const hashParams = new URLSearchParams((hash || '').replace(/^#/, ''));
+  
+  // Support up to 10 accounts from Deriv OAuth response
   for (let i = 1; i <= 10; i++) {
-    const account = params.get(`acct${i}`);
-    const token = params.get(`token${i}`);
-    const currency = params.get(`cur${i}`) || params.get(`currency${i}`);
+    // Check query first, then hash
+    const account = queryParams.get(`acct${i}`) || hashParams.get(`acct${i}`);
+    const token = queryParams.get(`token${i}`) || hashParams.get(`token${i}`);
+    const currency = queryParams.get(`cur${i}`) || hashParams.get(`cur${i}`) || queryParams.get(`currency${i}`) || hashParams.get(`currency${i}`);
     
     if (account && token) {
       accounts.push({
-        account,
-        token,
-        currency: currency || undefined
+        account: decodeURIComponent(account),
+        token: decodeURIComponent(token),
+        currency: currency ? decodeURIComponent(currency) : undefined,
       });
     }
+  }
+  
+  // Also support single-token formats like ?token= or #access_token=
+  const singleToken = queryParams.get('token') || hashParams.get('token') || hashParams.get('access_token');
+  const singleAccount = queryParams.get('acct') || hashParams.get('acct');
+  const singleCur = queryParams.get('cur') || hashParams.get('cur');
+  
+  if (singleToken && singleAccount && !accounts.some(a => a.account === singleAccount)) {
+    accounts.push({
+      account: decodeURIComponent(singleAccount),
+      token: decodeURIComponent(singleToken),
+      currency: singleCur ? decodeURIComponent(singleCur) : undefined,
+    });
   }
   
   return accounts;
