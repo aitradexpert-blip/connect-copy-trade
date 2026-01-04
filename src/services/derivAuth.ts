@@ -150,3 +150,67 @@ export function getStoredDerivAccounts(): DerivAccount[] | null {
 export function clearStoredDerivAccounts(): void {
   sessionStorage.removeItem('deriv_pending_accounts');
 }
+
+/**
+ * Validate a Deriv API token by connecting to WebSocket and authorizing
+ * Returns account info if valid, error message if invalid
+ */
+export async function validateDerivToken(token: string): Promise<{
+  valid: boolean;
+  accountInfo?: {
+    loginid: string;
+    currency: string;
+    balance: number;
+    is_virtual: boolean;
+    account_list?: Array<{
+      loginid: string;
+      currency: string;
+      is_virtual: number;
+    }>;
+  };
+  error?: string;
+}> {
+  return new Promise((resolve) => {
+    const ws = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=90127');
+    const timeout = setTimeout(() => {
+      ws.close();
+      resolve({ valid: false, error: 'Connection timeout' });
+    }, 10000);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ authorize: token }));
+    };
+
+    ws.onmessage = (event) => {
+      clearTimeout(timeout);
+      try {
+        const data = JSON.parse(event.data);
+        if (data.authorize) {
+          ws.close();
+          resolve({
+            valid: true,
+            accountInfo: {
+              loginid: data.authorize.loginid,
+              currency: data.authorize.currency,
+              balance: data.authorize.balance,
+              is_virtual: data.authorize.is_virtual === 1,
+              account_list: data.authorize.account_list,
+            },
+          });
+        } else if (data.error) {
+          ws.close();
+          resolve({ valid: false, error: data.error.message });
+        }
+      } catch (err) {
+        ws.close();
+        resolve({ valid: false, error: 'Invalid response' });
+      }
+    };
+
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      ws.close();
+      resolve({ valid: false, error: 'Connection failed' });
+    };
+  });
+}

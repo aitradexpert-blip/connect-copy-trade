@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AppLayout from '@/components/AppLayout';
-import { TradingChart } from '@/components/TradingChart';
+import TradingViewChart from '@/components/TradingViewChart';
+import ChartFallback from '@/components/ChartFallback';
 import { WatchlistDropdown } from '@/components/WatchlistDropdown';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, Loader2 } from 'lucide-react';
@@ -12,6 +13,13 @@ export default function Charts() {
   const [activeSymbol, setActiveSymbol] = useState(searchParams.get('symbol') || 'EUR/USD');
   const [stats, setStats] = useState<MarketStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [chartError, setChartError] = useState(false);
+  const [chartKey, setChartKey] = useState(0);
+
+  const handleChartRetry = useCallback(() => {
+    setChartError(false);
+    setChartKey(prev => prev + 1);
+  }, []);
 
   useEffect(() => {
     const symbolParam = searchParams.get('symbol');
@@ -85,14 +93,19 @@ export default function Charts() {
           <CardHeader>
             <CardTitle className="text-2xl">{activeSymbol}</CardTitle>
             <CardDescription>
-              Real-time market data powered by Deriv
+              Real-time market data powered by TradingView
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <TradingChart 
-              symbol={activeSymbol}
-              onTradeClick={handleTradeClick}
-            />
+            {chartError ? (
+              <ChartFallback symbol={activeSymbol} onRetry={handleChartRetry} />
+            ) : (
+              <TradingViewChart 
+                key={chartKey}
+                symbol={activeSymbol}
+                height={500}
+              />
+            )}
           </CardContent>
         </Card>
 

@@ -20,8 +20,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { getDerivLoginUrl } from "@/services/derivAuth";
-import { ExternalLink, Wallet } from "lucide-react";
+import { getDerivLoginUrl, validateDerivToken } from "@/services/derivAuth";
+import { ExternalLink, Wallet, Key, Loader2, Copy, Check, AlertCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface ConnectAccountModalProps {
   open: boolean;
@@ -44,8 +45,78 @@ export function ConnectAccountModal({
     platform: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualToken, setManualToken] = useState('');
+  const [manualLoginId, setManualLoginId] = useState('');
+  const [copied, setCopied] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const callbackUrl = `${window.location.origin}/deriv-callback`;
+
+  const copyCallbackUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(callbackUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast({ title: "Failed to copy", variant: "destructive" });
+    }
+  };
+
+  const handleManualConnect = async () => {
+    if (!user || !manualToken || !manualLoginId) {
+      toast({ title: "Please enter both Login ID and API Token", variant: "destructive" });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Validate token first
+      const result = await validateDerivToken(manualToken);
+      
+      if (!result.valid) {
+        toast({ title: "Invalid token", description: result.error, variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+
+      // Save account to database
+      const { error } = await supabase.from("trading_accounts").upsert({
+        user_id: user.id,
+        provider: 'deriv',
+        provider_account_id: result.accountInfo!.loginid,
+        name: `Deriv ${result.accountInfo!.is_virtual ? 'Demo' : 'Real'} (${result.accountInfo!.currency})`,
+        login: result.accountInfo!.loginid,
+        platform: 'deriv',
+        server: 'deriv.com',
+        deriv_token: btoa(manualToken),
+        deriv_currency: result.accountInfo!.currency,
+        is_virtual: result.accountInfo!.is_virtual,
+        balance: result.accountInfo!.balance,
+        equity: result.accountInfo!.balance,
+        connection_status: 'connected',
+      }, {
+        onConflict: 'user_id,provider,provider_account_id',
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Account connected!", description: `${result.accountInfo!.loginid} added successfully` });
+      setManualToken('');
+      setManualLoginId('');
+      setShowManualEntry(false);
+      setProvider('');
+      onOpenChange(false);
+      onAccountConnected?.();
+      navigate('/accounts');
+    } catch (error: any) {
+      toast({ title: "Failed to save account", description: error.message, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleDerivConnect = () => {
     // Redirect to Deriv OAuth
@@ -162,41 +233,145 @@ export function ConnectAccountModal({
         ) : provider === 'deriv' ? (
           // Deriv OAuth Flow
           <div className="space-y-4 py-4">
-            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-              <h4 className="font-medium">How it works:</h4>
-              <ol className="text-sm text-muted-foreground space-y-2">
-                <li className="flex gap-2">
-                  <span className="font-medium text-foreground">1.</span>
-                  Click "Connect with Deriv" below
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-medium text-foreground">2.</span>
-                  Log in to your Deriv account
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-medium text-foreground">3.</span>
-                  Authorize HuMi to access your account
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-medium text-foreground">4.</span>
-                  Select which account to connect
-                </li>
-              </ol>
-            </div>
-            
-            <div className="text-xs text-muted-foreground">
-              By connecting, you allow HuMi to view your balance, execute trades, and manage deposits/withdrawals on your behalf.
-            </div>
-            
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" onClick={handleBack}>
-                Back
-              </Button>
-              <Button onClick={handleDerivConnect} className="gap-2">
-                <ExternalLink className="w-4 h-4" />
-                Connect with Deriv
-              </Button>
-            </DialogFooter>
+            {!showManualEntry ? (
+              <>
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <h4 className="font-medium">How it works:</h4>
+                  <ol className="text-sm text-muted-foreground space-y-2">
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">1.</span>
+                      Click "Connect with Deriv" below
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">2.</span>
+                      Log in to your Deriv account
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">3.</span>
+                      Authorize HuMi to access your account
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">4.</span>
+                      Select which account to connect
+                    </li>
+                  </ol>
+                </div>
+
+                {/* Callback URL Info */}
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5" />
+                    <div className="text-xs">
+                      <span className="font-medium">Ensure this callback URL is registered in your Deriv app:</span>
+                      <div className="flex items-center gap-1 mt-1">
+                        <code className="bg-background px-1 py-0.5 rounded text-[10px] flex-1 overflow-x-auto">
+                          {callbackUrl}
+                        </code>
+                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={copyCallbackUrl}>
+                          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="text-xs text-muted-foreground">
+                  By connecting, you allow HuMi to view your balance, execute trades, and manage deposits/withdrawals on your behalf.
+                </div>
+                
+                <DialogFooter className="flex-col gap-2">
+                  <div className="flex gap-2 w-full">
+                    <Button variant="outline" onClick={handleBack} className="flex-1">
+                      Back
+                    </Button>
+                    <Button onClick={handleDerivConnect} className="flex-1 gap-2">
+                      <ExternalLink className="w-4 h-4" />
+                      Connect with Deriv
+                    </Button>
+                  </div>
+                  <button
+                    onClick={() => setShowManualEntry(true)}
+                    className="text-xs text-muted-foreground hover:text-primary underline"
+                  >
+                    Having issues? Try manual token entry
+                  </button>
+                </DialogFooter>
+              </>
+            ) : (
+              // Manual Token Entry
+              <div className="space-y-4">
+                <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Key className="w-4 h-4" />
+                    Manual API Token Entry
+                  </h4>
+                  <ol className="text-sm text-muted-foreground space-y-2">
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">1.</span>
+                      Go to{' '}
+                      <a 
+                        href="https://app.deriv.com/account/api-token" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        Deriv API Token page <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">2.</span>
+                      Create a token with "Read", "Trade", "Admin" permissions
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-medium text-foreground">3.</span>
+                      Copy your Login ID and API Token below
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="loginId">Login ID (e.g., CR1234567)</Label>
+                    <Input
+                      id="loginId"
+                      placeholder="CR1234567"
+                      value={manualLoginId}
+                      onChange={(e) => setManualLoginId(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="apiToken">API Token</Label>
+                    <Input
+                      id="apiToken"
+                      type="password"
+                      placeholder="Paste your API token"
+                      value={manualToken}
+                      onChange={(e) => setManualToken(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter className="flex-col gap-2">
+                  <div className="flex gap-2 w-full">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setShowManualEntry(false)} 
+                      className="flex-1"
+                    >
+                      Back to OAuth
+                    </Button>
+                    <Button 
+                      onClick={handleManualConnect} 
+                      disabled={isLoading || !manualToken || !manualLoginId}
+                      className="flex-1 gap-2"
+                    >
+                      {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Connect
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </div>
+            )}
           </div>
         ) : (
           // MetaAPI Form
