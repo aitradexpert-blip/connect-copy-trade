@@ -2,9 +2,14 @@ import { memo, useMemo } from 'react';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 import { useTheme } from 'next-themes';
 
+type IntervalType = "1" | "3" | "5" | "15" | "30" | "60" | "120" | "180" | "240" | "D" | "W";
+type StyleType = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+
 interface TradingViewChartProps {
   symbol: string;
   height?: number;
+  interval?: IntervalType;
+  style?: StyleType;
 }
 
 // Map HuMi symbols to TradingView format
@@ -98,7 +103,9 @@ function getTradingViewSymbol(humiSymbol: string): string {
 
 const TradingViewChart = memo(function TradingViewChart({ 
   symbol, 
-  height = 500 
+  height = 500,
+  interval = "60",
+  style = "1"
 }: TradingViewChartProps) {
   const { theme } = useTheme();
   
@@ -111,9 +118,9 @@ const TradingViewChart = memo(function TradingViewChart({
         symbol={tvSymbol}
         theme={tvTheme}
         autosize
-        interval="60"
+        interval={interval}
         timezone="Etc/UTC"
-        style="1"
+        style={style}
         locale="en"
         toolbar_bg={theme === 'dark' ? '#1e293b' : '#ffffff'}
         enable_publishing={false}
@@ -121,7 +128,7 @@ const TradingViewChart = memo(function TradingViewChart({
         hide_top_toolbar={false}
         hide_legend={false}
         save_image={false}
-        container_id={`tradingview-${symbol.replace(/[^a-zA-Z0-9]/g, '')}`}
+        container_id={`tradingview-${symbol.replace(/[^a-zA-Z0-9]/g, '')}-${interval}-${style}`}
       />
     </div>
   );

@@ -23,6 +23,7 @@ import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
 import CryptoWallet from "./pages/CryptoWallet";
 import CreditUsage from "./pages/CreditUsage";
+import KhumoIntroModal from "./components/KhumoIntroModal";
 
 const queryClient = new QueryClient();
 
@@ -76,6 +77,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          <KhumoIntroModal />
           <BrowserRouter>
             <Routes>
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
