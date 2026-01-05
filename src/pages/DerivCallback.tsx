@@ -44,36 +44,42 @@ export default function DerivCallback() {
   useEffect(() => {
     mountedRef.current = true;
     
-    // Log for debugging with correlation ID
-    console.log("[DerivCallback] CID:", correlationId);
-    console.log("[DerivCallback] Full URL:", window.location.href);
-    console.log("[DerivCallback] Search:", location.search);
-    console.log("[DerivCallback] Hash:", location.hash);
+    // ========== STEP 1: Log the full redirect URL ==========
+    console.log("=".repeat(60));
+    console.log("[Deriv OAuth] STEP 1: Processing OAuth Redirect");
+    console.log("[Deriv OAuth] Full Returned URL:", window.location.href);
+    console.log("[Deriv OAuth] Query String:", location.search);
+    console.log("[Deriv OAuth] Hash Fragment:", location.hash);
+    console.log("[Deriv OAuth] Correlation ID:", correlationId);
+    console.log("=".repeat(60));
     
     // Store debug info in localStorage (no sensitive data)
     const debugInfo = {
       timestamp: new Date().toISOString(),
+      step: 'redirect_received',
       search: location.search ? '[present]' : '[empty]',
       hash: location.hash ? '[present]' : '[empty]',
       searchLength: location.search?.length || 0,
       hashLength: location.hash?.length || 0,
       cid: correlationId,
       userId: user?.id || 'not_logged_in',
+      origin: window.location.origin,
     };
     localStorage.setItem('deriv_debug', JSON.stringify(debugInfo));
     
     // Parse tokens from BOTH query params AND hash params
     const parsed = parseDerivRedirectTokens(location.search, location.hash);
-    console.log("[DerivCallback] Parsed accounts count:", parsed.length, "CID:", correlationId);
     
-    // Log account IDs only (not tokens)
-    if (parsed.length > 0) {
-      console.log("[DerivCallback] Account IDs:", parsed.map(a => a.account), "CID:", correlationId);
-    }
+    console.log("[Deriv OAuth] Parsed Accounts:", parsed.map(a => ({ 
+      loginid: a.account, 
+      currency: a.currency 
+    })));
+    console.log("[Deriv OAuth] Total accounts found:", parsed.length);
     
     // Update localStorage with accounts found
     localStorage.setItem('deriv_debug', JSON.stringify({
       ...debugInfo,
+      step: 'tokens_parsed',
       accountsFound: parsed.length,
       accountIds: parsed.map(a => a.account),
     }));
@@ -95,19 +101,32 @@ export default function DerivCallback() {
       setSelectedAccount(parsed[0]);
     }
     
-    // Fetch details for each account
+    // ========== STEP 2: Authorize with WebSocket ==========
+    console.log("=".repeat(60));
+    console.log("[Deriv OAuth] STEP 2: WebSocket Authorization");
+    console.log("=".repeat(60));
+    
     parsed.forEach(async (acc) => {
       try {
-        console.log(`[DerivCallback] Authorizing account ${acc.account}... CID:`, correlationId);
+        console.log(`[Deriv WS] Connecting and authorizing account ${acc.account}...`);
         const authResponse = await authorizeDerivAccount(acc.token);
         if (!mountedRef.current) return;
-        console.log(`[DerivCallback] Auth success for ${acc.account}, balance: ${authResponse.authorize?.balance}`, "CID:", correlationId);
+        
+        console.log("[Deriv WS] Response:", {
+          success: !!authResponse.authorize,
+          loginid: authResponse.authorize?.loginid,
+          balance: authResponse.authorize?.balance,
+          currency: authResponse.authorize?.currency,
+          account_list: authResponse.authorize?.account_list?.length || 0
+        });
+        console.log(`✅ Authorized! Account: ${acc.account}, Balance: ${authResponse.authorize?.balance} ${authResponse.authorize?.currency}`);
+        
         setAccountDetails(prev => ({
           ...prev,
           [acc.account]: authResponse.authorize
         }));
       } catch (err: any) {
-        console.error(`[DerivCallback] Failed to get details for ${acc.account}:`, err?.message, "CID:", correlationId);
+        console.error(`❌ Authorization failed for ${acc.account}:`, err?.message);
       }
     });
     

@@ -3,10 +3,15 @@ import { useSearchParams } from 'react-router-dom';
 import AppLayout from '@/components/AppLayout';
 import TradingViewChart from '@/components/TradingViewChart';
 import ChartFallback from '@/components/ChartFallback';
+import ChartControls from '@/components/charts/ChartControls';
 import { WatchlistDropdown } from '@/components/WatchlistDropdown';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { TrendingUp, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
 import { get24hStats, MarketStats } from '@/services/derivMarketData';
+
+type IntervalType = "1" | "3" | "5" | "15" | "30" | "60" | "120" | "180" | "240" | "D" | "W";
+type StyleType = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 export default function Charts() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -15,6 +20,8 @@ export default function Charts() {
   const [loadingStats, setLoadingStats] = useState(false);
   const [chartError, setChartError] = useState(false);
   const [chartKey, setChartKey] = useState(0);
+  const [interval, setChartInterval] = useState<IntervalType>("60");
+  const [chartStyle, setChartStyle] = useState<StyleType>("1");
 
   const handleChartRetry = useCallback(() => {
     setChartError(false);
@@ -52,6 +59,17 @@ export default function Charts() {
 
   const handleTradeClick = (action: 'BUY' | 'SELL') => {
     console.log(`Trade action: ${action} ${activeSymbol}`);
+    // TODO: Open trade modal with pre-filled symbol and direction
+  };
+
+  const handleIntervalChange = (newInterval: string) => {
+    setChartInterval(newInterval as IntervalType);
+    setChartKey(prev => prev + 1);
+  };
+
+  const handleChartStyleChange = (newStyle: string) => {
+    setChartStyle(newStyle as StyleType);
+    setChartKey(prev => prev + 1);
   };
 
   const formatPrice = (price: number | null) => {
@@ -90,13 +108,43 @@ export default function Charts() {
         </div>
 
         <Card className="bg-gradient-card border-border shadow-card">
-          <CardHeader>
-            <CardTitle className="text-2xl">{activeSymbol}</CardTitle>
-            <CardDescription>
-              Real-time market data powered by TradingView
-            </CardDescription>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <CardTitle className="text-2xl">{activeSymbol}</CardTitle>
+                <CardDescription>
+                  Real-time market data powered by TradingView
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="bg-profit hover:bg-profit/90"
+                  onClick={() => handleTradeClick('BUY')}
+                >
+                  <ArrowUp className="w-4 h-4 mr-1" />
+                  Buy
+                </Button>
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="bg-loss hover:bg-loss/90"
+                  onClick={() => handleTradeClick('SELL')}
+                >
+                  <ArrowDown className="w-4 h-4 mr-1" />
+                  Sell
+                </Button>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <ChartControls
+              interval={interval}
+              chartStyle={chartStyle}
+              onIntervalChange={handleIntervalChange}
+              onChartStyleChange={handleChartStyleChange}
+            />
             {chartError ? (
               <ChartFallback symbol={activeSymbol} onRetry={handleChartRetry} />
             ) : (
@@ -104,6 +152,8 @@ export default function Charts() {
                 key={chartKey}
                 symbol={activeSymbol}
                 height={500}
+                interval={interval}
+                style={chartStyle}
               />
             )}
           </CardContent>

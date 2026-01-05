@@ -8,12 +8,13 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Bell, Shield, Globe, Palette, Database, Mic } from "lucide-react";
+import { Bell, Shield, Globe, Palette, Database, Mic, Wrench } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import { SupportWidget } from "@/components/SupportWidget";
+import DerivDiagnostic from "@/components/DerivDiagnostic";
 
 interface UserSettings {
   email_notifications: {
@@ -202,9 +203,9 @@ export default function Settings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mic className="w-5 h-5" />
-              Voice Assistant
+              Khumo Voice Assistant
             </CardTitle>
-            <CardDescription>Customize HuMi's voice and speech settings</CardDescription>
+            <CardDescription>Customize Khumo's voice and speech settings</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -526,6 +527,20 @@ export default function Settings() {
                 <Button variant="outline" size="sm" className="text-destructive border-destructive">Delete</Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Developer & Diagnostics */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wrench className="w-5 h-5" />
+              Developer & Diagnostics
+            </CardTitle>
+            <CardDescription>Tools for debugging and testing integrations</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DerivDiagnostic />
           </CardContent>
         </Card>
 

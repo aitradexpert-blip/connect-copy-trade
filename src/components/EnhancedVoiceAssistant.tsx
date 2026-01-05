@@ -308,13 +308,13 @@ export default function EnhancedVoiceAssistant() {
       <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col">
         <CardContent className="p-4 border-b">
           <div className="space-y-1">
-            <h3 className="text-lg font-semibold">HuMi - Your AI Trading Assistant</h3>
+            <h3 className="text-lg font-semibold">Khumo — The Market's Memory</h3>
             <p className="text-sm text-muted-foreground">
-              Hey there! I'm HuMi, your friendly trading assistant. Ask me about your balance, positions, signals, or any trading pair!
+              I study institutional footprints to help you understand WHY markets move. Ask about your balance, positions, trading concepts, or any trading pair.
             </p>
             {pendingConfirmation && (
               <div className="mt-2 p-2 bg-primary/10 rounded text-xs text-primary font-medium">
-                ⏳ Awaiting your confirmation for {pendingConfirmation.symbol} {pendingConfirmation.direction}
+                Awaiting your confirmation for {pendingConfirmation.symbol} {pendingConfirmation.direction}
               </div>
             )}
           </div>
@@ -369,7 +369,7 @@ export default function EnhancedVoiceAssistant() {
                   <div className="flex justify-start">
                     <div className="bg-muted rounded-lg p-3 flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">HuMi is thinking...</span>
+                      <span className="text-sm">Khumo is researching...</span>
                     </div>
                   </div>
                 )}
@@ -378,12 +378,12 @@ export default function EnhancedVoiceAssistant() {
           ) : (
             <div className="flex-1 flex items-center justify-center p-6">
               <div className="text-center space-y-2">
-                <p className="text-sm font-medium">Hey there!</p>
+                <p className="text-sm font-medium">Welcome to Khumo</p>
                 <p className="text-xs text-muted-foreground">
-                  I can help with your balance, positions, signals, or any trading pairs (Forex, Indices, Metals, Synthetics). Try voice or text!
+                  I help you understand market memory and institutional patterns. Ask about your balance, positions, trading concepts, or any symbol.
                 </p>
                 <p className="text-xs text-muted-foreground/70 mt-4">
-                  Examples: "What's my balance?", "Show me EUR/USD", "Execute buy on gold"
+                  Try: "What's my balance?", "Explain Fair Value Gaps", "Show me gold"
                 </p>
               </div>
             </div>
@@ -413,7 +413,7 @@ export default function EnhancedVoiceAssistant() {
             <Input
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Type a message or use voice..."
+              placeholder="Ask about market patterns, root causes, or your positions..."
               className="flex-1"
               disabled={isProcessing || isListening}
             />
