@@ -313,3 +313,85 @@ export async function getDerivStatement(
     throw error;
   }
 }
+
+/**
+ * MT5 Account Types
+ */
+export interface MT5Account {
+  account_type: string;
+  balance: number;
+  currency: string;
+  display_balance: string;
+  email: string;
+  group: string;
+  landing_company_short: string;
+  leverage: number;
+  login: string;
+  market_type: string;
+  name: string;
+  server: string;
+  server_info: {
+    environment: string;
+    geolocation: {
+      group: string;
+      location: string;
+      region: string;
+      sequence: number;
+    };
+    id: string;
+  };
+  sub_account_type: string;
+}
+
+export interface MT5AccountsListResponse {
+  mt5_login_list: MT5Account[];
+}
+
+/**
+ * Get list of MT5 accounts linked to the Deriv account
+ * Must be authorized first
+ */
+export async function getMT5AccountList(ws?: DerivWS): Promise<MT5AccountsListResponse> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({ mt5_login_list: 1 });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return {
+      mt5_login_list: response.mt5_login_list || []
+    };
+  } catch (error) {
+    console.error('[DerivBroker] Get MT5 accounts failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get MT5 account details
+ */
+export async function getMT5AccountDetails(
+  login: string,
+  ws?: DerivWS
+): Promise<MT5Account> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({ 
+      mt5_get_settings: 1,
+      login 
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response.mt5_get_settings;
+  } catch (error) {
+    console.error('[DerivBroker] Get MT5 account details failed:', error);
+    throw error;
+  }
+}

@@ -7,8 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, DerivAccount } from "@/services/derivAuth";
-import { authorizeDerivAccount } from "@/services/derivBroker";
-import { Loader2, Check, AlertCircle, Wallet, RefreshCw } from "lucide-react";
+import { authorizeDerivAccount, getMT5AccountList, MT5Account } from "@/services/derivBroker";
+import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3 } from "lucide-react";
 
 // Retry helper with exponential backoff + jitter
 function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
@@ -39,6 +39,8 @@ export default function DerivCallback() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accountDetails, setAccountDetails] = useState<Record<string, any>>({});
+  const [mt5Accounts, setMT5Accounts] = useState<MT5Account[]>([]);
+  const [selectedMT5, setSelectedMT5] = useState<MT5Account | null>(null);
   const [correlationId] = useState(() => `cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
 
   useEffect(() => {
@@ -106,29 +108,48 @@ export default function DerivCallback() {
     console.log("[Deriv OAuth] STEP 2: WebSocket Authorization");
     console.log("=".repeat(60));
     
-    parsed.forEach(async (acc) => {
-      try {
-        console.log(`[Deriv WS] Connecting and authorizing account ${acc.account}...`);
-        const authResponse = await authorizeDerivAccount(acc.token);
-        if (!mountedRef.current) return;
-        
-        console.log("[Deriv WS] Response:", {
-          success: !!authResponse.authorize,
-          loginid: authResponse.authorize?.loginid,
-          balance: authResponse.authorize?.balance,
-          currency: authResponse.authorize?.currency,
-          account_list: authResponse.authorize?.account_list?.length || 0
-        });
-        console.log(`✅ Authorized! Account: ${acc.account}, Balance: ${authResponse.authorize?.balance} ${authResponse.authorize?.currency}`);
-        
-        setAccountDetails(prev => ({
-          ...prev,
-          [acc.account]: authResponse.authorize
-        }));
-      } catch (err: any) {
-        console.error(`❌ Authorization failed for ${acc.account}:`, err?.message);
+    // Authorize first account and fetch MT5 accounts
+    const authorizeAndFetchMT5 = async () => {
+      for (const acc of parsed) {
+        try {
+          console.log(`[Deriv WS] Connecting and authorizing account ${acc.account}...`);
+          const authResponse = await authorizeDerivAccount(acc.token);
+          if (!mountedRef.current) return;
+          
+          console.log("[Deriv WS] Response:", {
+            success: !!authResponse.authorize,
+            loginid: authResponse.authorize?.loginid,
+            balance: authResponse.authorize?.balance,
+            currency: authResponse.authorize?.currency,
+            account_list: authResponse.authorize?.account_list?.length || 0
+          });
+          console.log(`✅ Authorized! Account: ${acc.account}, Balance: ${authResponse.authorize?.balance} ${authResponse.authorize?.currency}`);
+          
+          setAccountDetails(prev => ({
+            ...prev,
+            [acc.account]: authResponse.authorize
+          }));
+          
+          // Fetch MT5 accounts after first successful authorization
+          if (parsed.indexOf(acc) === 0) {
+            try {
+              console.log("[Deriv WS] Fetching MT5 accounts...");
+              const mt5Response = await getMT5AccountList();
+              console.log(`✅ Found ${mt5Response.mt5_login_list.length} MT5 accounts`);
+              if (mountedRef.current) {
+                setMT5Accounts(mt5Response.mt5_login_list);
+              }
+            } catch (mt5Err: any) {
+              console.log("[Deriv WS] No MT5 accounts or error:", mt5Err?.message);
+            }
+          }
+        } catch (err: any) {
+          console.error(`❌ Authorization failed for ${acc.account}:`, err?.message);
+        }
       }
-    });
+    };
+    
+    authorizeAndFetchMT5();
     
     return () => {
       mountedRef.current = false;
@@ -308,15 +329,17 @@ export default function DerivCallback() {
             </div>
           ) : (
             <>
+              {/* Wallet Accounts */}
               <div className="space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground">Wallet Accounts</h3>
                 {accounts.map((acc) => {
                   const details = accountDetails[acc.account];
-                  const isSelected = selectedAccount?.account === acc.account;
+                  const isSelected = selectedAccount?.account === acc.account && !selectedMT5;
                   
                   return (
                     <button
                       key={acc.account}
-                      onClick={() => setSelectedAccount(acc)}
+                      onClick={() => { setSelectedAccount(acc); setSelectedMT5(null); }}
                       className={`w-full p-4 rounded-lg border text-left transition-all ${
                         isSelected 
                           ? 'border-primary bg-primary/5 ring-2 ring-primary/20' 
@@ -358,6 +381,58 @@ export default function DerivCallback() {
                   );
                 })}
               </div>
+              
+              {/* MT5 Accounts */}
+              {mt5Accounts.length > 0 && (
+                <div className="space-y-2 pt-2 border-t">
+                  <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4" />
+                    MT5 Trading Accounts
+                  </h3>
+                  {mt5Accounts.map((mt5) => {
+                    const isSelected = selectedMT5?.login === mt5.login;
+                    
+                    return (
+                      <button
+                        key={mt5.login}
+                        onClick={() => { setSelectedMT5(mt5); setSelectedAccount(accounts[0]); }}
+                        className={`w-full p-4 rounded-lg border text-left transition-all ${
+                          isSelected 
+                            ? 'border-primary bg-primary/5 ring-2 ring-primary/20' 
+                            : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-500/10">
+                              <BarChart3 className="w-5 h-5 text-blue-500" />
+                            </div>
+                            <div>
+                              <div className="font-medium flex items-center gap-2">
+                                MT5 {mt5.login}
+                                <Badge variant="outline">{mt5.market_type}</Badge>
+                                <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                                  {mt5.server}
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                <span className="font-medium">
+                                  {mt5.display_balance} {mt5.currency}
+                                </span>
+                                <span className="mx-2">•</span>
+                                <span>Leverage 1:{mt5.leverage}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <Check className="w-5 h-5 text-primary" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="flex gap-2 pt-4">
                 <Button 
