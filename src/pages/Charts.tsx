@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { TrendingUp, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
 import { get24hStats, MarketStats } from '@/services/derivMarketData';
+import { DerivQuickTrade } from '@/components/deriv/DerivQuickTrade';
 
 type IntervalType = "1" | "3" | "5" | "15" | "30" | "60" | "120" | "180" | "240" | "D" | "W";
 type StyleType = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
@@ -20,13 +21,31 @@ export default function Charts() {
   const [loadingStats, setLoadingStats] = useState(false);
   const [chartError, setChartError] = useState(false);
   const [chartKey, setChartKey] = useState(0);
+  const [widgetReady, setWidgetReady] = useState(false);
   const [interval, setChartInterval] = useState<IntervalType>("60");
+  const [tradeDirection, setTradeDirection] = useState<'BUY' | 'SELL'>('BUY');
+  const [showQuickTrade, setShowQuickTrade] = useState(false);
   const [chartStyle, setChartStyle] = useState<StyleType>("1");
 
   const handleChartRetry = useCallback(() => {
     setChartError(false);
+    setWidgetReady(false);
     setChartKey(prev => prev + 1);
   }, []);
+
+  // Chart fallback timeout - if TradingView doesn't load within 8 seconds, show fallback
+  useEffect(() => {
+    if (chartError) return;
+    
+    const timeout = setTimeout(() => {
+      if (!widgetReady) {
+        console.log('[Charts] TradingView timeout, switching to fallback');
+        setChartError(true);
+      }
+    }, 8000);
+    
+    return () => clearTimeout(timeout);
+  }, [chartKey, widgetReady, chartError]);
 
   useEffect(() => {
     const symbolParam = searchParams.get('symbol');
@@ -58,8 +77,8 @@ export default function Charts() {
   };
 
   const handleTradeClick = (action: 'BUY' | 'SELL') => {
-    console.log(`Trade action: ${action} ${activeSymbol}`);
-    // TODO: Open trade modal with pre-filled symbol and direction
+    setTradeDirection(action);
+    setShowQuickTrade(true);
   };
 
   const handleIntervalChange = (newInterval: string) => {
@@ -154,8 +173,17 @@ export default function Charts() {
                 height={500}
                 interval={interval}
                 style={chartStyle}
+                onReady={() => setWidgetReady(true)}
               />
             )}
+            
+            {/* Quick Trade Modal */}
+            <DerivQuickTrade
+              open={showQuickTrade}
+              onOpenChange={setShowQuickTrade}
+              symbol={activeSymbol}
+              direction={tradeDirection}
+            />
           </CardContent>
         </Card>
 

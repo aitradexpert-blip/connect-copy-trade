@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useEffect } from 'react';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 import { useTheme } from 'next-themes';
 
@@ -10,6 +10,7 @@ interface TradingViewChartProps {
   height?: number;
   interval?: IntervalType;
   style?: StyleType;
+  onReady?: () => void;
 }
 
 // Map HuMi symbols to TradingView format
@@ -105,12 +106,21 @@ const TradingViewChart = memo(function TradingViewChart({
   symbol, 
   height = 500,
   interval = "60",
-  style = "1"
+  style = "1",
+  onReady
 }: TradingViewChartProps) {
   const { theme } = useTheme();
   
   const tvSymbol = useMemo(() => getTradingViewSymbol(symbol), [symbol]);
   const tvTheme = theme === 'dark' ? 'dark' : 'light';
+  
+  // Signal ready after a short delay (TradingView widget doesn't have a ready callback)
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      onReady?.();
+    }, 2000);
+    return () => clearTimeout(timeout);
+  }, [onReady]);
   
   return (
     <div className="w-full rounded-lg overflow-hidden border border-border" style={{ height }}>
