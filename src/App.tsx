@@ -41,6 +41,35 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Special route for OAuth callbacks - allows tokens to be processed before auth check
+const DerivCallbackRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  const location = window.location;
+  
+  // Check if this is an OAuth callback with tokens in URL
+  const hasTokens = location.search.includes('token1') || 
+                    location.search.includes('acct1') ||
+                    location.hash.includes('token1') ||
+                    location.hash.includes('acct1');
+  
+  // If we have tokens in URL, always show the callback page (even if auth is loading)
+  // This ensures tokens can be processed before any redirect happens
+  if (hasTokens) {
+    return <>{children}</>;
+  }
+  
+  // No tokens - require normal auth check
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+  
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { isAdmin, loading: adminLoading } = useAdminCheck();
@@ -95,7 +124,7 @@ const App = () => (
             <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="/admin-panel" element={<AdminRoute><AdminPanel /></AdminRoute>} />
-            <Route path="/deriv-callback" element={<ProtectedRoute><DerivCallback /></ProtectedRoute>} />
+            <Route path="/deriv-callback" element={<DerivCallbackRoute><DerivCallback /></DerivCallbackRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

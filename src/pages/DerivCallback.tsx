@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, DerivAccount } from "@/services/derivAuth";
 import { authorizeDerivAccount, getMT5AccountList, MT5Account } from "@/services/derivBroker";
-import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3 } from "lucide-react";
+import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3, Info } from "lucide-react";
 
 // Retry helper with exponential backoff + jitter
 function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
@@ -27,14 +27,25 @@ async function retryAsync<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   throw lastError;
 }
 
+// Account from authorize response's account_list
+interface DiscoveredAccount {
+  loginid: string;
+  currency: string;
+  is_virtual: boolean;
+  account_type: string; // "trading" or "wallet"
+  can_trade: boolean;
+}
+
 export default function DerivCallback() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const mountedRef = useRef(true);
+  const processedRef = useRef(false);
   
   const [accounts, setAccounts] = useState<DerivAccount[]>([]);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<DerivAccount | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +53,24 @@ export default function DerivCallback() {
   const [mt5Accounts, setMT5Accounts] = useState<MT5Account[]>([]);
   const [selectedMT5, setSelectedMT5] = useState<MT5Account | null>(null);
   const [correlationId] = useState(() => `cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
+  const [needsLogin, setNeedsLogin] = useState(false);
+
+  // Store tokens if user needs to log in first
+  useEffect(() => {
+    if (!authLoading && !user) {
+      // Store the current URL with tokens for after login
+      const currentUrl = window.location.href;
+      if (location.search.includes('token1') || location.hash.includes('token1')) {
+        sessionStorage.setItem('deriv_pending_redirect', currentUrl);
+        setNeedsLogin(true);
+      }
+    }
+  }, [authLoading, user, location.search, location.hash]);
 
   useEffect(() => {
+    // Don't process if already processed or auth still loading
+    if (processedRef.current || authLoading) return;
+    
     mountedRef.current = true;
     
     // ========== STEP 1: Log the full redirect URL ==========
@@ -53,6 +80,7 @@ export default function DerivCallback() {
     console.log("[Deriv OAuth] Query String:", location.search);
     console.log("[Deriv OAuth] Hash Fragment:", location.hash);
     console.log("[Deriv OAuth] Correlation ID:", correlationId);
+    console.log("[Deriv OAuth] User logged in:", !!user);
     console.log("=".repeat(60));
     
     // Store debug info in localStorage (no sensitive data)
@@ -97,6 +125,7 @@ export default function DerivCallback() {
     
     if (!mountedRef.current) return;
     setAccounts(parsed);
+    processedRef.current = true;
     
     // Auto-select if only one account
     if (parsed.length === 1) {
@@ -108,7 +137,7 @@ export default function DerivCallback() {
     console.log("[Deriv OAuth] STEP 2: WebSocket Authorization");
     console.log("=".repeat(60));
     
-    // Authorize first account and fetch MT5 accounts
+    // Authorize first account and fetch MT5 accounts + discover trading accounts
     const authorizeAndFetchMT5 = async () => {
       for (const acc of parsed) {
         try {
@@ -129,6 +158,28 @@ export default function DerivCallback() {
             ...prev,
             [acc.account]: authResponse.authorize
           }));
+          
+          // Extract trading accounts from account_list (these are CR accounts that can trade)
+          if (authResponse.authorize?.account_list) {
+            const tradingAccounts = authResponse.authorize.account_list
+              .filter((a: any) => a.account_type === 'trading')
+              .map((a: any) => ({
+                loginid: a.loginid,
+                currency: a.currency,
+                is_virtual: a.is_virtual === 1,
+                account_type: a.account_type,
+                can_trade: true,
+              }));
+            
+            console.log("[Deriv WS] Discovered trading accounts:", tradingAccounts);
+            if (mountedRef.current && tradingAccounts.length > 0) {
+              setDiscoveredAccounts(prev => {
+                const existing = new Set(prev.map(a => a.loginid));
+                const newAccounts = tradingAccounts.filter((a: DiscoveredAccount) => !existing.has(a.loginid));
+                return [...prev, ...newAccounts];
+              });
+            }
+          }
           
           // Fetch MT5 accounts after first successful authorization
           if (parsed.indexOf(acc) === 0) {
@@ -154,7 +205,7 @@ export default function DerivCallback() {
     return () => {
       mountedRef.current = false;
     };
-  }, [location.search, location.hash, correlationId, user?.id]);
+  }, [location.search, location.hash, correlationId, user?.id, authLoading]);
 
   const handleConnectAccount = async () => {
     if (!selectedAccount) {
@@ -323,18 +374,52 @@ export default function DerivCallback() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {accounts.length === 0 ? (
+          {/* User needs to log in first */}
+          {needsLogin && (
+            <div className="space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="w-5 h-5 text-amber-500 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-amber-500">Login Required</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Please log in to your HuMi account first, then connect your Deriv account.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <Button onClick={() => navigate('/auth')} className="w-full">
+                Log In to Continue
+              </Button>
+            </div>
+          )}
+          
+          {!needsLogin && accounts.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
-          ) : (
+          ) : !needsLogin && (
             <>
+              {/* Info about wallet vs trading accounts */}
+              {accounts.some(a => a.account.startsWith('CRW') || a.account.startsWith('VRW')) && (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+                    <div>
+                      <span className="font-medium">Wallet accounts (CRW/VRW)</span> are for deposits and withdrawals. 
+                      <span className="font-medium"> Trading accounts (CR/VRTC)</span> are for placing trades via API.
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* Wallet Accounts */}
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-muted-foreground">Wallet Accounts</h3>
+                <h3 className="text-sm font-medium text-muted-foreground">Available Accounts</h3>
                 {accounts.map((acc) => {
                   const details = accountDetails[acc.account];
                   const isSelected = selectedAccount?.account === acc.account && !selectedMT5;
+                  const isWallet = acc.account.startsWith('CRW') || acc.account.startsWith('VRW');
                   
                   return (
                     <button
@@ -361,6 +446,9 @@ export default function DerivCallback() {
                               <Badge variant={isVirtualAccount(acc.account) ? "secondary" : "default"}>
                                 {getAccountTypeLabel(acc.account)}
                               </Badge>
+                              {isWallet && (
+                                <Badge variant="outline" className="text-xs">Wallet</Badge>
+                              )}
                             </div>
                             <div className="text-sm text-muted-foreground">
                               {details ? (

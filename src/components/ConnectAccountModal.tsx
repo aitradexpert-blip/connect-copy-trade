@@ -82,7 +82,7 @@ export function ConnectAccountModal({
         return;
       }
 
-      // Save account to database
+      // Save account to database - store token as plain text (consistent with OAuth flow)
       const { error } = await supabase.from("trading_accounts").upsert({
         user_id: user.id,
         provider: 'deriv',
@@ -91,7 +91,7 @@ export function ConnectAccountModal({
         login: result.accountInfo!.loginid,
         platform: 'deriv',
         server: 'deriv.com',
-        deriv_token: btoa(manualToken),
+        deriv_token: manualToken, // Plain text, consistent with OAuth callback
         deriv_currency: result.accountInfo!.currency,
         is_virtual: result.accountInfo!.is_virtual,
         balance: result.accountInfo!.balance,
