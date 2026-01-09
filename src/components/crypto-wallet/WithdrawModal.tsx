@@ -183,7 +183,7 @@ export function WithdrawModal({ onClose }: WithdrawModalProps) {
           </div>
 
           {amount && parseFloat(amount) > 0 && (
-            <div className="p-3 bg-slate-800 rounded-lg space-y-1 text-sm">
+            <div className="p-3 bg-muted rounded-lg space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Amount:</span>
                 <span>{parseFloat(amount).toFixed(8)} {selectedCurrency}</span>

@@ -218,7 +218,7 @@ export function ExchangeModal({ onClose }: ExchangeModalProps) {
           </div>
 
           {fromCurrency && toCurrency && fromAmount && parseFloat(fromAmount) > 0 && (
-            <div className="p-3 bg-slate-800 rounded-lg space-y-1 text-sm">
+            <div className="p-3 bg-muted rounded-lg space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Exchange Rate:</span>
                 <span>1 {fromCurrency} = {exchangeRate.toFixed(6)} {toCurrency}</span>

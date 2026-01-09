@@ -34,9 +34,19 @@ function safeDecode(v: string | null): string | undefined {
 export function getDerivLoginUrl(callbackUrl?: string): string {
   const callback = callbackUrl || `${window.location.origin}/deriv-callback`;
   
-  // Log for debugging - helps users verify correct redirect URL is registered
-  console.log('[DerivAuth] OAuth callback URL:', callback);
-  console.log('[DerivAuth] Ensure this URL is registered at https://app.deriv.com/account/api-token for app_id:', DERIV_APP_ID);
+  // Critical: Log exact URL that MUST be registered in Deriv Dashboard
+  console.log("=".repeat(70));
+  console.log("[DerivAuth] ⚠️ CRITICAL: OAUTH REDIRECT URL CONFIGURATION");
+  console.log("[DerivAuth] This EXACT URL must be registered in Deriv App Dashboard:");
+  console.log("[DerivAuth] ➡️  ", callback);
+  console.log("[DerivAuth] ");
+  console.log("[DerivAuth] Steps to fix redirect issues:");
+  console.log("[DerivAuth] 1. Go to: https://developers.deriv.com/dashboard");
+  console.log("[DerivAuth] 2. Find your app (ID: " + DERIV_APP_ID + ")");
+  console.log("[DerivAuth] 3. Click edit (pencil icon)");
+  console.log("[DerivAuth] 4. Set Redirect URL to exactly: " + callback);
+  console.log("[DerivAuth] 5. Save and try again");
+  console.log("=".repeat(70));
   
   // Note: Deriv OAuth doesn't use redirect_uri param - it uses the registered URL in app settings
   return `${DERIV_OAUTH_URL}?app_id=${DERIV_APP_ID}&l=en&brand=deriv`;
@@ -101,25 +111,45 @@ export function parseDerivRedirectTokens(search: string, hash: string = ''): Der
  * Deriv virtual accounts start with "VRTC" or similar patterns
  */
 export function isVirtualAccount(accountId: string): boolean {
-  return accountId.toUpperCase().startsWith('VRT') || 
-         accountId.toUpperCase().startsWith('VRTC') ||
-         accountId.toUpperCase().includes('DEMO');
+  const upper = accountId.toUpperCase();
+  return upper.startsWith('VRT') || 
+         upper.startsWith('VRTC') ||
+         upper.startsWith('VRW') ||
+         upper.includes('DEMO');
+}
+
+/**
+ * Check if an account is a wallet account (cannot trade via API)
+ * Wallet accounts: CRW (real wallet), VRW (virtual wallet)
+ */
+export function isWalletAccount(accountId: string): boolean {
+  const upper = accountId.toUpperCase();
+  return upper.startsWith('CRW') || upper.startsWith('VRW');
+}
+
+/**
+ * Check if an account can trade via API
+ * Only CR (real trading) and VRTC (virtual trading) can trade
+ */
+export function canTradeViaAPI(accountId: string): boolean {
+  return !isWalletAccount(accountId);
 }
 
 /**
  * Get account type label
  */
 export function getAccountTypeLabel(accountId: string): string {
-  if (isVirtualAccount(accountId)) {
-    return 'Demo';
-  }
+  const upper = accountId.toUpperCase();
   
-  // Real account prefixes
-  if (accountId.startsWith('CR')) return 'Real (Crypto)';
-  if (accountId.startsWith('MF')) return 'Real (Financial)';
-  if (accountId.startsWith('MLT')) return 'Real (Gaming)';
-  if (accountId.startsWith('MX')) return 'Real (Multipliers)';
+  if (upper.startsWith('VRW')) return 'Virtual Wallet';
+  if (upper.startsWith('VRTC')) return 'Virtual Trading';
+  if (upper.startsWith('CRW')) return 'Wallet';
+  if (upper.startsWith('CR')) return 'Trading';
+  if (upper.startsWith('MF')) return 'Financial';
+  if (upper.startsWith('MLT')) return 'Gaming';
+  if (upper.startsWith('MX')) return 'Multipliers';
   
+  if (isVirtualAccount(accountId)) return 'Demo';
   return 'Real';
 }
 

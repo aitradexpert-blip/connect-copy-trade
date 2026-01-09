@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, DerivAccount } from "@/services/derivAuth";
+import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, isWalletAccount, canTradeViaAPI, DerivAccount } from "@/services/derivAuth";
 import { authorizeDerivAccount, getMT5AccountList, MT5Account } from "@/services/derivBroker";
-import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3, Info } from "lucide-react";
+import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3, Info, ExternalLink, AlertTriangle } from "lucide-react";
 
 // Retry helper with exponential backoff + jitter
 function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
@@ -401,25 +401,40 @@ export default function DerivCallback() {
           ) : !needsLogin && (
             <>
               {/* Info about wallet vs trading accounts */}
-              {accounts.some(a => a.account.startsWith('CRW') || a.account.startsWith('VRW')) && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-sm">
+              {accounts.some(a => isWalletAccount(a.account)) && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-sm">
                   <div className="flex items-start gap-2">
-                    <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+                    <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
                     <div>
-                      <span className="font-medium">Wallet accounts (CRW/VRW)</span> are for deposits and withdrawals. 
-                      <span className="font-medium"> Trading accounts (CR/VRTC)</span> are for placing trades via API.
+                      <span className="font-medium text-amber-600 dark:text-amber-400">Important:</span>{' '}
+                      <span className="font-medium">Wallet accounts (CRW/VRW)</span> cannot trade via API - they are for deposits/withdrawals only. 
+                      For API trading, you need a <span className="font-medium">Trading account (CR/VRTC)</span>.
+                      {discoveredAccounts.length === 0 && (
+                        <span className="block mt-1">
+                          To get a trading account, visit{' '}
+                          <a 
+                            href="https://app.deriv.com/traders-hub" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline inline-flex items-center gap-1"
+                          >
+                            Deriv Traders Hub <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
               
-              {/* Wallet Accounts */}
+              {/* Available Accounts */}
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground">Available Accounts</h3>
                 {accounts.map((acc) => {
                   const details = accountDetails[acc.account];
                   const isSelected = selectedAccount?.account === acc.account && !selectedMT5;
-                  const isWallet = acc.account.startsWith('CRW') || acc.account.startsWith('VRW');
+                  const isWallet = isWalletAccount(acc.account);
+                  const tradeable = canTradeViaAPI(acc.account);
                   
                   return (
                     <button
@@ -434,20 +449,34 @@ export default function DerivCallback() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            isVirtualAccount(acc.account) ? 'bg-yellow-500/10' : 'bg-green-500/10'
+                            isWallet 
+                              ? 'bg-amber-500/10' 
+                              : isVirtualAccount(acc.account) 
+                                ? 'bg-yellow-500/10' 
+                                : 'bg-green-500/10'
                           }`}>
                             <Wallet className={`w-5 h-5 ${
-                              isVirtualAccount(acc.account) ? 'text-yellow-500' : 'text-green-500'
+                              isWallet 
+                                ? 'text-amber-500' 
+                                : isVirtualAccount(acc.account) 
+                                  ? 'text-yellow-500' 
+                                  : 'text-green-500'
                             }`} />
                           </div>
                           <div>
-                            <div className="font-medium flex items-center gap-2">
+                            <div className="font-medium flex items-center gap-2 flex-wrap">
                               {acc.account}
                               <Badge variant={isVirtualAccount(acc.account) ? "secondary" : "default"}>
                                 {getAccountTypeLabel(acc.account)}
                               </Badge>
-                              {isWallet && (
-                                <Badge variant="outline" className="text-xs">Wallet</Badge>
+                              {tradeable ? (
+                                <Badge variant="outline" className="text-xs text-green-600 border-green-500/30 bg-green-500/10">
+                                  Can Trade
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs text-amber-600 border-amber-500/30 bg-amber-500/10">
+                                  Wallet Only
+                                </Badge>
                               )}
                             </div>
                             <div className="text-sm text-muted-foreground">
