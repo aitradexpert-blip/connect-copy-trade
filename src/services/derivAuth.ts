@@ -30,25 +30,35 @@ function safeDecode(v: string | null): string | undefined {
 /**
  * Get the Deriv OAuth login URL
  * Redirects user to Deriv login, then back to our callback URL
+ * 
+ * CRITICAL: The redirect URL MUST be registered in Deriv App Dashboard
+ * Go to: https://api.deriv.com/dashboard → Applications → Edit your app
+ * Set "Redirect URL" to your callback URL
  */
 export function getDerivLoginUrl(callbackUrl?: string): string {
   const callback = callbackUrl || `${window.location.origin}/deriv-callback`;
   
+  // Store callback URL for reference on callback page
+  sessionStorage.setItem('deriv_expected_callback', callback);
+  
   // Critical: Log exact URL that MUST be registered in Deriv Dashboard
   console.log("=".repeat(70));
   console.log("[DerivAuth] ⚠️ CRITICAL: OAUTH REDIRECT URL CONFIGURATION");
-  console.log("[DerivAuth] This EXACT URL must be registered in Deriv App Dashboard:");
-  console.log("[DerivAuth] ➡️  ", callback);
   console.log("[DerivAuth] ");
-  console.log("[DerivAuth] Steps to fix redirect issues:");
-  console.log("[DerivAuth] 1. Go to: https://developers.deriv.com/dashboard");
-  console.log("[DerivAuth] 2. Find your app (ID: " + DERIV_APP_ID + ")");
-  console.log("[DerivAuth] 3. Click edit (pencil icon)");
-  console.log("[DerivAuth] 4. Set Redirect URL to exactly: " + callback);
-  console.log("[DerivAuth] 5. Save and try again");
+  console.log("[DerivAuth] This EXACT URL must be registered in Deriv App Dashboard:");
+  console.log("[DerivAuth] ➡️ ", callback);
+  console.log("[DerivAuth] ");
+  console.log("[DerivAuth] If OAuth redirects back to login (infinite loop), the URL is NOT registered.");
+  console.log("[DerivAuth] ");
+  console.log("[DerivAuth] Steps to fix:");
+  console.log("[DerivAuth] 1. Go to: https://api.deriv.com/dashboard");
+  console.log("[DerivAuth] 2. Click 'Applications' tab");
+  console.log("[DerivAuth] 3. Find your app (ID: " + DERIV_APP_ID + ") and click edit (pencil icon)");
+  console.log("[DerivAuth] 4. In 'Redirect URL' field, paste: " + callback);
+  console.log("[DerivAuth] 5. Save and try OAuth again");
   console.log("=".repeat(70));
   
-  // Note: Deriv OAuth doesn't use redirect_uri param - it uses the registered URL in app settings
+  // Note: Deriv OAuth uses the registered Redirect URL from app settings, not a URL param
   return `${DERIV_OAUTH_URL}?app_id=${DERIV_APP_ID}&l=en&brand=deriv`;
 }
 
