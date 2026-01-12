@@ -4,7 +4,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -17,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -231,10 +231,15 @@ export function ConnectAccountModal({
             </button>
           </div>
         ) : provider === 'deriv' ? (
-          // Deriv OAuth Flow
+          // Deriv Connection - Tabs for OAuth and Manual Entry
           <div className="space-y-4 py-4">
-            {!showManualEntry ? (
-              <>
+            <Tabs defaultValue="oauth" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="oauth">OAuth (Recommended)</TabsTrigger>
+                <TabsTrigger value="manual">Manual Token</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="oauth" className="space-y-4 pt-4">
                 <div className="bg-muted/50 rounded-lg p-4 space-y-3">
                   <h4 className="font-medium">How it works:</h4>
                   <ol className="text-sm text-muted-foreground space-y-2">
@@ -262,7 +267,7 @@ export function ConnectAccountModal({
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5" />
                     <div className="text-xs">
-                      <span className="font-medium">Ensure this callback URL is registered in your Deriv app:</span>
+                      <span className="font-medium">If OAuth keeps redirecting to login, register this URL in your Deriv app:</span>
                       <div className="flex items-center gap-1 mt-1">
                         <code className="bg-background px-1 py-0.5 rounded text-[10px] flex-1 overflow-x-auto">
                           {callbackUrl}
@@ -271,6 +276,14 @@ export function ConnectAccountModal({
                           {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         </Button>
                       </div>
+                      <a 
+                        href="https://api.deriv.com/dashboard" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1 mt-1"
+                      >
+                        Open Deriv Dashboard <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
                   </div>
                 </div>
@@ -279,27 +292,18 @@ export function ConnectAccountModal({
                   By connecting, you allow HuMi to view your balance, execute trades, and manage deposits/withdrawals on your behalf.
                 </div>
                 
-                <DialogFooter className="flex-col gap-2">
-                  <div className="flex gap-2 w-full">
-                    <Button variant="outline" onClick={handleBack} className="flex-1">
-                      Back
-                    </Button>
-                    <Button onClick={handleDerivConnect} className="flex-1 gap-2">
-                      <ExternalLink className="w-4 h-4" />
-                      Connect with Deriv
-                    </Button>
-                  </div>
-                  <button
-                    onClick={() => setShowManualEntry(true)}
-                    className="text-xs text-muted-foreground hover:text-primary underline"
-                  >
-                    Having issues? Try manual token entry
-                  </button>
-                </DialogFooter>
-              </>
-            ) : (
-              // Manual Token Entry
-              <div className="space-y-4">
+                <div className="flex gap-2 w-full">
+                  <Button variant="outline" onClick={handleBack} className="flex-1">
+                    Back
+                  </Button>
+                  <Button onClick={handleDerivConnect} className="flex-1 gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    Connect with Deriv
+                  </Button>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="manual" className="space-y-4 pt-4">(
                 <div className="bg-muted/50 rounded-lg p-4 space-y-3">
                   <h4 className="font-medium flex items-center gap-2">
                     <Key className="w-4 h-4" />
@@ -324,7 +328,7 @@ export function ConnectAccountModal({
                     </li>
                     <li className="flex gap-2">
                       <span className="font-medium text-foreground">3.</span>
-                      Copy your Login ID and API Token below
+                      Use your CR account (not CRW wallet) for trading
                     </li>
                   </ol>
                 </div>
@@ -351,27 +355,21 @@ export function ConnectAccountModal({
                   </div>
                 </div>
 
-                <DialogFooter className="flex-col gap-2">
-                  <div className="flex gap-2 w-full">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setShowManualEntry(false)} 
-                      className="flex-1"
-                    >
-                      Back to OAuth
-                    </Button>
-                    <Button 
-                      onClick={handleManualConnect} 
-                      disabled={isLoading || !manualToken || !manualLoginId}
-                      className="flex-1 gap-2"
-                    >
-                      {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                      Connect
-                    </Button>
-                  </div>
-                </DialogFooter>
-              </div>
-            )}
+                <div className="flex gap-2 w-full">
+                  <Button variant="outline" onClick={handleBack} className="flex-1">
+                    Back
+                  </Button>
+                  <Button 
+                    onClick={handleManualConnect} 
+                    disabled={isLoading || !manualToken || !manualLoginId}
+                    className="flex-1 gap-2"
+                  >
+                    {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Connect
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
         ) : (
           // MetaAPI Form
@@ -427,14 +425,14 @@ export function ConnectAccountModal({
               </Select>
             </div>
             
-            <DialogFooter className="gap-2 sm:gap-0">
+            <div className="flex gap-2 pt-4">
               <Button type="button" variant="outline" onClick={handleBack}>
                 Back
               </Button>
               <Button type="submit" disabled={isLoading}>
                 {isLoading ? "Connecting..." : "Submit for Approval"}
               </Button>
-            </DialogFooter>
+            </div>
           </form>
         )}
       </DialogContent>

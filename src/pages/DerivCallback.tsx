@@ -6,9 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, isWalletAccount, canTradeViaAPI, DerivAccount } from "@/services/derivAuth";
+import { parseDerivRedirectTokens, isVirtualAccount, getAccountTypeLabel, isWalletAccount, canTradeViaAPI, DerivAccount, wasOAuthRecentlyInitiated, clearOAuthState } from "@/services/derivAuth";
 import { authorizeDerivAccount, getMT5AccountList, MT5Account } from "@/services/derivBroker";
-import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3, Info, ExternalLink, AlertTriangle, Copy } from "lucide-react";
+import { Loader2, Check, AlertCircle, Wallet, RefreshCw, BarChart3, Info, ExternalLink, AlertTriangle, Copy, Key } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { validateDerivToken } from "@/services/derivAuth";
 
 // Retry helper with exponential backoff + jitter
 function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
@@ -54,6 +58,10 @@ export default function DerivCallback() {
   const [selectedMT5, setSelectedMT5] = useState<MT5Account | null>(null);
   const [correlationId] = useState(() => `cb_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
   const [needsLogin, setNeedsLogin] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualToken, setManualToken] = useState('');
+  const [manualLoginId, setManualLoginId] = useState('');
+  const [isRedirectLoop, setIsRedirectLoop] = useState(false);
 
   // Store tokens if user needs to log in first
   useEffect(() => {
@@ -120,22 +128,27 @@ export default function DerivCallback() {
     
     if (parsed.length === 0) {
       // Check if this is an OAuth redirect loop (no tokens = URL not registered)
-      const isRedirectLoop = !location.search.includes('token') && !location.hash.includes('token');
+      const oauthWasInitiated = wasOAuthRecentlyInitiated();
+      const hasNoTokens = !location.search.includes('token') && !location.hash.includes('token');
+      const redirectLoopDetected = oauthWasInitiated && hasNoTokens;
       
-      const errorMsg = isRedirectLoop 
-        ? `OAuth Redirect Failed - URL Not Registered\n\n` +
-          `The callback URL is not registered in your Deriv app.\n\n` +
-          `To fix this:\n` +
-          `1. Go to: https://api.deriv.com/dashboard\n` +
-          `2. Click "Applications" tab\n` +
-          `3. Edit your app (ID: 90127)\n` +
-          `4. Set "Redirect URL" to:\n   ${expectedCallback}\n` +
-          `5. Save and try again`
-        : "No accounts found in redirect. You may have cancelled the authorization.";
+      console.log("[Deriv OAuth] No tokens found. OAuth initiated:", oauthWasInitiated, "Has tokens:", !hasNoTokens);
       
+      if (redirectLoopDetected) {
+        setIsRedirectLoop(true);
+        setShowManualEntry(true);
+        clearOAuthState();
+        // Don't set error - show the manual entry form instead
+        return;
+      }
+      
+      const errorMsg = "No accounts found in redirect. You may have cancelled the authorization or the URL is not registered.";
       setError(errorMsg);
       return;
     }
+    
+    // Clear OAuth state on successful token detection
+    clearOAuthState();
     
     if (!mountedRef.current) return;
     setAccounts(parsed);
@@ -220,6 +233,53 @@ export default function DerivCallback() {
       mountedRef.current = false;
     };
   }, [location.search, location.hash, correlationId, user?.id, authLoading]);
+
+  // Handle manual token connection
+  const handleManualConnect = async () => {
+    if (!user || !manualToken) {
+      toast({ title: "Please enter your API Token", variant: "destructive" });
+      return;
+    }
+
+    setIsConnecting(true);
+    try {
+      const result = await validateDerivToken(manualToken);
+      
+      if (!result.valid) {
+        toast({ title: "Invalid token", description: result.error, variant: "destructive" });
+        setIsConnecting(false);
+        return;
+      }
+
+      // Save account to database
+      const { error: upsertError } = await supabase.from("trading_accounts").upsert({
+        user_id: user.id,
+        provider: 'deriv',
+        provider_account_id: result.accountInfo!.loginid,
+        name: `Deriv ${result.accountInfo!.is_virtual ? 'Demo' : 'Real'} (${result.accountInfo!.currency})`,
+        login: result.accountInfo!.loginid,
+        platform: 'deriv',
+        server: 'deriv.com',
+        deriv_token: manualToken,
+        deriv_currency: result.accountInfo!.currency,
+        is_virtual: result.accountInfo!.is_virtual,
+        balance: result.accountInfo!.balance,
+        equity: result.accountInfo!.balance,
+        connection_status: 'connected',
+      }, {
+        onConflict: 'user_id,provider,provider_account_id',
+      });
+
+      if (upsertError) throw upsertError;
+
+      toast({ title: "Account connected!", description: `${result.accountInfo!.loginid} added successfully` });
+      navigate('/accounts');
+    } catch (err: any) {
+      toast({ title: "Failed to save account", description: err.message, variant: "destructive" });
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   const handleConnectAccount = async () => {
     if (!selectedAccount) {
@@ -347,55 +407,50 @@ export default function DerivCallback() {
     }
   };
 
-  if (error) {
-    const isRedirectError = error.includes('URL Not Registered') || error.includes('Redirect URL');
+  // Show manual entry when redirect loop detected OR error state
+  if (showManualEntry || isRedirectLoop) {
     const callbackUrl = sessionStorage.getItem('deriv_expected_callback') || `${window.location.origin}/deriv-callback`;
     
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-background">
         <Card className="w-full max-w-lg">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="w-5 h-5" />
-              {isRedirectError ? 'OAuth Setup Required' : 'Connection Error'}
+            <CardTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5" />
+              Connect Deriv Account
             </CardTitle>
+            <CardDescription>
+              {isRedirectLoop 
+                ? "OAuth redirect not working - use manual token entry instead"
+                : "Enter your Deriv API token to connect"
+              }
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {isRedirectError ? (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  The Deriv OAuth redirect URL is not registered in your app settings. 
-                  This causes Deriv to redirect back to the login page instead of returning tokens.
-                </p>
+            {isRedirectLoop && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-amber-600 dark:text-amber-400">OAuth Redirect Issue Detected</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      The redirect URL may not be registered correctly in your Deriv app settings.
+                    </p>
+                  </div>
+                </div>
                 
-                <div className="bg-muted rounded-lg p-4 space-y-3">
-                  <h4 className="font-medium text-sm">How to fix:</h4>
-                  <ol className="text-sm space-y-2">
-                    <li className="flex gap-2">
-                      <span className="font-bold">1.</span>
-                      <span>Go to <a href="https://api.deriv.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
-                        Deriv API Dashboard <ExternalLink className="w-3 h-3" />
-                      </a></span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="font-bold">2.</span>
-                      <span>Click the "Applications" tab</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="font-bold">3.</span>
-                      <span>Find your app (ID: 90127) and click the edit icon</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="font-bold">4.</span>
-                      <span>Set "Redirect URL" to exactly:</span>
-                    </li>
+                <div className="text-sm space-y-2">
+                  <p className="font-medium">To fix OAuth (optional):</p>
+                  <ol className="text-muted-foreground space-y-1 text-xs">
+                    <li>1. Go to <a href="https://api.deriv.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Deriv API Dashboard</a></li>
+                    <li>2. Edit app ID 90127 → Set Redirect URL to:</li>
                   </ol>
                   <div className="flex items-center gap-2 bg-background rounded p-2 border">
                     <code className="text-xs flex-1 break-all">{callbackUrl}</code>
                     <Button 
                       size="sm" 
                       variant="ghost" 
-                      className="h-7 w-7 p-0 shrink-0"
+                      className="h-6 w-6 p-0 shrink-0"
                       onClick={() => {
                         navigator.clipboard.writeText(callbackUrl);
                         toast({ title: "Copied!" });
@@ -404,14 +459,119 @@ export default function DerivCallback() {
                       <Copy className="w-3 h-3" />
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    5. Save changes and try connecting again
-                  </p>
                 </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground whitespace-pre-line">{error}</p>
+              </div>
             )}
+            
+            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+              <h4 className="font-medium">Manual Token Entry</h4>
+              <ol className="text-sm text-muted-foreground space-y-2">
+                <li className="flex gap-2">
+                  <span className="font-medium text-foreground">1.</span>
+                  Go to{' '}
+                  <a 
+                    href="https://app.deriv.com/account/api-token" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Deriv API Token page <ExternalLink className="w-3 h-3" />
+                  </a>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-medium text-foreground">2.</span>
+                  Create token with "Read", "Trade", "Admin" permissions
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-medium text-foreground">3.</span>
+                  Use a CR account (not CRW wallet) for trading
+                </li>
+              </ol>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="manualLoginId">Login ID (e.g., CR1234567)</Label>
+                <Input
+                  id="manualLoginId"
+                  placeholder="CR1234567"
+                  value={manualLoginId}
+                  onChange={(e) => setManualLoginId(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manualToken">API Token</Label>
+                <Input
+                  id="manualToken"
+                  type="password"
+                  placeholder="Paste your API token"
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {!user && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  You need to be logged in to connect an account.
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/accounts')}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleManualConnect} 
+                disabled={isConnecting || !manualToken || !user}
+                className="flex-1"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  'Connect Account'
+                )}
+              </Button>
+            </div>
+            
+            {!isRedirectLoop && (
+              <button
+                onClick={() => {
+                  setShowManualEntry(false);
+                  window.location.href = `https://oauth.deriv.com/oauth2/authorize?app_id=90127&l=en&brand=deriv`;
+                }}
+                className="w-full text-xs text-muted-foreground hover:text-primary underline"
+              >
+                Try OAuth again
+              </button>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <Card className="w-full max-w-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-5 h-5" />
+              Connection Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground whitespace-pre-line">{error}</p>
             
             <p className="text-xs text-muted-foreground">
               Correlation ID: {correlationId}
@@ -422,13 +582,11 @@ export default function DerivCallback() {
                 Back to Accounts
               </Button>
               <Button 
-                onClick={() => {
-                  window.location.href = `https://oauth.deriv.com/oauth2/authorize?app_id=90127&l=en&brand=deriv`;
-                }} 
+                onClick={() => setShowManualEntry(true)} 
                 className="flex-1"
               >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Try Again
+                <Key className="w-4 h-4 mr-2" />
+                Try Manual Entry
               </Button>
             </div>
           </CardContent>

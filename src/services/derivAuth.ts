@@ -38,8 +38,9 @@ function safeDecode(v: string | null): string | undefined {
 export function getDerivLoginUrl(callbackUrl?: string): string {
   const callback = callbackUrl || `${window.location.origin}/deriv-callback`;
   
-  // Store callback URL for reference on callback page
+  // Store callback URL and timestamp for reference on callback page
   sessionStorage.setItem('deriv_expected_callback', callback);
+  sessionStorage.setItem('deriv_oauth_initiated', Date.now().toString());
   
   // Critical: Log exact URL that MUST be registered in Deriv Dashboard
   console.log("=".repeat(70));
@@ -55,11 +56,30 @@ export function getDerivLoginUrl(callbackUrl?: string): string {
   console.log("[DerivAuth] 2. Click 'Applications' tab");
   console.log("[DerivAuth] 3. Find your app (ID: " + DERIV_APP_ID + ") and click edit (pencil icon)");
   console.log("[DerivAuth] 4. In 'Redirect URL' field, paste: " + callback);
-  console.log("[DerivAuth] 5. Save and try OAuth again");
+  console.log("[DerivAuth] 5. Ensure ALL scopes are enabled: read, trade, payments, trading_information, admin");
+  console.log("[DerivAuth] 6. Save and try OAuth again");
   console.log("=".repeat(70));
   
   // Note: Deriv OAuth uses the registered Redirect URL from app settings, not a URL param
   return `${DERIV_OAUTH_URL}?app_id=${DERIV_APP_ID}&l=en&brand=deriv`;
+}
+
+/**
+ * Test if OAuth was recently initiated (within 2 minutes)
+ * Used to detect redirect loop issues
+ */
+export function wasOAuthRecentlyInitiated(): boolean {
+  const initiated = sessionStorage.getItem('deriv_oauth_initiated');
+  if (!initiated) return false;
+  const elapsed = Date.now() - parseInt(initiated, 10);
+  return elapsed < 120000; // 2 minutes
+}
+
+/**
+ * Clear OAuth state after successful or failed processing
+ */
+export function clearOAuthState(): void {
+  sessionStorage.removeItem('deriv_oauth_initiated');
 }
 
 /**
