@@ -518,6 +518,48 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_subscriptions: {
+        Row: {
+          activated_at: string | null
+          activated_user_id: string | null
+          amount_cents: number
+          created_at: string | null
+          email: string
+          id: string
+          paid_at: string | null
+          payment_id: string | null
+          plan_name: string
+          status: string | null
+          yoco_checkout_id: string | null
+        }
+        Insert: {
+          activated_at?: string | null
+          activated_user_id?: string | null
+          amount_cents: number
+          created_at?: string | null
+          email: string
+          id?: string
+          paid_at?: string | null
+          payment_id?: string | null
+          plan_name: string
+          status?: string | null
+          yoco_checkout_id?: string | null
+        }
+        Update: {
+          activated_at?: string | null
+          activated_user_id?: string | null
+          amount_cents?: number
+          created_at?: string | null
+          email?: string
+          id?: string
+          paid_at?: string | null
+          payment_id?: string | null
+          plan_name?: string
+          status?: string | null
+          yoco_checkout_id?: string | null
+        }
+        Relationships: []
+      }
       pending_trades: {
         Row: {
           awaiting_confirmation: boolean | null

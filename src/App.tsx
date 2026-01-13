@@ -11,6 +11,7 @@ import CopyTrading from "./pages/CopyTradingNew";
 import AIAutoTrading from "./pages/AIAutoTrading";
 import TradingAccounts from "./pages/TradingAccounts";
 import Subscription from "./pages/Subscription";
+import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import AdminPanel from "./pages/AdminPanel";
 import DerivCallback from "./pages/DerivCallback";
@@ -108,7 +109,9 @@ const App = () => (
           <Sonner />
           <KhumoIntroModal />
           <BrowserRouter>
-            <Routes>
+          <Routes>
+            {/* Public routes - no auth required */}
+            <Route path="/pricing" element={<Pricing />} />
             <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
