@@ -36,39 +36,58 @@ Deno.serve(async (req) => {
       const { metadata } = payload.payload;
       const userId = metadata?.user_id;
       const planName = metadata?.plan_name;
+      const email = metadata?.email;
+      const isGuestCheckout = metadata?.guest_checkout === true;
 
-      if (!userId || !planName) {
-        console.error('[Yoco Webhook] Missing metadata:', metadata);
-        return new Response(JSON.stringify({ error: 'Missing required metadata' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+      console.log('[Yoco Webhook] Payment metadata:', { userId, planName, email, isGuestCheckout });
+
+      if (isGuestCheckout && email) {
+        // Guest checkout: Update pending_subscriptions table
+        console.log(`[Yoco Webhook] Processing guest checkout for email: ${email}`);
+        
+        const { error: updateError } = await supabase
+          .from('pending_subscriptions')
+          .update({
+            status: 'paid',
+            paid_at: new Date().toISOString(),
+            payment_id: payload.payload.id
+          })
+          .eq('email', email.toLowerCase().trim());
+
+        if (updateError) {
+          console.error('[Yoco Webhook] Failed to update pending subscription:', updateError);
+          // Don't throw - still return success to Yoco
+        } else {
+          console.log(`[Yoco Webhook] ✅ Marked pending subscription as paid for ${email}`);
+        }
+      } else if (userId && planName) {
+        // Logged-in user checkout: Activate subscription directly
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30); // 30 days from now
+
+        const { error } = await supabase
+          .from('user_subscriptions')
+          .upsert({
+            user_id: userId,
+            plan_name: planName.toLowerCase(),
+            status: 'active',
+            started_at: new Date().toISOString(),
+            expires_at: expiresAt.toISOString(),
+            auto_trades_used: 0,
+            last_reset_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id'
+          });
+
+        if (error) {
+          console.error('[Yoco Webhook] Database error:', error);
+          throw error;
+        }
+
+        console.log(`[Yoco Webhook] ✅ Activated ${planName} for user ${userId}`);
+      } else {
+        console.warn('[Yoco Webhook] Payment received but missing required metadata:', metadata);
       }
-
-      // Activate subscription
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days from now
-
-      const { error } = await supabase
-        .from('user_subscriptions')
-        .upsert({
-          user_id: userId,
-          plan_name: planName.toLowerCase(),
-          status: 'active',
-          started_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString(),
-          auto_trades_used: 0,
-          last_reset_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
-
-      if (error) {
-        console.error('[Yoco Webhook] Database error:', error);
-        throw error;
-      }
-
-      console.log(`[Yoco Webhook] ✅ Activated ${planName} for user ${userId}`);
     }
 
     return new Response(JSON.stringify({ received: true }), {
