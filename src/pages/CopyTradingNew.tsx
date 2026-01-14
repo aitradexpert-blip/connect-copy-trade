@@ -84,31 +84,50 @@ export default function CopyTradingNew() {
       if (accountsError) throw accountsError;
       setAccounts(accountsData || []);
 
-      // Load master traders
+      // Load master traders from the public_master_accounts view
+      // This view only exposes non-sensitive fields and excludes tokens
       const { data: mastersData, error: mastersError } = await supabase
-        .from("trading_accounts")
+        .from("public_master_accounts")
         .select(`
           id,
           name,
           platform,
           balance,
-          user_id
+          user_id,
+          display_id,
+          is_virtual
         `)
-        .eq("is_master", true)
         .neq("user_id", user.id);
 
-      if (mastersError) throw mastersError;
-      
-      const masters = (mastersData || []).map((master: any) => ({
-        id: master.id,
-        name: master.name,
-        user_email: "Master Trader",
-        performance: 12.5,
-        followers: 0,
-        account_id: master.id
-      }));
-
-      setMasterTraders(masters);
+      if (mastersError) {
+        console.error("Error loading masters:", mastersError);
+        // Fallback to direct query if view doesn't exist
+        const { data: fallbackData } = await supabase
+          .from("trading_accounts")
+          .select("id,name,platform,balance,user_id")
+          .eq("is_master", true)
+          .neq("user_id", user.id);
+        
+        const masters = (fallbackData || []).map((master: any) => ({
+          id: master.id,
+          name: master.name,
+          user_email: "Master Trader",
+          performance: 12.5,
+          followers: 0,
+          account_id: master.id
+        }));
+        setMasterTraders(masters);
+      } else {
+        const masters = (mastersData || []).map((master: any) => ({
+          id: master.id,
+          name: master.name,
+          user_email: master.is_virtual ? "Demo Master" : "Master Trader",
+          performance: 12.5,
+          followers: 0,
+          account_id: master.id
+        }));
+        setMasterTraders(masters);
+      }
 
       // Load copy statistics for each relationship
       const { data: relationships } = await supabase

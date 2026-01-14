@@ -6,10 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import AppLayout from "@/components/AppLayout";
 import RiskCalculator from "@/components/RiskCalculator";
-import { TrendingUp, TrendingDown, Play } from "lucide-react";
+import { TrendingUp, TrendingDown, Play, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { executeDerivSignal } from "@/services/derivSignalExecution";
 
 interface Signal {
   id: string;
@@ -26,7 +27,12 @@ interface TradingAccount {
   id: string;
   name: string;
   balance: number;
-  metaapi_account_id: string;
+  metaapi_account_id: string | null;
+  provider: string;
+  deriv_token: string | null;
+  deriv_currency: string | null;
+  is_virtual: boolean | null;
+  login: string;
 }
 
 export default function TradingIdeas() {
@@ -55,10 +61,10 @@ export default function TradingIdeas() {
         if (signalsError) throw signalsError;
         setSignals((signalsData || []) as Signal[]);
 
-        // Load user's trading accounts
+        // Load user's trading accounts with provider info
         const { data: accountsData, error: accountsError } = await supabase
           .from('trading_accounts')
-          .select('id,name,balance,metaapi_account_id')
+          .select('id,name,balance,metaapi_account_id,provider,deriv_token,deriv_currency,is_virtual,login')
           .eq('user_id', user.id);
 
         if (accountsError) throw accountsError;
@@ -89,24 +95,60 @@ export default function TradingIdeas() {
     try {
       const lotSize = calculatedLotSize > 0 ? calculatedLotSize : selectedSignal.lot_size;
       
-      const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
-        body: {
-          accountId: account.metaapi_account_id,
-          trade: {
+      // Check provider and route accordingly
+      if (account.provider === 'deriv' && account.deriv_token) {
+        // Execute via Deriv WebSocket API
+        console.log('[TradingIdeas] Executing via Deriv API for account:', account.login);
+        
+        const result = await executeDerivSignal(
+          {
+            deriv_token: account.deriv_token,
+            deriv_currency: account.deriv_currency || 'USD',
+            is_virtual: account.is_virtual || false,
+          },
+          {
             symbol: selectedSignal.symbol,
             direction: selectedSignal.direction,
             volume: lotSize,
-            comment: `Signal: ${selectedSignal.comment || selectedSignal.symbol}`
+            stopLoss: selectedSignal.stop_loss,
+            takeProfit: selectedSignal.take_profit,
+            comment: selectedSignal.comment || undefined,
           }
+        );
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to execute Deriv trade');
         }
-      });
+        
+        toast({
+          title: 'Trade Executed on Deriv',
+          description: `${selectedSignal.direction} contract purchased! Payout: $${result.payout?.toFixed(2)}`,
+        });
+      } else if (account.metaapi_account_id) {
+        // Execute via MetaAPI edge function
+        console.log('[TradingIdeas] Executing via MetaAPI for account:', account.metaapi_account_id);
+        
+        const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
+          body: {
+            accountId: account.metaapi_account_id,
+            trade: {
+              symbol: selectedSignal.symbol,
+              direction: selectedSignal.direction,
+              volume: lotSize,
+              comment: `Signal: ${selectedSignal.comment || selectedSignal.symbol}`
+            }
+          }
+        });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      toast({
-        title: 'Trade Executed',
-        description: `${selectedSignal.direction} ${lotSize} lots of ${selectedSignal.symbol} executed successfully`
-      });
+        toast({
+          title: 'Trade Executed',
+          description: `${selectedSignal.direction} ${lotSize} lots of ${selectedSignal.symbol} executed successfully`
+        });
+      } else {
+        throw new Error('This account does not support trade execution. Please connect a tradeable account.');
+      }
       
       setSelectedSignal(null);
     } catch (error: any) {
@@ -119,6 +161,26 @@ export default function TradingIdeas() {
     } finally {
       setExecuting(false);
     }
+  };
+
+  // Get provider badge for account
+  const getProviderBadge = (account: TradingAccount) => {
+    if (account.provider === 'deriv') {
+      return (
+        <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+          <Zap className="w-3 h-3 mr-1" />
+          Deriv
+        </Badge>
+      );
+    }
+    if (account.metaapi_account_id) {
+      return (
+        <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
+          MetaAPI
+        </Badge>
+      );
+    }
+    return <Badge variant="secondary" className="text-xs">No API</Badge>;
   };
 
   return (
@@ -145,7 +207,10 @@ export default function TradingIdeas() {
                 <SelectContent>
                   {accounts.map((account) => (
                     <SelectItem key={account.id} value={account.id}>
-                      {account.name}
+                      <div className="flex items-center gap-2">
+                        {account.name}
+                        {getProviderBadge(account)}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -222,7 +287,10 @@ export default function TradingIdeas() {
                           <SelectContent>
                             {accounts.map((account) => (
                               <SelectItem key={account.id} value={account.id}>
-                                {account.name} (${account.balance.toFixed(2)})
+                                <div className="flex items-center gap-2">
+                                  {account.name} (${account.balance?.toFixed(2) || '0.00'})
+                                  {getProviderBadge(account)}
+                                </div>
                               </SelectItem>
                             ))}
                           </SelectContent>

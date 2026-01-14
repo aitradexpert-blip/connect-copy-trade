@@ -70,6 +70,13 @@ export type Database = {
             foreignKeyName: "ai_bot_assignments_trading_account_id_fkey"
             columns: ["trading_account_id"]
             isOneToOne: false
+            referencedRelation: "public_master_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_bot_assignments_trading_account_id_fkey"
+            columns: ["trading_account_id"]
+            isOneToOne: false
             referencedRelation: "trading_accounts"
             referencedColumns: ["id"]
           },
@@ -174,6 +181,13 @@ export type Database = {
             foreignKeyName: "broker_deposit_addresses_trading_account_id_fkey"
             columns: ["trading_account_id"]
             isOneToOne: false
+            referencedRelation: "public_master_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "broker_deposit_addresses_trading_account_id_fkey"
+            columns: ["trading_account_id"]
+            isOneToOne: false
             referencedRelation: "trading_accounts"
             referencedColumns: ["id"]
           },
@@ -212,7 +226,21 @@ export type Database = {
             foreignKeyName: "copy_trading_relationships_follower_account_id_fkey"
             columns: ["follower_account_id"]
             isOneToOne: false
+            referencedRelation: "public_master_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copy_trading_relationships_follower_account_id_fkey"
+            columns: ["follower_account_id"]
+            isOneToOne: false
             referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copy_trading_relationships_master_account_id_fkey"
+            columns: ["master_account_id"]
+            isOneToOne: false
+            referencedRelation: "public_master_accounts"
             referencedColumns: ["id"]
           },
           {
@@ -750,6 +778,13 @@ export type Database = {
             foreignKeyName: "trade_history_trading_account_id_fkey"
             columns: ["trading_account_id"]
             isOneToOne: false
+            referencedRelation: "public_master_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_history_trading_account_id_fkey"
+            columns: ["trading_account_id"]
+            isOneToOne: false
             referencedRelation: "trading_accounts"
             referencedColumns: ["id"]
           },
@@ -978,7 +1013,45 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_master_accounts: {
+        Row: {
+          balance: number | null
+          created_at: string | null
+          display_id: string | null
+          id: string | null
+          is_master: boolean | null
+          is_virtual: boolean | null
+          name: string | null
+          platform: string | null
+          provider: string | null
+          user_id: string | null
+        }
+        Insert: {
+          balance?: number | null
+          created_at?: string | null
+          display_id?: string | null
+          id?: string | null
+          is_master?: boolean | null
+          is_virtual?: boolean | null
+          name?: string | null
+          platform?: string | null
+          provider?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          balance?: number | null
+          created_at?: string | null
+          display_id?: string | null
+          id?: string | null
+          is_master?: boolean | null
+          is_virtual?: boolean | null
+          name?: string | null
+          platform?: string | null
+          provider?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       delete_expired_pending_trades: { Args: never; Returns: undefined }
