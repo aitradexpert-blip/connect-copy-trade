@@ -740,7 +740,7 @@ export default function DerivCallback() {
                     <BarChart3 className="w-4 h-4" />
                     MT5 Trading Accounts
                   </h3>
-                  {mt5Accounts.map((mt5) => {
+              {mt5Accounts.map((mt5) => {
                     const isSelected = selectedMT5?.login === mt5.login;
                     
                     return (
@@ -759,11 +759,14 @@ export default function DerivCallback() {
                               <BarChart3 className="w-5 h-5 text-blue-500" />
                             </div>
                             <div>
-                              <div className="font-medium flex items-center gap-2">
+                              <div className="font-medium flex items-center gap-2 flex-wrap">
                                 MT5 {mt5.login}
                                 <Badge variant="outline">{mt5.market_type}</Badge>
                                 <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
                                   {mt5.server}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs text-amber-600 border-amber-500/30 bg-amber-500/10">
+                                  Display Only
                                 </Badge>
                               </div>
                               <div className="text-sm text-muted-foreground">
@@ -772,6 +775,9 @@ export default function DerivCallback() {
                                 </span>
                                 <span className="mx-2">•</span>
                                 <span>Leverage 1:{mt5.leverage}</span>
+                              </div>
+                              <div className="text-xs text-amber-600 mt-1">
+                                MT5 trading not supported via Deriv API - use MetaTrader 5 app
                               </div>
                             </div>
                           </div>

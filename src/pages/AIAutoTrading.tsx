@@ -27,7 +27,10 @@ interface TradingAccount {
   id: string;
   name: string;
   platform: string;
-  metaapi_account_id: string;
+  metaapi_account_id: string | null;
+  provider: string;
+  deriv_token: string | null;
+  is_virtual: boolean | null;
 }
 
 interface AIBot {
@@ -77,10 +80,10 @@ export default function AIAutoTrading() {
           });
         }
 
-        // Load user's trading accounts
+        // Load user's trading accounts with provider info
         const { data: accountsData, error: accountsError } = await supabase
           .from("trading_accounts")
-          .select("id,name,platform,metaapi_account_id")
+          .select("id,name,platform,metaapi_account_id,provider,deriv_token,is_virtual")
           .eq("user_id", user.id);
 
         if (accountsError) throw accountsError;
