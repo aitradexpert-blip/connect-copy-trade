@@ -1,7 +1,7 @@
 // Deriv Signal Execution Service
 // Executes trading signals on Deriv accounts using WebSocket API
 
-import { getSharedDerivWS, getDerivSymbol, DerivWS } from './derivWebSocket';
+import { getSharedDerivWS, getDerivSymbol } from './derivWebSocket';
 import { getProposal, buyContract, ProposalParams } from './derivTrading';
 
 export interface SignalTradeParams {
@@ -26,6 +26,42 @@ export interface DerivAccountInfo {
  */
 function mapDirectionToContractType(direction: 'BUY' | 'SELL'): 'CALL' | 'PUT' {
   return direction === 'BUY' ? 'CALL' : 'PUT';
+}
+
+/**
+ * Determine the best duration settings based on symbol type
+ * Different symbols support different duration types
+ */
+function getDurationForSymbol(derivSymbol: string): { duration: number; durationUnit: 't' | 's' | 'm' | 'h' | 'd' } {
+  // Synthetic indices (Volatility, Boom, Crash, etc.) - support tick-based durations
+  if (
+    derivSymbol.startsWith('R_') || 
+    derivSymbol.startsWith('1HZ') ||
+    derivSymbol.includes('BOOM') ||
+    derivSymbol.includes('CRASH') ||
+    derivSymbol === 'stpRNG' ||
+    derivSymbol.startsWith('JD')
+  ) {
+    return { duration: 5, durationUnit: 't' }; // 5 ticks
+  }
+  
+  // Forex pairs (frx prefix) - use minutes, minimum typically 1-2 minutes
+  if (derivSymbol.startsWith('frx')) {
+    return { duration: 2, durationUnit: 'm' }; // 2 minutes
+  }
+  
+  // Crypto - use minutes
+  if (derivSymbol.startsWith('cry')) {
+    return { duration: 5, durationUnit: 'm' }; // 5 minutes
+  }
+  
+  // Indices (OTC prefix) - use minutes
+  if (derivSymbol.startsWith('OTC')) {
+    return { duration: 5, durationUnit: 'm' }; // 5 minutes
+  }
+  
+  // Default fallback - 5 ticks works for most synthetics
+  return { duration: 5, durationUnit: 't' };
 }
 
 /**
@@ -66,7 +102,11 @@ export async function executeDerivSignal(
     // Typical lot sizes in forex (0.01 = micro lot) map to small stakes
     const stake = Math.max(1, signal.volume * 100); // Convert lot size to stake (e.g., 0.01 lot = $1 stake)
     
-    // Step 4: Get proposal for Rise/Fall contract
+    // Step 4: Get duration settings based on symbol type
+    const { duration, durationUnit } = getDurationForSymbol(derivSymbol);
+    console.log('[DerivSignalExecution] Duration settings:', duration, durationUnit, 'for symbol:', derivSymbol);
+    
+    // Step 5: Get proposal for Rise/Fall contract
     const contractType = mapDirectionToContractType(signal.direction);
     
     const proposalParams: ProposalParams = {
@@ -74,8 +114,8 @@ export async function executeDerivSignal(
       contractType: contractType,
       amount: stake,
       basis: 'stake',
-      duration: 5, // 5 minutes default duration
-      durationUnit: 'm',
+      duration: duration,
+      durationUnit: durationUnit,
     };
     
     console.log('[DerivSignalExecution] Getting proposal:', proposalParams);
@@ -91,7 +131,7 @@ export async function executeDerivSignal(
       payout: proposalResponse.proposal.payout,
     });
     
-    // Step 5: Execute the buy
+    // Step 6: Execute the buy
     const buyResponse = await buyContract(
       proposalResponse.proposal.id,
       proposalResponse.proposal.ask_price,

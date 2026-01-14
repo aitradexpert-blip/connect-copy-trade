@@ -111,11 +111,29 @@ export default function AIAutoTrading() {
     if (!account || !agreeTerms || !bot) return;
 
     try {
+      // First, get the latest trading signal to use as reference (or create a placeholder)
+      const { data: latestSignal } = await supabase
+        .from('trading_signals')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      // If no signals exist, we need to handle this gracefully
+      if (!latestSignal) {
+        toast({
+          title: "No signals available",
+          description: "Please wait for admin to publish trading signals first",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { error } = await supabase
         .from('ai_bot_assignments')
         .insert([{
           bot_id: bot.id,
-          signal_id: bot.id,
+          signal_id: latestSignal.id, // Use actual signal ID, not bot ID
           user_id: user?.id || '',
           trading_account_id: selectedAccount,
           auto_execute: true,
