@@ -5,11 +5,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, TrendingUp, Copy, Settings, Play, Activity } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import AppLayout from "@/components/AppLayout";
+import { getSharedDerivWS } from "@/services/derivWebSocket";
+import { getCopyTradingList, getCopyTradingStats, startCopying, stopCopying } from "@/services/derivCopyTrading";
 
 interface TradingAccount {
   id: string;
@@ -17,6 +20,8 @@ interface TradingAccount {
   platform: string;
   balance: number;
   is_master: boolean;
+  provider: string;
+  deriv_token: string | null;
 }
 
 interface MasterTrader {
@@ -26,6 +31,8 @@ interface MasterTrader {
   performance: number;
   followers: number;
   account_id: string;
+  source: 'local' | 'deriv';
+  token?: string; // For Deriv copy trading
 }
 
 interface CopyStats {
@@ -34,13 +41,31 @@ interface CopyStats {
   successRate: number;
 }
 
+interface DerivCopyTrader {
+  loginid: string;
+  token: string;
+  assets: string[];
+  min_trade_stake: number;
+  max_trade_stake: number;
+  trade_types: string[];
+  stats?: {
+    copiers: number;
+    performance_probability: number;
+    total_trades: number;
+    trades_profitable: number;
+  };
+}
+
 export default function CopyTradingNew() {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [masterTraders, setMasterTraders] = useState<MasterTrader[]>([]);
+  const [derivCopyTraders, setDerivCopyTraders] = useState<DerivCopyTrader[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [copyStats, setCopyStats] = useState<Record<string, CopyStats>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingDeriv, setLoadingDeriv] = useState(false);
+  const [activeTab, setActiveTab] = useState("local");
 
   useEffect(() => {
     loadData();
@@ -75,10 +100,10 @@ export default function CopyTradingNew() {
     if (!user) return;
     
     try {
-      // Load user's trading accounts
+      // Load user's trading accounts with provider info
       const { data: accountsData, error: accountsError } = await supabase
         .from("trading_accounts")
-        .select("id,name,platform,balance,is_master")
+        .select("id,name,platform,balance,is_master,provider,deriv_token")
         .eq("user_id", user.id);
 
       if (accountsError) throw accountsError;
@@ -114,7 +139,8 @@ export default function CopyTradingNew() {
           user_email: "Master Trader",
           performance: 12.5,
           followers: 0,
-          account_id: master.id
+          account_id: master.id,
+          source: 'local' as const
         }));
         setMasterTraders(masters);
       } else {
@@ -124,7 +150,8 @@ export default function CopyTradingNew() {
           user_email: master.is_virtual ? "Demo Master" : "Master Trader",
           performance: 12.5,
           followers: 0,
-          account_id: master.id
+          account_id: master.id,
+          source: 'local' as const
         }));
         setMasterTraders(masters);
       }
@@ -140,7 +167,9 @@ export default function CopyTradingNew() {
         const stats: Record<string, CopyStats> = {};
         for (const rel of relationships) {
           const stat = await fetchCopyStats(rel.id);
-          stats[rel.master_account_id] = stat;
+          if (rel.master_account_id) {
+            stats[rel.master_account_id] = stat;
+          }
         }
         setCopyStats(stats);
       }
@@ -152,6 +181,96 @@ export default function CopyTradingNew() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load Deriv copy trading masters (Options only)
+  const loadDerivCopyTraders = async () => {
+    // Get a Deriv account to authorize with
+    const derivAccount = accounts.find(acc => acc.provider === 'deriv' && acc.deriv_token);
+    if (!derivAccount || !derivAccount.deriv_token) {
+      toast({
+        title: "Connect Deriv Account",
+        description: "Connect a Deriv account to view Deriv copy traders",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoadingDeriv(true);
+    try {
+      const ws = getSharedDerivWS();
+      
+      // Authorize first
+      await ws.send({ authorize: derivAccount.deriv_token });
+      
+      // Get copy trading list
+      const response = await getCopyTradingList(ws);
+      
+      if (response.copy_trading_list?.traders) {
+        // Fetch stats for each trader
+        const tradersWithStats = await Promise.all(
+          response.copy_trading_list.traders.map(async (trader) => {
+            try {
+              const stats = await getCopyTradingStats(trader.loginid, ws);
+              return {
+                ...trader,
+                stats: {
+                  copiers: stats.copy_trading_statistics.copiers,
+                  performance_probability: stats.copy_trading_statistics.performance_probability,
+                  total_trades: stats.copy_trading_statistics.total_trades,
+                  trades_profitable: stats.copy_trading_statistics.trades_profitable,
+                }
+              };
+            } catch {
+              return trader;
+            }
+          })
+        );
+        setDerivCopyTraders(tradersWithStats);
+      }
+    } catch (error: any) {
+      console.error("Error loading Deriv copy traders:", error);
+      toast({
+        title: "Error loading Deriv traders",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingDeriv(false);
+    }
+  };
+
+  // Follow a Deriv copy trader
+  const followDerivTrader = async (traderToken: string, traderLoginId: string) => {
+    const derivAccount = accounts.find(acc => acc.provider === 'deriv' && acc.deriv_token);
+    if (!derivAccount || !derivAccount.deriv_token) {
+      toast({
+        title: "No Deriv Account",
+        description: "Please select a Deriv account to copy trades",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const ws = getSharedDerivWS();
+      await ws.send({ authorize: derivAccount.deriv_token });
+      
+      await startCopying({ copyTraderToken: traderToken }, ws);
+      
+      toast({
+        title: "Successfully following Deriv trader",
+        description: `You are now copying trades from ${traderLoginId}`,
+      });
+      
+      loadDerivCopyTraders();
+    } catch (error: any) {
+      toast({
+        title: "Error following trader",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -344,85 +463,197 @@ export default function CopyTradingNew() {
                 <SelectContent>
                   {accounts.filter(acc => !acc.is_master).map((account) => (
                     <SelectItem key={account.id} value={account.id}>
-                      {account.name} (${account.balance.toFixed(2)})
+                      <div className="flex items-center gap-2">
+                        {account.name} (${account.balance?.toFixed(2) || '0.00'})
+                        {account.provider === 'deriv' && (
+                          <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+                            <Zap className="w-3 h-3 mr-1" />
+                            Deriv
+                          </Badge>
+                        )}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Master Traders List */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Available Master Traders</h3>
-              {masterTraders.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No master traders available</p>
-                  <p className="text-sm">Master traders will appear here when they enable their accounts</p>
+            {/* Tabs for Local Masters and Deriv Copy Trading */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="local">Local Masters</TabsTrigger>
+                <TabsTrigger value="deriv" onClick={() => derivCopyTraders.length === 0 && loadDerivCopyTraders()}>
+                  <Zap className="w-4 h-4 mr-1" />
+                  Deriv Options
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="local" className="space-y-4 mt-4">
+                <h3 className="text-lg font-semibold">Available Master Traders</h3>
+                {masterTraders.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No master traders available</p>
+                    <p className="text-sm">Master traders will appear here when they enable their accounts</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {masterTraders.map((trader) => {
+                      const stats = copyStats[trader.account_id];
+                      return (
+                        <Card key={trader.id} className="border border-border">
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="space-y-1">
+                                <h4 className="font-medium">{trader.name}</h4>
+                                <p className="text-sm text-muted-foreground">Trader: {trader.user_email}</p>
+                                <div className="flex items-center gap-4 text-sm">
+                                  <span className="flex items-center gap-1">
+                                    <TrendingUp className="w-4 h-4 text-profit" />
+                                    +{trader.performance}% return
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Users className="w-4 h-4" />
+                                    {trader.followers} followers
+                                  </span>
+                                </div>
+                              </div>
+                              <Button
+                                onClick={() => followTrader(trader.account_id)}
+                                disabled={!selectedAccount}
+                                className="bg-gradient-primary"
+                              >
+                                <Play className="w-4 h-4 mr-2" />
+                                Follow
+                              </Button>
+                            </div>
+                            
+                            {/* Real-time Stats */}
+                            {stats && (
+                              <div className="grid grid-cols-3 gap-4 pt-4 border-t">
+                                <div className="text-center">
+                                  <div className="text-xs text-muted-foreground mb-1">Copied Trades</div>
+                                  <div className="text-lg font-semibold flex items-center justify-center gap-1">
+                                    <Activity className="w-4 h-4" />
+                                    {stats.copiedTrades}
+                                  </div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-xs text-muted-foreground mb-1">Total P/L</div>
+                                  <div className={`text-lg font-semibold ${stats.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}>
+                                    ${stats.totalPL.toFixed(2)}
+                                  </div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-xs text-muted-foreground mb-1">Success Rate</div>
+                                  <div className="text-lg font-semibold">
+                                    {stats.successRate.toFixed(1)}%
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="deriv" className="space-y-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Deriv Copy Trading (Options)</h3>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={loadDerivCopyTraders}
+                    disabled={loadingDeriv}
+                  >
+                    {loadingDeriv ? "Loading..." : "Refresh"}
+                  </Button>
                 </div>
-              ) : (
-                <div className="grid gap-4">
-                  {masterTraders.map((trader) => {
-                    const stats = copyStats[trader.account_id];
-                    return (
-                      <Card key={trader.id} className="border border-border">
+                
+                <div className="bg-accent/50 p-3 rounded-lg text-sm">
+                  <p className="text-muted-foreground">
+                    <strong>Note:</strong> Deriv copy trading is available only for Options trading. 
+                    For MT5 copy trading, use MetaQuotes Signals directly in the MT5 app.
+                  </p>
+                </div>
+                
+                {loadingDeriv ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : derivCopyTraders.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Zap className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No Deriv copy traders found</p>
+                    <p className="text-sm">Connect a Deriv account and click "Refresh" to load available traders</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {derivCopyTraders.map((trader) => (
+                      <Card key={trader.loginid} className="border border-border">
                         <CardContent className="p-4">
                           <div className="flex items-center justify-between mb-4">
                             <div className="space-y-1">
-                              <h4 className="font-medium">{trader.name}</h4>
-                              <p className="text-sm text-muted-foreground">Trader: {trader.user_email}</p>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium">{trader.loginid}</h4>
+                                <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+                                  <Zap className="w-3 h-3 mr-1" />
+                                  Options
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Stake: ${trader.min_trade_stake} - ${trader.max_trade_stake}
+                              </p>
                               <div className="flex items-center gap-4 text-sm">
-                                <span className="flex items-center gap-1">
-                                  <TrendingUp className="w-4 h-4 text-profit" />
-                                  +{trader.performance}% return
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Users className="w-4 h-4" />
-                                  {trader.followers} followers
-                                </span>
+                                {trader.stats && (
+                                  <>
+                                    <span className="flex items-center gap-1">
+                                      <TrendingUp className="w-4 h-4 text-profit" />
+                                      {trader.stats.performance_probability}% win rate
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <Users className="w-4 h-4" />
+                                      {trader.stats.copiers} copiers
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <Activity className="w-4 h-4" />
+                                      {trader.stats.total_trades} trades
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {trader.assets.slice(0, 5).map((asset) => (
+                                  <Badge key={asset} variant="secondary" className="text-xs">
+                                    {asset}
+                                  </Badge>
+                                ))}
+                                {trader.assets.length > 5 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    +{trader.assets.length - 5} more
+                                  </Badge>
+                                )}
                               </div>
                             </div>
                             <Button
-                              onClick={() => followTrader(trader.account_id)}
-                              disabled={!selectedAccount}
+                              onClick={() => followDerivTrader(trader.token, trader.loginid)}
+                              disabled={!accounts.some(acc => acc.provider === 'deriv' && acc.deriv_token)}
                               className="bg-gradient-primary"
                             >
                               <Play className="w-4 h-4 mr-2" />
-                              Follow
+                              Copy
                             </Button>
                           </div>
-                          
-                          {/* Real-time Stats */}
-                          {stats && (
-                            <div className="grid grid-cols-3 gap-4 pt-4 border-t">
-                              <div className="text-center">
-                                <div className="text-xs text-muted-foreground mb-1">Copied Trades</div>
-                                <div className="text-lg font-semibold flex items-center justify-center gap-1">
-                                  <Activity className="w-4 h-4" />
-                                  {stats.copiedTrades}
-                                </div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-xs text-muted-foreground mb-1">Total P/L</div>
-                                <div className={`text-lg font-semibold ${stats.totalPL >= 0 ? 'text-profit' : 'text-loss'}`}>
-                                  ${stats.totalPL.toFixed(2)}
-                                </div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-xs text-muted-foreground mb-1">Success Rate</div>
-                                <div className="text-lg font-semibold">
-                                  {stats.successRate.toFixed(1)}%
-                                </div>
-                              </div>
-                            </div>
-                          )}
                         </CardContent>
                       </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>
