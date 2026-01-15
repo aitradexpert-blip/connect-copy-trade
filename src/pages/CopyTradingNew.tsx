@@ -201,13 +201,25 @@ export default function CopyTradingNew() {
     try {
       const ws = getSharedDerivWS();
       
-      // Authorize first
-      await ws.send({ authorize: derivAccount.deriv_token });
+      // Connect first
+      await ws.connect();
+      
+      // Authorize with the token - this is CRITICAL before copy_trading_list
+      console.log('[CopyTrading] Authorizing Deriv account...');
+      const authResponse = await ws.send({ authorize: derivAccount.deriv_token });
+      
+      if (authResponse.error) {
+        throw new Error(authResponse.error.message || 'Authorization failed');
+      }
+      
+      console.log('[CopyTrading] Authorization successful, fetching copy trading list...');
       
       // Get copy trading list
       const response = await getCopyTradingList(ws);
       
-      if (response.copy_trading_list?.traders) {
+      console.log('[CopyTrading] Copy trading list response:', response);
+      
+      if (response.copy_trading_list?.traders && response.copy_trading_list.traders.length > 0) {
         // Fetch stats for each trader
         const tradersWithStats = await Promise.all(
           response.copy_trading_list.traders.map(async (trader) => {
@@ -222,18 +234,37 @@ export default function CopyTradingNew() {
                   trades_profitable: stats.copy_trading_statistics.trades_profitable,
                 }
               };
-            } catch {
+            } catch (err) {
+              console.warn('[CopyTrading] Could not get stats for trader:', trader.loginid, err);
               return trader;
             }
           })
         );
         setDerivCopyTraders(tradersWithStats);
+      } else {
+        console.log('[CopyTrading] No Deriv copy traders available');
+        toast({
+          title: "No Deriv Copy Traders",
+          description: "No copy traders are currently available on the Deriv platform",
+        });
+        setDerivCopyTraders([]);
       }
     } catch (error: any) {
-      console.error("Error loading Deriv copy traders:", error);
+      console.error("[CopyTrading] Error loading Deriv copy traders:", error);
+      
+      // Provide specific error messages
+      let errorMessage = error.message;
+      if (error.message?.includes('AuthorizationRequired')) {
+        errorMessage = 'Please reconnect your Deriv account';
+      } else if (error.message?.includes('PermissionDenied')) {
+        errorMessage = 'Copy trading is not available for this account type. Please use a standard Deriv CR account.';
+      } else if (error.message?.includes('InvalidToken')) {
+        errorMessage = 'Your Deriv session has expired. Please reconnect your account.';
+      }
+      
       toast({
         title: "Error loading Deriv traders",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -241,6 +272,7 @@ export default function CopyTradingNew() {
     }
   };
 
+  // Follow a Deriv copy trader
   // Follow a Deriv copy trader
   const followDerivTrader = async (traderToken: string, traderLoginId: string) => {
     const derivAccount = accounts.find(acc => acc.provider === 'deriv' && acc.deriv_token);
@@ -255,7 +287,13 @@ export default function CopyTradingNew() {
 
     try {
       const ws = getSharedDerivWS();
-      await ws.send({ authorize: derivAccount.deriv_token });
+      await ws.connect();
+      
+      // Authorize first
+      const authResponse = await ws.send({ authorize: derivAccount.deriv_token });
+      if (authResponse.error) {
+        throw new Error(authResponse.error.message);
+      }
       
       await startCopying({ copyTraderToken: traderToken }, ws);
       
@@ -266,6 +304,7 @@ export default function CopyTradingNew() {
       
       loadDerivCopyTraders();
     } catch (error: any) {
+      console.error('[CopyTrading] Error following Deriv trader:', error);
       toast({
         title: "Error following trader",
         description: error.message,

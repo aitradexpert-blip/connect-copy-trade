@@ -31,23 +31,35 @@ function mapDirectionToContractType(direction: 'BUY' | 'SELL'): 'CALL' | 'PUT' {
 /**
  * Determine the best duration settings based on symbol type
  * Different symbols support different duration types
+ * 
+ * IMPORTANT: Deriv API has strict duration requirements:
+ * - Synthetic indices: Support tick-based durations (1-10 ticks)
+ * - Forex: Minimum 5 minutes for Rise/Fall contracts
+ * - Crypto/OTC: Minimum 5 minutes
  */
 function getDurationForSymbol(derivSymbol: string): { duration: number; durationUnit: 't' | 's' | 'm' | 'h' | 'd' } {
-  // Synthetic indices (Volatility, Boom, Crash, etc.) - support tick-based durations
+  // Synthetic indices (Volatility, Boom, Crash, Step, Jump) - support tick-based durations
   if (
     derivSymbol.startsWith('R_') || 
     derivSymbol.startsWith('1HZ') ||
     derivSymbol.includes('BOOM') ||
     derivSymbol.includes('CRASH') ||
     derivSymbol === 'stpRNG' ||
-    derivSymbol.startsWith('JD')
+    derivSymbol.startsWith('JD') ||
+    derivSymbol.startsWith('RDBEAR') ||
+    derivSymbol.startsWith('RDBULL')
   ) {
-    return { duration: 5, durationUnit: 't' }; // 5 ticks
+    return { duration: 5, durationUnit: 't' }; // 5 ticks - safe for synthetics
   }
   
-  // Forex pairs (frx prefix) - use minutes, minimum typically 1-2 minutes
+  // Forex pairs (frx prefix) - MUST use 5+ minutes for Rise/Fall
   if (derivSymbol.startsWith('frx')) {
-    return { duration: 2, durationUnit: 'm' }; // 2 minutes
+    return { duration: 5, durationUnit: 'm' }; // 5 minutes - minimum safe duration
+  }
+  
+  // Metals (Gold, Silver)
+  if (derivSymbol.includes('XAU') || derivSymbol.includes('XAG')) {
+    return { duration: 5, durationUnit: 'm' }; // 5 minutes
   }
   
   // Crypto - use minutes
@@ -55,13 +67,14 @@ function getDurationForSymbol(derivSymbol: string): { duration: number; duration
     return { duration: 5, durationUnit: 'm' }; // 5 minutes
   }
   
-  // Indices (OTC prefix) - use minutes
+  // OTC/Weekend Indices - use minutes
   if (derivSymbol.startsWith('OTC')) {
     return { duration: 5, durationUnit: 'm' }; // 5 minutes
   }
   
-  // Default fallback - 5 ticks works for most synthetics
-  return { duration: 5, durationUnit: 't' };
+  // Default fallback - use 5 minutes (safer for unknown symbols)
+  console.log(`[DerivSignalExecution] Unknown symbol type: ${derivSymbol}, using 5 minute duration`);
+  return { duration: 5, durationUnit: 'm' };
 }
 
 /**

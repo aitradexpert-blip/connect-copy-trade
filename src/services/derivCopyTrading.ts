@@ -115,6 +115,7 @@ export async function stopCopying(
 
 /**
  * Get list of traders being copied and copiers
+ * IMPORTANT: WebSocket MUST be authorized before calling this
  */
 export async function getCopyTradingList(
   ws?: DerivWS
@@ -122,11 +123,27 @@ export async function getCopyTradingList(
   const client = ws || getSharedDerivWS();
   
   try {
+    // Ensure connected
+    if (!client.isConnected()) {
+      await client.connect();
+    }
+    
+    console.log('[DerivCopyTrading] Fetching copy trading list...');
+    
     const response = await client.send({
       copy_trading_list: 1,
     });
     
+    console.log('[DerivCopyTrading] Copy trading list response:', response);
+    
     if (response.error) {
+      // Provide more context for common errors
+      if (response.error.code === 'AuthorizationRequired') {
+        throw new Error('Please authorize your Deriv account first');
+      }
+      if (response.error.code === 'PermissionDenied') {
+        throw new Error('Copy trading is not available for this account type');
+      }
       throw new Error(response.error.message);
     }
     
