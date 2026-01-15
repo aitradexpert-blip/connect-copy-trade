@@ -90,14 +90,17 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
     const account = accounts.find(a => a.id === selectedAccount);
     if (!account?.deriv_token) return;
     
+    // Reset states
+    setProposal(null);
+    setProposalError(null);
+    
     const setupProposal = async () => {
       try {
         // Clean up previous subscription
         if (unsubscribeRef.current) {
           await unsubscribeRef.current();
+          unsubscribeRef.current = null;
         }
-        
-        setProposalError(null);
         
         const ws = getSharedDerivWS();
         await ws.connect();
@@ -112,25 +115,51 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
           durationUnit,
         };
         
+        console.log('[DerivQuickTrade] Subscribing to proposal:', params);
+        
+        // First, try to get a single proposal to check if the parameters are valid
+        const testResponse = await ws.send({
+          proposal: 1,
+          amount: params.amount,
+          basis: params.basis,
+          contract_type: params.contractType,
+          currency: account.deriv_currency || 'USD',
+          duration: params.duration,
+          duration_unit: params.durationUnit,
+          symbol: params.symbol,
+        });
+        
+        if (testResponse.error) {
+          console.error('[DerivQuickTrade] Proposal error:', testResponse.error);
+          setProposalError(testResponse.error.message || 'Trading not available for this configuration');
+          return;
+        }
+        
+        // If test passed, subscribe for real-time updates
         const { unsubscribe } = subscribeProposal(params, (proposalData) => {
-          setProposal({
-            id: proposalData.id,
-            payout: proposalData.payout,
-            askPrice: proposalData.ask_price,
-            spot: proposalData.spot,
-          });
+          if (proposalData) {
+            setProposalError(null);
+            setProposal({
+              id: proposalData.id,
+              payout: proposalData.payout,
+              askPrice: proposalData.ask_price,
+              spot: proposalData.spot,
+            });
+          }
         }, ws);
         
         unsubscribeRef.current = unsubscribe;
       } catch (err: any) {
-        console.error('Proposal subscription error:', err);
-        setProposalError(err.message || 'Failed to get quote');
+        console.error('[DerivQuickTrade] Proposal subscription error:', err);
+        setProposalError(err.message || 'Failed to get quote. Try different duration or symbol.');
       }
     };
     
-    setupProposal();
+    // Add small delay to prevent rapid re-subscriptions
+    const timeoutId = setTimeout(setupProposal, 300);
     
     return () => {
+      clearTimeout(timeoutId);
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;

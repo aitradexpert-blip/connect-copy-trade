@@ -20,7 +20,11 @@ interface Database {
       trading_accounts: {
         Row: {
           id: string;
-          metaapi_account_id: string;
+          metaapi_account_id: string | null;
+          provider: string;
+          deriv_token: string | null;
+          deriv_currency: string | null;
+          is_virtual: boolean | null;
           name: string;
         };
       };
@@ -65,9 +69,10 @@ Deno.serve(async (req) => {
     }
 
     // Get all active bot assignments with auto_execute enabled
+    // Include provider, deriv_token, deriv_currency for Deriv execution
     const { data: assignments, error: assignmentsError } = await supabase
       .from('ai_bot_assignments')
-      .select('*, trading_accounts(*)')
+      .select('*, trading_accounts(id, metaapi_account_id, provider, deriv_token, deriv_currency, is_virtual, name)')
       .eq('auto_execute', true);
 
     if (assignmentsError) {
@@ -84,32 +89,78 @@ Deno.serve(async (req) => {
 
     // Execute trade for each assignment
     for (const assignment of assignments || []) {
+      const account = assignment.trading_accounts;
+      
       try {
         console.log(`Executing trade for user ${assignment.user_id} on account ${assignment.trading_account_id}`);
+        console.log(`Account provider: ${account.provider}, has deriv_token: ${!!account.deriv_token}, has metaapi_id: ${!!account.metaapi_account_id}`);
 
-        // Call metaapi-execute-trade edge function
-        const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('metaapi-execute-trade', {
-          body: {
-            accountId: assignment.trading_accounts.metaapi_account_id,
-            trade: {
-              symbol: signal.symbol,
-              direction: signal.direction,
-              volume: signal.lot_size,
-              stopLoss: signal.stop_loss,
-              takeProfit: signal.take_profit,
-              comment: `Auto-executed: ${signal.comment || 'Swing Trader Bot'}`,
-              signal_id: signal_id,
-              user_id: assignment.user_id
+        let tradeResult;
+        let tradeError;
+
+        // Check if this is a Deriv account
+        if (account.provider === 'deriv' && account.deriv_token) {
+          console.log(`Executing via Deriv for user ${assignment.user_id}`);
+          
+          // Call deriv-execute-signal edge function
+          const derivResponse = await supabase.functions.invoke('deriv-execute-signal', {
+            body: {
+              deriv_token: account.deriv_token,
+              deriv_currency: account.deriv_currency || 'USD',
+              is_virtual: account.is_virtual || false,
+              signal: {
+                symbol: signal.symbol,
+                direction: signal.direction,
+                lot_size: signal.lot_size,
+                stop_loss: signal.stop_loss,
+                take_profit: signal.take_profit,
+                comment: `Auto-executed: ${signal.comment || 'AI Bot'}`
+              }
             }
-          }
-        });
+          });
+          
+          tradeResult = derivResponse.data;
+          tradeError = derivResponse.error;
+          
+        } else if (account.metaapi_account_id) {
+          console.log(`Executing via MetaAPI for user ${assignment.user_id}`);
+          
+          // Call metaapi-execute-trade edge function
+          const metaResponse = await supabase.functions.invoke('metaapi-execute-trade', {
+            body: {
+              accountId: account.metaapi_account_id,
+              trade: {
+                symbol: signal.symbol,
+                direction: signal.direction,
+                volume: signal.lot_size,
+                stopLoss: signal.stop_loss,
+                takeProfit: signal.take_profit,
+                comment: `Auto-executed: ${signal.comment || 'AI Bot'}`,
+                signal_id: signal_id,
+                user_id: assignment.user_id
+              }
+            }
+          });
+          
+          tradeResult = metaResponse.data;
+          tradeError = metaResponse.error;
+          
+        } else {
+          console.error(`No valid trading method for account ${account.id}`);
+          results.push({
+            user_id: assignment.user_id,
+            success: false,
+            error: 'No valid trading method configured for this account'
+          });
+          continue;
+        }
 
         if (tradeError) {
           console.error(`Trade execution failed for ${assignment.user_id}:`, tradeError);
           results.push({
             user_id: assignment.user_id,
             success: false,
-            error: tradeError.message
+            error: tradeError.message || 'Trade execution failed'
           });
         } else {
           console.log(`Trade executed successfully for ${assignment.user_id}`);
@@ -119,7 +170,7 @@ Deno.serve(async (req) => {
             data: tradeResult
           });
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Exception executing trade for ${assignment.user_id}:`, error);
         results.push({
           user_id: assignment.user_id,
