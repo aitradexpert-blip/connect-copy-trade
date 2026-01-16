@@ -94,6 +94,8 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
     setProposal(null);
     setProposalError(null);
     
+    let proposalTimeoutId: NodeJS.Timeout | null = null;
+    
     const setupProposal = async () => {
       try {
         // Clean up previous subscription
@@ -120,6 +122,13 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
         
         console.log('[DerivQuickTrade] Subscribing to proposal:', params, 'original symbol:', symbol);
         
+        // Set a 10-second timeout for getting the proposal
+        proposalTimeoutId = setTimeout(() => {
+          if (!proposal && !proposalError) {
+            setProposalError('Quote request timed out. Try a different duration, symbol, or check your connection.');
+          }
+        }, 10000);
+        
         // First, try to get a single proposal to check if the parameters are valid
         const testResponse = await ws.send({
           proposal: 1,
@@ -132,9 +141,24 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
           symbol: derivSymbol,
         });
         
+        // Clear timeout since we got a response
+        if (proposalTimeoutId) {
+          clearTimeout(proposalTimeoutId);
+          proposalTimeoutId = null;
+        }
+        
         if (testResponse.error) {
           console.error('[DerivQuickTrade] Proposal error:', testResponse.error);
-          setProposalError(testResponse.error.message || 'Trading not available for this configuration');
+          
+          // Provide helpful error messages
+          let errorMsg = testResponse.error.message || 'Trading not available for this configuration';
+          if (errorMsg.includes('duration')) {
+            errorMsg = 'This duration is not available. Try 15 minutes or longer for forex pairs.';
+          } else if (errorMsg.includes('symbol')) {
+            errorMsg = `Symbol "${symbol}" is not available for trading. Check market hours or try another symbol.`;
+          }
+          
+          setProposalError(errorMsg);
           return;
         }
         
@@ -154,6 +178,9 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
         unsubscribeRef.current = unsubscribe;
       } catch (err: any) {
         console.error('[DerivQuickTrade] Proposal subscription error:', err);
+        if (proposalTimeoutId) {
+          clearTimeout(proposalTimeoutId);
+        }
         setProposalError(err.message || 'Failed to get quote. Try different duration or symbol.');
       }
     };
@@ -163,6 +190,9 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
     
     return () => {
       clearTimeout(timeoutId);
+      if (proposalTimeoutId) {
+        clearTimeout(proposalTimeoutId);
+      }
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;

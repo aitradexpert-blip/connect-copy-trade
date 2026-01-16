@@ -10,7 +10,7 @@ import { TrendingUp, TrendingDown, Play, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { executeDerivSignal } from "@/services/derivSignalExecution";
+import { executeOnAccount, TradingAccount as BrokerAccount, TradeSignal } from "@/services/brokerExecution";
 
 interface Signal {
   id: string;
@@ -95,59 +95,48 @@ export default function TradingIdeas() {
     try {
       const lotSize = calculatedLotSize > 0 ? calculatedLotSize : selectedSignal.lot_size;
       
-      // Check provider and route accordingly
-      if (account.provider === 'deriv' && account.deriv_token) {
-        // Execute via Deriv WebSocket API
-        console.log('[TradingIdeas] Executing via Deriv API for account:', account.login);
-        
-        const result = await executeDerivSignal(
-          {
-            deriv_token: account.deriv_token,
-            deriv_currency: account.deriv_currency || 'USD',
-            is_virtual: account.is_virtual || false,
-          },
-          {
-            symbol: selectedSignal.symbol,
-            direction: selectedSignal.direction,
-            volume: lotSize,
-            stopLoss: selectedSignal.stop_loss,
-            takeProfit: selectedSignal.take_profit,
-            comment: selectedSignal.comment || undefined,
-          }
-        );
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to execute Deriv trade');
-        }
-        
+      // Create the trade signal
+      const signal: TradeSignal = {
+        symbol: selectedSignal.symbol,
+        direction: selectedSignal.direction,
+        volume: lotSize,
+        stopLoss: selectedSignal.stop_loss,
+        takeProfit: selectedSignal.take_profit,
+        comment: selectedSignal.comment || undefined,
+      };
+      
+      // Create broker account object
+      const brokerAccount: BrokerAccount = {
+        id: account.id,
+        name: account.name,
+        login: account.login,
+        provider: account.provider,
+        metaapi_account_id: account.metaapi_account_id,
+        deriv_token: account.deriv_token,
+        deriv_currency: account.deriv_currency,
+        is_virtual: account.is_virtual,
+      };
+      
+      console.log('[TradingIdeas] Executing via unified broker service:', brokerAccount.provider);
+      
+      // Use the unified broker execution service
+      const result = await executeOnAccount(brokerAccount, signal);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Trade execution failed');
+      }
+      
+      // Show success message based on provider
+      if (result.provider === 'deriv') {
         toast({
           title: 'Trade Executed on Deriv',
-          description: `${selectedSignal.direction} contract purchased! Payout: $${result.payout?.toFixed(2)}`,
-        });
-      } else if (account.metaapi_account_id) {
-        // Execute via MetaAPI edge function
-        console.log('[TradingIdeas] Executing via MetaAPI for account:', account.metaapi_account_id);
-        
-        const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
-          body: {
-            accountId: account.metaapi_account_id,
-            trade: {
-              symbol: selectedSignal.symbol,
-              direction: selectedSignal.direction,
-              volume: lotSize,
-              comment: `Signal: ${selectedSignal.comment || selectedSignal.symbol}`
-            }
-          }
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: 'Trade Executed',
-          description: `${selectedSignal.direction} ${lotSize} lots of ${selectedSignal.symbol} executed successfully`
+          description: `${selectedSignal.direction} contract purchased! ${result.payout ? `Payout: $${result.payout.toFixed(2)}` : `Contract #${result.tradeId}`}`,
         });
       } else {
-        throw new Error('This account does not support trade execution. Please connect a tradeable account.');
+        toast({
+          title: 'Trade Executed',
+          description: `${selectedSignal.direction} ${lotSize} lots of ${selectedSignal.symbol} executed successfully`,
+        });
       }
       
       setSelectedSignal(null);

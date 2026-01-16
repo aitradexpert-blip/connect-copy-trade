@@ -110,13 +110,15 @@ function getDurationForSymbol(derivSymbol: string): { duration: number; duration
     derivSymbol.includes('BOOM') ||
     derivSymbol.includes('CRASH') ||
     derivSymbol === 'stpRNG' ||
-    derivSymbol.startsWith('JD')
+    derivSymbol.startsWith('JD') ||
+    derivSymbol.startsWith('RDBEAR') ||
+    derivSymbol.startsWith('RDBULL')
   ) {
     return { duration: 5, durationUnit: 't' }; // 5 ticks
   }
   
-  // Forex, crypto, metals - use minutes
-  return { duration: 5, durationUnit: 'm' }; // 5 minutes
+  // Forex, crypto, metals, OTC - use 15 minutes (minimum required for these assets)
+  return { duration: 15, durationUnit: 'm' }; // 15 minutes
 }
 
 Deno.serve(async (req) => {
