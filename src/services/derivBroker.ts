@@ -395,3 +395,336 @@ export async function getMT5AccountDetails(
     throw error;
   }
 }
+
+// ============ MT5 Deposit/Withdrawal ============
+
+export interface MT5DepositResponse {
+  mt5_deposit: number; // 1 on success
+  binary_transaction_id: number;
+}
+
+export interface MT5WithdrawalResponse {
+  mt5_withdrawal: number; // 1 on success
+  binary_transaction_id: number;
+}
+
+/**
+ * Deposit funds from Binary account to MT5 account
+ * Auth Required: payments scope
+ * @param amount - Amount to deposit (min $1, max $20000 equivalent)
+ * @param from_binary - Binary account loginid (e.g., CR1234567)
+ * @param to_mt5 - MT5 account login (e.g., MTR12345678)
+ */
+export async function mt5Deposit(
+  params: {
+    amount: number;
+    from_binary: string;
+    to_mt5: string;
+  },
+  ws?: DerivWS
+): Promise<MT5DepositResponse> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      mt5_deposit: 1,
+      amount: params.amount,
+      from_binary: params.from_binary,
+      to_mt5: params.to_mt5,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response as MT5DepositResponse;
+  } catch (error) {
+    console.error('[DerivBroker] MT5 deposit failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Withdraw funds from MT5 account to Binary account
+ * Auth Required: payments scope
+ * @param amount - Amount to withdraw (min $1, max $20000 equivalent)
+ * @param from_mt5 - MT5 account login (e.g., MTR12345678)
+ * @param to_binary - Binary account loginid (e.g., CR1234567)
+ */
+export async function mt5Withdrawal(
+  params: {
+    amount: number;
+    from_mt5: string;
+    to_binary: string;
+  },
+  ws?: DerivWS
+): Promise<MT5WithdrawalResponse> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      mt5_withdrawal: 1,
+      amount: params.amount,
+      from_mt5: params.from_mt5,
+      to_binary: params.to_binary,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response as MT5WithdrawalResponse;
+  } catch (error) {
+    console.error('[DerivBroker] MT5 withdrawal failed:', error);
+    throw error;
+  }
+}
+
+// ============ API Token Management ============
+
+export interface ApiToken {
+  display_name: string;
+  last_used: string;
+  scopes: string[];
+  token: string;
+  valid_for_ip: string;
+}
+
+export interface ApiTokenResponse {
+  api_token: {
+    delete_token?: number; // 1 on delete success
+    new_token?: number; // 1 on create success
+    tokens?: ApiToken[];
+  };
+}
+
+export type ApiTokenScope = 
+  | 'read' 
+  | 'trade' 
+  | 'payments' 
+  | 'trading_information' 
+  | 'admin';
+
+/**
+ * Get list of API tokens
+ * Auth Required: admin scope
+ */
+export async function getApiTokens(ws?: DerivWS): Promise<ApiToken[]> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({ api_token: 1 });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response.api_token?.tokens || [];
+  } catch (error) {
+    console.error('[DerivBroker] Get API tokens failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create a new API token
+ * Auth Required: admin scope
+ * @param name - Display name for the token
+ * @param scopes - Permission scopes (read, trade, payments, trading_information, admin)
+ * @param validForCurrentIpOnly - If true, token only works for current IP
+ */
+export async function createApiToken(
+  params: {
+    name: string;
+    scopes: ApiTokenScope[];
+    validForCurrentIpOnly?: boolean;
+  },
+  ws?: DerivWS
+): Promise<ApiTokenResponse> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      api_token: 1,
+      new_token: params.name,
+      new_token_scopes: params.scopes,
+      valid_for_current_ip_only: params.validForCurrentIpOnly ? 1 : 0,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response as ApiTokenResponse;
+  } catch (error) {
+    console.error('[DerivBroker] Create API token failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete an API token
+ * Auth Required: admin scope
+ * @param token - The token string to delete
+ */
+export async function deleteApiToken(
+  token: string,
+  ws?: DerivWS
+): Promise<ApiTokenResponse> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      api_token: 1,
+      delete_token: token,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response as ApiTokenResponse;
+  } catch (error) {
+    console.error('[DerivBroker] Delete API token failed:', error);
+    throw error;
+  }
+}
+
+// ============ Account Settings ============
+
+export interface AccountSettingsParams {
+  allow_copiers?: 0 | 1;
+  email_consent?: 0 | 1;
+  preferred_language?: string;
+  request_professional_status?: 1;
+  // Add more as needed from API docs
+}
+
+/**
+ * Update account settings
+ * Auth Required: admin scope
+ * Use this to enable copy trading by setting allow_copiers: 1
+ */
+export async function setAccountSettings(
+  params: AccountSettingsParams,
+  ws?: DerivWS
+): Promise<any> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      set_settings: 1,
+      ...params,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response.set_settings;
+  } catch (error) {
+    console.error('[DerivBroker] Set account settings failed:', error);
+    throw error;
+  }
+}
+
+// ============ Copy Trading ============
+
+/**
+ * Start copying a trader
+ * Auth Required: trade scope
+ * @param traderToken - API token of the trader to copy (15-32 chars)
+ * @param assets - Optional: specific assets to copy (e.g., ["frxUSDJPY", "R_50"])
+ * @param maxTradeStake - Optional: maximum stake per copied trade
+ * @param minTradeStake - Optional: minimum stake per copied trade
+ * @param tradeTypes - Optional: specific trade types (e.g., ["CALL", "PUT"])
+ */
+export async function startCopyTrading(
+  params: {
+    traderToken: string;
+    assets?: string[];
+    maxTradeStake?: number;
+    minTradeStake?: number;
+    tradeTypes?: string[];
+  },
+  ws?: DerivWS
+): Promise<{ copy_start: number }> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      copy_start: params.traderToken,
+      ...(params.assets && { assets: params.assets }),
+      ...(params.maxTradeStake && { max_trade_stake: params.maxTradeStake }),
+      ...(params.minTradeStake && { min_trade_stake: params.minTradeStake }),
+      ...(params.tradeTypes && { trade_types: params.tradeTypes }),
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return { copy_start: response.copy_start };
+  } catch (error) {
+    console.error('[DerivBroker] Start copy trading failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Stop copying a trader
+ * Auth Required: trade scope
+ * @param traderToken - API token of the trader to stop copying
+ */
+export async function stopCopyTrading(
+  traderToken: string,
+  ws?: DerivWS
+): Promise<{ copy_stop: number }> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({
+      copy_stop: traderToken,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return { copy_stop: response.copy_stop };
+  } catch (error) {
+    console.error('[DerivBroker] Stop copy trading failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get copy trading list (copiers and traders)
+ * Auth Required: admin scope
+ */
+export async function getCopyTradingList(ws?: DerivWS): Promise<{
+  copiers?: Array<{ loginid: string }>;
+  traders?: Array<{ 
+    assets: string[];
+    loginid: string;
+    max_trade_stake: number | null;
+    min_trade_stake: number | null;
+    token: string;
+    trade_types: string[];
+  }>;
+}> {
+  const client = ws || getSharedDerivWS();
+  
+  try {
+    const response = await client.send({ copytrading_list: 1 });
+    
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+    
+    return response.copytrading_list || { copiers: [], traders: [] };
+  } catch (error) {
+    console.error('[DerivBroker] Get copy trading list failed:', error);
+    throw error;
+  }
+}
