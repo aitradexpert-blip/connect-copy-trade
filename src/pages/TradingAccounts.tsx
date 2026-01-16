@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Settings, Trash2, RefreshCw, CreditCard, Wallet, ArrowDown, ArrowUp, ArrowLeftRight } from "lucide-react";
+import { Plus, Settings, Trash2, RefreshCw, CreditCard, Wallet, ArrowDown, ArrowUp, ArrowLeftRight, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
 import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { DerivCashierModal } from "@/components/deriv/DerivCashierModal";
 import { DerivTransferModal } from "@/components/deriv/DerivTransferModal";
+import { DerivMT5TransferModal } from "@/components/deriv/DerivMT5TransferModal";
 import AppLayout from "@/components/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -48,6 +49,7 @@ const TradingAccounts = () => {
   const [derivCashierOpen, setDerivCashierOpen] = useState(false);
   const [derivCashierType, setDerivCashierType] = useState<'deposit' | 'withdraw'>('deposit');
   const [derivTransferOpen, setDerivTransferOpen] = useState(false);
+  const [derivMT5TransferOpen, setDerivMT5TransferOpen] = useState(false);
   const [selectedDerivAccount, setSelectedDerivAccount] = useState<TradingAccount | null>(null);
 
   const loadAccounts = async () => {
@@ -179,6 +181,11 @@ const TradingAccounts = () => {
     setDerivTransferOpen(true);
   };
 
+  const openDerivMT5Transfer = (account: TradingAccount) => {
+    setSelectedDerivAccount(account);
+    setDerivMT5TransferOpen(true);
+  };
+
   const getProviderBadge = (account: TradingAccount) => {
     if (account.provider === 'deriv') {
       return (
@@ -301,9 +308,17 @@ const TradingAccounts = () => {
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => openDerivTransfer(account)}
-                                title="Transfer"
+                                title="Transfer Between Accounts"
                               >
                                 <ArrowLeftRight className="w-4 h-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => openDerivMT5Transfer(account)}
+                                title="MT5 Deposit/Withdraw"
+                              >
+                                <Layers className="w-4 h-4 text-primary" />
                               </Button>
                             </>
                           )}
@@ -358,6 +373,15 @@ const TradingAccounts = () => {
               account={selectedDerivAccount}
               onComplete={() => {
                 setDerivTransferOpen(false);
+                handleRefresh(selectedDerivAccount);
+              }}
+            />
+            <DerivMT5TransferModal
+              open={derivMT5TransferOpen}
+              onOpenChange={setDerivMT5TransferOpen}
+              account={selectedDerivAccount}
+              onComplete={() => {
+                setDerivMT5TransferOpen(false);
                 handleRefresh(selectedDerivAccount);
               }}
             />
