@@ -251,41 +251,58 @@ export default function CopyTradingNew() {
       
       console.log('[CopyTrading] Authorization successful, fetching copy trading list...');
       
-      // Get copy trading list
-      const response = await getCopyTradingList(ws);
-      
-      console.log('[CopyTrading] Copy trading list response:', response);
-      
-      if (response.copy_trading_list?.traders && response.copy_trading_list.traders.length > 0) {
-        // Fetch stats for each trader
-        const tradersWithStats = await Promise.all(
-          response.copy_trading_list.traders.map(async (trader) => {
-            try {
-              const stats = await getCopyTradingStats(trader.loginid, ws);
-              return {
-                ...trader,
-                stats: {
-                  copiers: stats.copy_trading_statistics.copiers,
-                  performance_probability: stats.copy_trading_statistics.performance_probability,
-                  total_trades: stats.copy_trading_statistics.total_trades,
-                  trades_profitable: stats.copy_trading_statistics.trades_profitable,
-                }
-              };
-            } catch (err) {
-              console.warn('[CopyTrading] Could not get stats for trader:', trader.loginid, err);
-              return trader;
-            }
-          })
-        );
+      // Get copy trading list - requires admin token scope
+      // If the token doesn't have admin scope, this will fail with "Unrecognised request"
+      try {
+        const response = await getCopyTradingList(ws);
         
-        // Merge with known masters (avoid duplicates)
-        const apiLoginIds = new Set(tradersWithStats.map(t => t.loginid));
-        const additionalMasters = KNOWN_DERIV_MASTERS.filter(m => !apiLoginIds.has(m.loginid));
+        console.log('[CopyTrading] Copy trading list response:', response);
         
-        setDerivCopyTraders([...tradersWithStats, ...additionalMasters]);
-      } else {
-        console.log('[CopyTrading] No Deriv API copy traders, showing known masters');
-        // Show known masters even if API returns empty
+        if (response.copy_trading_list?.traders && response.copy_trading_list.traders.length > 0) {
+          // Fetch stats for each trader
+          const tradersWithStats = await Promise.all(
+            response.copy_trading_list.traders.map(async (trader) => {
+              try {
+                const stats = await getCopyTradingStats(trader.loginid, ws);
+                return {
+                  ...trader,
+                  stats: {
+                    copiers: stats.copy_trading_statistics.copiers,
+                    performance_probability: stats.copy_trading_statistics.performance_probability,
+                    total_trades: stats.copy_trading_statistics.total_trades,
+                    trades_profitable: stats.copy_trading_statistics.trades_profitable,
+                  }
+                };
+              } catch (err) {
+                console.warn('[CopyTrading] Could not get stats for trader:', trader.loginid, err);
+                return trader;
+              }
+            })
+          );
+          
+          // Merge with known masters (avoid duplicates)
+          const apiLoginIds = new Set(tradersWithStats.map(t => t.loginid));
+          const additionalMasters = KNOWN_DERIV_MASTERS.filter(m => !apiLoginIds.has(m.loginid));
+          
+          setDerivCopyTraders([...tradersWithStats, ...additionalMasters]);
+        } else {
+          console.log('[CopyTrading] No Deriv API copy traders, showing known masters');
+          // Show known masters even if API returns empty
+          setDerivCopyTraders(KNOWN_DERIV_MASTERS);
+        }
+      } catch (listError: any) {
+        // "Unrecognised request" means the token doesn't have admin scope
+        // This is expected for most user tokens - they need to create an API token with admin scope
+        console.warn('[CopyTrading] Could not fetch copy trading list:', listError.message);
+        
+        if (listError.message?.includes('Unrecognised') || listError.message?.includes('unrecognised')) {
+          toast({
+            title: "Copy Trading API Access",
+            description: "To view all Deriv copy traders, create an API token with 'Admin' scope in your Deriv account settings. Showing known masters for now.",
+          });
+        }
+        
+        // Still show the known masters
         setDerivCopyTraders(KNOWN_DERIV_MASTERS);
       }
     } catch (error: any) {
@@ -306,6 +323,9 @@ export default function CopyTradingNew() {
         description: errorMessage,
         variant: "destructive",
       });
+      
+      // Still show known masters on error
+      setDerivCopyTraders(KNOWN_DERIV_MASTERS);
     } finally {
       setLoadingDeriv(false);
     }

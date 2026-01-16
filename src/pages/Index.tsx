@@ -19,6 +19,7 @@ import {
   Clock
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
+import EconomicCalendar from "@/components/EconomicCalendar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -551,6 +552,9 @@ const Index = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Economic Calendar */}
+        <EconomicCalendar compact={false} className="bg-gradient-card border-border shadow-card" />
 
         {/* Support Widget */}
         <SupportWidget />
