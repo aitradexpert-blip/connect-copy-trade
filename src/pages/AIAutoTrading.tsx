@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import AppLayout from "@/components/AppLayout";
-import { Bot, TrendingUp, ExternalLink } from "lucide-react";
+import { Bot, TrendingUp, ExternalLink, Power, Trash2, Zap } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -42,6 +43,19 @@ interface AIBot {
   status: string;
 }
 
+interface ActiveAssignment {
+  id: string;
+  bot_id: string;
+  trading_account_id: string;
+  auto_execute: boolean;
+  status: string;
+  created_at: string;
+  trading_accounts?: {
+    name: string;
+    provider: string;
+  };
+}
+
 const riskLevels = ["Low", "Medium", "High"];
 
 export default function AIAutoTrading() {
@@ -51,6 +65,7 @@ export default function AIAutoTrading() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
+  const [activeAssignments, setActiveAssignments] = useState<ActiveAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -88,6 +103,24 @@ export default function AIAutoTrading() {
 
         if (accountsError) throw accountsError;
         setAccounts(accountsData || []);
+
+        // Load active bot assignments for this user
+        const { data: assignmentsData, error: assignmentsError } = await supabase
+          .from("ai_bot_assignments")
+          .select(`
+            id,
+            bot_id,
+            trading_account_id,
+            auto_execute,
+            status,
+            created_at,
+            trading_accounts (name, provider)
+          `)
+          .eq("user_id", user.id)
+          .in("status", ["active", "inactive"]);
+
+        if (assignmentsError) throw assignmentsError;
+        setActiveAssignments((assignmentsData || []) as unknown as ActiveAssignment[]);
       } catch (error: any) {
         console.error("Error loading data:", error);
         toast({
@@ -150,9 +183,85 @@ export default function AIAutoTrading() {
       setSelectedAccount("");
       setAgreeTerms(false);
       setRiskLevel([1]);
+      
+      // Reload assignments
+      const { data: assignmentsData } = await supabase
+        .from("ai_bot_assignments")
+        .select(`
+          id,
+          bot_id,
+          trading_account_id,
+          auto_execute,
+          status,
+          created_at,
+          trading_accounts (name, provider)
+        `)
+        .eq("user_id", user?.id)
+        .in("status", ["active", "inactive"]);
+      
+      setActiveAssignments((assignmentsData || []) as unknown as ActiveAssignment[]);
     } catch (error: any) {
       toast({
         title: "Activation failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleBotStatus = async (assignmentId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    const newAutoExecute = newStatus === 'active';
+    
+    try {
+      const { error } = await supabase
+        .from('ai_bot_assignments')
+        .update({ status: newStatus, auto_execute: newAutoExecute })
+        .eq('id', assignmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: newStatus === 'active' ? "Bot Activated" : "Bot Paused",
+        description: newStatus === 'active' 
+          ? "Auto-trading is now enabled" 
+          : "Auto-trading has been paused",
+      });
+
+      // Update local state
+      setActiveAssignments(prev => 
+        prev.map(a => a.id === assignmentId 
+          ? { ...a, status: newStatus, auto_execute: newAutoExecute } 
+          : a
+        )
+      );
+    } catch (error: any) {
+      toast({
+        title: "Error updating bot",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const removeAssignment = async (assignmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('ai_bot_assignments')
+        .delete()
+        .eq('id', assignmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Bot Removed",
+        description: "The bot assignment has been removed",
+      });
+
+      setActiveAssignments(prev => prev.filter(a => a.id !== assignmentId));
+    } catch (error: any) {
+      toast({
+        title: "Error removing bot",
         description: error.message,
         variant: "destructive",
       });
@@ -213,6 +322,61 @@ export default function AIAutoTrading() {
           </CardContent>
         </Card>
 
+        {/* Active Bot Assignments */}
+        {activeAssignments.length > 0 && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Power className="w-5 h-5" />
+                Active Bots
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {activeAssignments.map((assignment) => (
+                <div 
+                  key={assignment.id} 
+                  className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-3 h-3 rounded-full ${assignment.status === 'active' ? 'bg-profit animate-pulse' : 'bg-muted-foreground'}`} />
+                    <div>
+                      <p className="font-medium">{assignment.trading_accounts?.name || 'Unknown Account'}</p>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Badge variant="outline" className="text-xs">
+                          {assignment.trading_accounts?.provider === 'deriv' ? (
+                            <><Zap className="w-3 h-3 mr-1" />Deriv</>
+                          ) : 'MetaAPI'}
+                        </Badge>
+                        <span>•</span>
+                        <span>Since {new Date(assignment.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {assignment.status === 'active' ? 'Active' : 'Paused'}
+                      </span>
+                      <Switch
+                        checked={assignment.status === 'active'}
+                        onCheckedChange={() => toggleBotStatus(assignment.id, assignment.status)}
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeAssignment(assignment.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Bot Card */}
         <Card className="shadow-card hover:shadow-elevated transition-smooth">
           <CardHeader className="pb-4">
@@ -248,7 +412,7 @@ export default function AIAutoTrading() {
                 onClick={handleActivateBot}
                 className="flex-1 bg-gradient-primary hover:opacity-90 transition-smooth"
               >
-                Activate Bot
+                Add New Bot
               </Button>
               <Button 
                 variant="outline"
@@ -287,7 +451,15 @@ export default function AIAutoTrading() {
                   <SelectContent>
                     {accounts.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
-                        {account.name} ({account.platform.toUpperCase()})
+                        <div className="flex items-center gap-2">
+                          {account.name} ({account.platform.toUpperCase()})
+                          {account.provider === 'deriv' && (
+                            <Badge variant="outline" className="text-xs">
+                              <Zap className="w-3 h-3 mr-1" />
+                              Deriv
+                            </Badge>
+                          )}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>

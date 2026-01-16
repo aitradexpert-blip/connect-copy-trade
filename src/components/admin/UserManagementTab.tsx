@@ -6,9 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Eye, Trash2, CheckCircle } from "lucide-react";
+import { Users, Trash2, CheckCircle, Crown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 interface User {
@@ -18,6 +19,7 @@ interface User {
   subscription?: {
     plan_name: string;
     status: string;
+    expires_at: string | null;
   };
   trading_accounts?: {
     id: string;
@@ -26,6 +28,12 @@ interface User {
   }[];
 }
 
+const SUBSCRIPTION_PLANS = [
+  { value: 'basic', label: 'Basic', price: 'R99/mo' },
+  { value: 'professional', label: 'Professional', price: 'R299/mo' },
+  { value: 'enterprise', label: 'Enterprise', price: 'R399/mo' },
+];
+
 export function UserManagementTab() {
   const { user: adminUser } = useAuth();
   const { toast } = useToast();
@@ -33,9 +41,11 @@ export function UserManagementTab() {
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [metaapiId, setMetaapiId] = useState("");
   const [selectedPlan, setSelectedPlan] = useState("basic");
   const [processing, setProcessing] = useState(false);
+  const [modalTab, setModalTab] = useState<'account' | 'subscription'>('account');
 
   useEffect(() => {
     loadUsers();
@@ -61,7 +71,7 @@ export function UserManagementTab() {
           // Get subscription
           const { data: subscription } = await supabase
             .from('user_subscriptions')
-            .select('plan_name, status')
+            .select('plan_name, status, expires_at')
             .eq('user_id', profile.user_id)
             .single();
 
@@ -102,10 +112,16 @@ export function UserManagementTab() {
 
   const openApprovalModal = (user: User) => {
     setSelectedUser(user);
-    // Pre-fill existing subscription if modifying
     setSelectedPlan(user.subscription?.plan_name || "basic");
     setMetaapiId("");
+    setModalTab('account');
     setShowApprovalModal(true);
+  };
+
+  const openSubscriptionModal = (user: User) => {
+    setSelectedUser(user);
+    setSelectedPlan(user.subscription?.plan_name || "basic");
+    setShowSubscriptionModal(true);
   };
 
   const approveUser = async () => {
@@ -126,7 +142,7 @@ export function UserManagementTab() {
         acc => acc.connection_status === 'pending_approval'
       );
 
-      if (pendingAccount) {
+      if (pendingAccount && metaapiId) {
         const { error: accountError } = await supabase
           .from('trading_accounts')
           .update({
@@ -175,6 +191,52 @@ export function UserManagementTab() {
     } catch (error: any) {
       toast({
         title: 'Error approving user',
+        description: error.message,
+        variant: 'destructive'
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const updateSubscription = async () => {
+    if (!selectedUser) {
+      toast({
+        title: 'Missing information',
+        description: 'No user selected',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+      const { error: subError } = await supabase
+        .from('user_subscriptions')
+        .upsert({
+          user_id: selectedUser.id,
+          plan_name: selectedPlan,
+          status: 'active',
+          started_at: new Date().toISOString(),
+          expires_at: expiresAt.toISOString()
+        });
+
+      if (subError) throw subError;
+
+      toast({
+        title: 'Subscription Updated',
+        description: `${selectedUser.email} is now on the ${selectedPlan} plan`
+      });
+
+      setShowSubscriptionModal(false);
+      loadUsers();
+    } catch (error: any) {
+      toast({
+        title: 'Error updating subscription',
         description: error.message,
         variant: 'destructive'
       });
@@ -244,6 +306,7 @@ export function UserManagementTab() {
             <TableHead>Email</TableHead>
             <TableHead>Subscription</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Expires</TableHead>
             <TableHead>Accounts</TableHead>
             <TableHead>Joined</TableHead>
             <TableHead>Actions</TableHead>
@@ -268,6 +331,11 @@ export function UserManagementTab() {
                 >
                   {user.subscription?.status || 'Inactive'}
                 </Badge>
+              </TableCell>
+              <TableCell className="text-sm">
+                {user.subscription?.expires_at 
+                  ? new Date(user.subscription.expires_at).toLocaleDateString() 
+                  : '-'}
               </TableCell>
               <TableCell>
                 <div className="flex flex-col gap-1">
@@ -304,6 +372,14 @@ export function UserManagementTab() {
                   </Button>
                   <Button
                     size="sm"
+                    variant="outline"
+                    onClick={() => openSubscriptionModal(user)}
+                    title="Change subscription tier"
+                  >
+                    <Crown className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="ghost"
                     onClick={() => deleteUser(user.id, user.email)}
                   >
@@ -320,7 +396,7 @@ export function UserManagementTab() {
       <Dialog open={showApprovalModal} onOpenChange={setShowApprovalModal}>
         <DialogContent className="bg-gradient-card border-border">
           <DialogHeader>
-            <DialogTitle>Approve User & Activate Subscription</DialogTitle>
+            <DialogTitle>Approve User & Configure Account</DialogTitle>
             <DialogDescription>
               Configure MetaAPI integration and subscription plan for {selectedUser?.email}
             </DialogDescription>
@@ -340,7 +416,7 @@ export function UserManagementTab() {
             )}
 
             <div className="space-y-2">
-              <Label>MetaAPI Account ID</Label>
+              <Label>MetaAPI Account ID (Optional)</Label>
               <Input
                 placeholder="Enter MetaAPI Account ID"
                 value={metaapiId}
@@ -358,9 +434,11 @@ export function UserManagementTab() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="basic">Basic ($9.90/mo)</SelectItem>
-                  <SelectItem value="professional">Professional ($29.90/mo)</SelectItem>
-                  <SelectItem value="enterprise">Enterprise ($39.99/mo)</SelectItem>
+                  {SUBSCRIPTION_PLANS.map((plan) => (
+                    <SelectItem key={plan.value} value={plan.value}>
+                      {plan.label} ({plan.price})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -378,7 +456,78 @@ export function UserManagementTab() {
                 className="flex-1 bg-gradient-primary"
                 disabled={processing}
               >
-                {processing ? 'Processing...' : (selectedUser?.subscription?.status === 'active' ? 'Update Subscription' : 'Approve & Activate')}
+                {processing ? 'Processing...' : (selectedUser?.subscription?.status === 'active' ? 'Update' : 'Approve & Activate')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription Update Modal */}
+      <Dialog open={showSubscriptionModal} onOpenChange={setShowSubscriptionModal}>
+        <DialogContent className="bg-gradient-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="w-5 h-5" />
+              Update Subscription Tier
+            </DialogTitle>
+            <DialogDescription>
+              Change the subscription plan for {selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="p-3 bg-muted rounded-lg">
+              <p className="text-sm">
+                <strong>Current Plan:</strong>{' '}
+                <Badge variant="outline">
+                  {selectedUser?.subscription?.plan_name || 'None'}
+                </Badge>
+              </p>
+              <p className="text-sm mt-1">
+                <strong>Status:</strong>{' '}
+                <Badge variant={selectedUser?.subscription?.status === 'active' ? 'default' : 'secondary'}>
+                  {selectedUser?.subscription?.status || 'Inactive'}
+                </Badge>
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>New Subscription Plan</Label>
+              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUBSCRIPTION_PLANS.map((plan) => (
+                    <SelectItem key={plan.value} value={plan.value}>
+                      <div className="flex items-center gap-2">
+                        {plan.label}
+                        <span className="text-muted-foreground">({plan.price})</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The subscription will be activated immediately and expire in 1 month
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowSubscriptionModal(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={updateSubscription}
+                className="flex-1 bg-gradient-primary"
+                disabled={processing}
+              >
+                {processing ? 'Processing...' : 'Update Subscription'}
               </Button>
             </div>
           </div>

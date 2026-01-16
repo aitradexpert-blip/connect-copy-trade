@@ -10,7 +10,7 @@ import { ArrowUp, ArrowDown, Loader2, TrendingUp, Clock, DollarSign, AlertCircle
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { getSharedDerivWS } from '@/services/derivWebSocket';
+import { getSharedDerivWS, getDerivSymbol } from '@/services/derivWebSocket';
 import { authorizeDerivAccount } from '@/services/derivBroker';
 import { subscribeProposal, buyContract, ProposalParams } from '@/services/derivTrading';
 
@@ -106,8 +106,11 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
         await ws.connect();
         await authorizeDerivAccount(account.deriv_token, ws);
         
+        // Convert symbol to Deriv format (e.g., "EUR/USD" -> "frxEURUSD")
+        const derivSymbol = getDerivSymbol(symbol) || symbol;
+        
         const params: ProposalParams = {
-          symbol,
+          symbol: derivSymbol,
           contractType: direction,
           amount: parseFloat(stake) || 10,
           basis: 'stake',
@@ -115,7 +118,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
           durationUnit,
         };
         
-        console.log('[DerivQuickTrade] Subscribing to proposal:', params);
+        console.log('[DerivQuickTrade] Subscribing to proposal:', params, 'original symbol:', symbol);
         
         // First, try to get a single proposal to check if the parameters are valid
         const testResponse = await ws.send({
@@ -126,7 +129,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
           currency: account.deriv_currency || 'USD',
           duration: params.duration,
           duration_unit: params.durationUnit,
-          symbol: params.symbol,
+          symbol: derivSymbol,
         });
         
         if (testResponse.error) {

@@ -15,11 +15,13 @@ import {
   ArrowDownUp,
   LineChart,
   ArrowDown,
-  ArrowUp
+  ArrowUp,
+  Clock
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/MetricCard";
 import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
@@ -29,6 +31,16 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { authorizeDerivAccount, getDerivBalance } from "@/services/derivBroker";
+import { getSharedDerivWS } from "@/services/derivWebSocket";
+
+interface TradeHistoryItem {
+  id: string;
+  symbol: string;
+  direction: string;
+  profit_loss: number | null;
+  executed_at: string;
+  source: 'deriv' | 'metaapi' | 'local';
+}
 
 const Index = () => {
   const navigate = useNavigate();
@@ -42,6 +54,7 @@ const Index = () => {
   const [loading, setLoading] = useState(true);
   const [hasDerivAccounts, setHasDerivAccounts] = useState(false);
   const [brokerAction, setBrokerAction] = useState<'deposit' | 'withdraw' | null>(null);
+  const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -61,6 +74,7 @@ const Index = () => {
         let totalEquity = 0;
         let totalPositions = 0;
         let hasDeriv = false;
+        const allTrades: TradeHistoryItem[] = [];
 
         // Refresh each account's data
         for (const account of accounts || []) {
@@ -68,8 +82,10 @@ const Index = () => {
             if (account.provider === 'deriv' && account.deriv_token) {
               hasDeriv = true;
               // Refresh Deriv account
-              await authorizeDerivAccount(account.deriv_token);
-              const balanceResponse = await getDerivBalance();
+              const ws = getSharedDerivWS();
+              await ws.connect();
+              await authorizeDerivAccount(account.deriv_token, ws);
+              const balanceResponse = await getDerivBalance(ws);
               const balance = Number(balanceResponse.balance?.balance || 0);
               
               totalBalance += balance;
@@ -80,6 +96,30 @@ const Index = () => {
                 .from("trading_accounts")
                 .update({ balance, equity: balance })
                 .eq("id", account.id);
+
+              // Fetch Deriv trade history (profit_table)
+              try {
+                const profitResponse = await ws.send({
+                  profit_table: 1,
+                  limit: 10,
+                  description: 1,
+                  sort: 'DESC'
+                });
+                
+                if (profitResponse.profit_table?.transactions) {
+                  const derivTrades = profitResponse.profit_table.transactions.map((tx: any) => ({
+                    id: `deriv-${tx.transaction_id}`,
+                    symbol: tx.shortcode?.split('_')[0] || tx.longcode?.substring(0, 10) || 'Options',
+                    direction: tx.buy_price > 0 ? 'BUY' : 'SELL',
+                    profit_loss: tx.sell_price - tx.buy_price,
+                    executed_at: new Date(tx.purchase_time * 1000).toISOString(),
+                    source: 'deriv' as const
+                  }));
+                  allTrades.push(...derivTrades);
+                }
+              } catch (err) {
+                console.error('Error fetching Deriv profit table:', err);
+              }
             } else if (account.metaapi_account_id) {
               // Refresh MetaAPI account
               const { data: info, error: fnError } = await supabase.functions.invoke(
@@ -119,6 +159,26 @@ const Index = () => {
           }
         }
 
+        // Also fetch local trade history from database
+        const { data: localTrades } = await supabase
+          .from('trade_history')
+          .select('id, symbol, direction, profit_loss, executed_at')
+          .eq('user_id', user.id)
+          .order('executed_at', { ascending: false })
+          .limit(10);
+
+        if (localTrades) {
+          const mappedLocalTrades = localTrades.map(t => ({
+            ...t,
+            source: 'local' as const
+          }));
+          allTrades.push(...mappedLocalTrades);
+        }
+
+        // Sort all trades by date and take top 10
+        allTrades.sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
+        setTradeHistory(allTrades.slice(0, 10));
+
         setHasDerivAccounts(hasDeriv);
         const dailyPnL = totalEquity - totalBalance;
 
@@ -156,8 +216,10 @@ const Index = () => {
       for (const account of accounts || []) {
         try {
           if (account.provider === 'deriv' && account.deriv_token) {
-            await authorizeDerivAccount(account.deriv_token);
-            const balanceResponse = await getDerivBalance();
+            const ws = getSharedDerivWS();
+            await ws.connect();
+            await authorizeDerivAccount(account.deriv_token, ws);
+            const balanceResponse = await getDerivBalance(ws);
             const balance = Number(balanceResponse.balance?.balance || 0);
             
             totalBalance += balance;
@@ -436,20 +498,57 @@ const Index = () => {
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
+        {/* Recent Trading Activity */}
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              Recent Trading Activity
+            </CardTitle>
             <CardDescription>
-              Your latest trading activities and notifications
+              Your latest trades from connected accounts
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-8 text-muted-foreground">
-              <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No recent activity to display</p>
-              <p className="text-sm">Connect a trading account to see your activity here</p>
-            </div>
+            {tradeHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No recent trades to display</p>
+                <p className="text-sm">Connect a trading account and execute trades to see your history</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {tradeHistory.map((trade) => (
+                  <div 
+                    key={trade.id} 
+                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${trade.direction === 'BUY' ? 'bg-profit' : 'bg-loss'}`} />
+                      <div>
+                        <p className="font-medium text-sm">{trade.symbol}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(trade.executed_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant={trade.direction === 'BUY' ? 'default' : 'destructive'} className="text-xs">
+                        {trade.direction}
+                      </Badge>
+                      {trade.profit_loss !== null && (
+                        <span className={`text-sm font-medium ${trade.profit_loss >= 0 ? 'text-profit' : 'text-loss'}`}>
+                          {trade.profit_loss >= 0 ? '+' : ''}{trade.profit_loss.toFixed(2)}
+                        </span>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {trade.source}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

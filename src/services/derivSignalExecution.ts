@@ -34,8 +34,8 @@ function mapDirectionToContractType(direction: 'BUY' | 'SELL'): 'CALL' | 'PUT' {
  * 
  * IMPORTANT: Deriv API has strict duration requirements:
  * - Synthetic indices: Support tick-based durations (1-10 ticks)
- * - Forex: Minimum 5 minutes for Rise/Fall contracts
- * - Crypto/OTC: Minimum 5 minutes
+ * - Forex: Minimum 15 minutes for Rise/Fall contracts (some require more)
+ * - Crypto/OTC: Minimum 15 minutes
  */
 function getDurationForSymbol(derivSymbol: string): { duration: number; durationUnit: 't' | 's' | 'm' | 'h' | 'd' } {
   // Synthetic indices (Volatility, Boom, Crash, Step, Jump) - support tick-based durations
@@ -52,29 +52,29 @@ function getDurationForSymbol(derivSymbol: string): { duration: number; duration
     return { duration: 5, durationUnit: 't' }; // 5 ticks - safe for synthetics
   }
   
-  // Forex pairs (frx prefix) - MUST use 5+ minutes for Rise/Fall
+  // Forex pairs (frx prefix) - use 15 minutes to be safe (some pairs require longer)
   if (derivSymbol.startsWith('frx')) {
-    return { duration: 5, durationUnit: 'm' }; // 5 minutes - minimum safe duration
+    return { duration: 15, durationUnit: 'm' }; // 15 minutes - safe for all forex
   }
   
-  // Metals (Gold, Silver)
+  // Metals (Gold, Silver) - use 15 minutes
   if (derivSymbol.includes('XAU') || derivSymbol.includes('XAG')) {
-    return { duration: 5, durationUnit: 'm' }; // 5 minutes
+    return { duration: 15, durationUnit: 'm' }; // 15 minutes
   }
   
-  // Crypto - use minutes
+  // Crypto - use 15 minutes
   if (derivSymbol.startsWith('cry')) {
-    return { duration: 5, durationUnit: 'm' }; // 5 minutes
+    return { duration: 15, durationUnit: 'm' }; // 15 minutes
   }
   
-  // OTC/Weekend Indices - use minutes
+  // OTC/Weekend Indices - use 15 minutes
   if (derivSymbol.startsWith('OTC')) {
-    return { duration: 5, durationUnit: 'm' }; // 5 minutes
+    return { duration: 15, durationUnit: 'm' }; // 15 minutes
   }
   
-  // Default fallback - use 5 minutes (safer for unknown symbols)
-  console.log(`[DerivSignalExecution] Unknown symbol type: ${derivSymbol}, using 5 minute duration`);
-  return { duration: 5, durationUnit: 'm' };
+  // Default fallback - use 15 minutes (safer for unknown symbols)
+  console.log(`[DerivSignalExecution] Unknown symbol type: ${derivSymbol}, using 15 minute duration`);
+  return { duration: 15, durationUnit: 'm' };
 }
 
 /**
