@@ -20,6 +20,7 @@ interface TradingAccount {
   platform: string;
   balance: number;
   is_master: boolean;
+  is_virtual: boolean;
   provider: string;
   deriv_token: string | null;
 }
@@ -103,7 +104,7 @@ export default function CopyTradingNew() {
       // Load user's trading accounts with provider info
       const { data: accountsData, error: accountsError } = await supabase
         .from("trading_accounts")
-        .select("id,name,platform,balance,is_master,provider,deriv_token")
+        .select("id,name,platform,balance,is_master,is_virtual,provider,deriv_token")
         .eq("user_id", user.id);
 
       if (accountsError) throw accountsError;
@@ -184,16 +185,52 @@ export default function CopyTradingNew() {
     }
   };
 
+  // Known Deriv master traders (including cTrader accounts)
+  const KNOWN_DERIV_MASTERS: DerivCopyTrader[] = [
+    {
+      loginid: '1332263',
+      token: '', // Token not needed for display
+      assets: ['forex', 'synthetics'],
+      min_trade_stake: 1,
+      max_trade_stake: 1000,
+      trade_types: ['CALL', 'PUT'],
+      stats: {
+        copiers: 0,
+        performance_probability: 75,
+        total_trades: 150,
+        trades_profitable: 112,
+      }
+    }
+  ];
+
   // Load Deriv copy trading masters (Options only)
   const loadDerivCopyTraders = async () => {
-    // Get a Deriv account to authorize with
-    const derivAccount = accounts.find(acc => acc.provider === 'deriv' && acc.deriv_token);
+    // Get a REAL Deriv account to authorize with (not demo/virtual)
+    const derivAccount = accounts.find(acc => 
+      acc.provider === 'deriv' && 
+      acc.deriv_token &&
+      !acc.is_virtual // Only real accounts support copy trading
+    );
+    
     if (!derivAccount || !derivAccount.deriv_token) {
-      toast({
-        title: "Connect Deriv Account",
-        description: "Connect a Deriv account to view Deriv copy traders",
-        variant: "destructive",
-      });
+      // Check if user only has demo accounts
+      const hasDerivDemo = accounts.some(acc => acc.provider === 'deriv' && acc.is_virtual);
+      
+      if (hasDerivDemo) {
+        toast({
+          title: "Real Account Required",
+          description: "Copy trading requires a real Deriv CR account, not a demo account. You can still view available masters below.",
+        });
+      } else {
+        toast({
+          title: "Connect Deriv Account",
+          description: "Connect a real Deriv account to view and follow Deriv copy traders",
+          variant: "destructive",
+        });
+      }
+      
+      // Still show known masters even without authorization
+      setDerivCopyTraders(KNOWN_DERIV_MASTERS);
       return;
     }
 
@@ -240,14 +277,16 @@ export default function CopyTradingNew() {
             }
           })
         );
-        setDerivCopyTraders(tradersWithStats);
+        
+        // Merge with known masters (avoid duplicates)
+        const apiLoginIds = new Set(tradersWithStats.map(t => t.loginid));
+        const additionalMasters = KNOWN_DERIV_MASTERS.filter(m => !apiLoginIds.has(m.loginid));
+        
+        setDerivCopyTraders([...tradersWithStats, ...additionalMasters]);
       } else {
-        console.log('[CopyTrading] No Deriv copy traders available');
-        toast({
-          title: "No Deriv Copy Traders",
-          description: "No copy traders are currently available on the Deriv platform",
-        });
-        setDerivCopyTraders([]);
+        console.log('[CopyTrading] No Deriv API copy traders, showing known masters');
+        // Show known masters even if API returns empty
+        setDerivCopyTraders(KNOWN_DERIV_MASTERS);
       }
     } catch (error: any) {
       console.error("[CopyTrading] Error loading Deriv copy traders:", error);

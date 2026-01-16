@@ -144,6 +144,32 @@ export default function AIAutoTrading() {
     if (!account || !agreeTerms || !bot) return;
 
     try {
+      // Check if this account already has an active bot
+      const existingAssignment = activeAssignments.find(
+        a => a.trading_account_id === selectedAccount && a.status === 'active'
+      );
+      
+      if (existingAssignment) {
+        toast({
+          title: "Bot Already Active",
+          description: "This account already has an active bot. Please deactivate it first or select a different account.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Check total active bots (enforce one-per-user unless higher tier)
+      // TODO: Check subscription tier for multiple bots allowance
+      const totalActiveBots = activeAssignments.filter(a => a.status === 'active').length;
+      if (totalActiveBots >= 1) {
+        toast({
+          title: "Bot Limit Reached",
+          description: "You can only have one active bot at a time. Upgrade to Enterprise for multiple bots.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // First, get the latest trading signal to use as reference (or create a placeholder)
       const { data: latestSignal } = await supabase
         .from('trading_signals')
