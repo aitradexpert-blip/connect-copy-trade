@@ -12,6 +12,9 @@ verify_jwt = false
 [functions.metaapi-get-positions]
 verify_jwt = false
 
+[functions.metaapi-get-history]
+verify_jwt = false
+
 [functions.auto-execute-signal]
 verify_jwt = false
 
@@ -28,4 +31,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.create-yoco-checkout]
+verify_jwt = false
+
+[functions.create-guest-checkout]
+verify_jwt = false
+
+[functions.deriv-execute-signal]
+verify_jwt = false
+
+[functions.deriv-copy-bridge]
 verify_jwt = false

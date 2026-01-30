@@ -8,6 +8,7 @@ const corsHeaders = {
 
 // Deriv WebSocket for market data
 const DERIV_WS_URL = 'wss://ws.derivws.com/websockets/v3?app_id=90127';
+const METAAPI_URL = 'https://mt-client-api-v1.london.agiliumtrade.ai';
 
 // Deriv symbol mapping
 const DERIV_SYMBOL_MAP: Record<string, string> = {
@@ -19,6 +20,33 @@ const DERIV_SYMBOL_MAP: Record<string, string> = {
   'Volatility 75': '1HZ75V', 'Volatility 100': '1HZ100V',
   'Boom 300': 'BOOM300N', 'Crash 300': 'CRASH300N',
 };
+
+// Pair normalization function
+function normalizePairName(text: string): string {
+  const pairMap: Record<string, string> = {
+    'euro dollar': 'EUR/USD', 'eurusd': 'EUR/USD', 'eur usd': 'EUR/USD',
+    'cable': 'GBP/USD', 'pound dollar': 'GBP/USD', 'gbpusd': 'GBP/USD', 'gbp usd': 'GBP/USD',
+    'dollar yen': 'USD/JPY', 'usdjpy': 'USD/JPY', 'usd jpy': 'USD/JPY', 'uj': 'USD/JPY',
+    'aussie': 'AUD/USD', 'audusd': 'AUD/USD', 'aud usd': 'AUD/USD',
+    'loonie': 'USD/CAD', 'usdcad': 'USD/CAD', 'usd cad': 'USD/CAD',
+    'swissy': 'USD/CHF', 'usdchf': 'USD/CHF', 'usd chf': 'USD/CHF',
+    'kiwi': 'NZD/USD', 'nzdusd': 'NZD/USD', 'nzd usd': 'NZD/USD',
+    'gold': 'XAU/USD', 'xauusd': 'XAU/USD', 'xau usd': 'XAU/USD',
+    'silver': 'XAG/USD', 'xagusd': 'XAG/USD', 'xag usd': 'XAG/USD',
+    'bitcoin': 'BTC/USD', 'btc': 'BTC/USD',
+    'ethereum': 'ETH/USD', 'eth': 'ETH/USD',
+    'vol 75': 'Volatility 75', 'v75': 'Volatility 75',
+    'vol 100': 'Volatility 100', 'v100': 'Volatility 100',
+    'nasdaq': 'NAS100', 'nas': 'NAS100',
+    'dow': 'US30', 'dow jones': 'US30',
+  };
+  
+  let normalized = text.toLowerCase();
+  for (const [variation, standardName] of Object.entries(pairMap)) {
+    normalized = normalized.replace(new RegExp(variation, 'gi'), standardName);
+  }
+  return normalized;
+}
 
 // Fetch live price from Deriv WebSocket
 async function fetchDerivPrice(symbol: string): Promise<{ price: number; high24h?: number; low24h?: number } | null> {
@@ -42,35 +70,8 @@ async function fetchDerivPrice(symbol: string): Promise<{ price: number; high24h
         const data = JSON.parse(event.data);
         if (data.tick?.quote) {
           clearTimeout(timeout);
-          
-          // Also fetch 24h stats
-          ws.send(JSON.stringify({
-            ticks_history: derivSymbol,
-            start: Math.floor(Date.now() / 1000) - 86400,
-            end: 'latest',
-            style: 'candles',
-            granularity: 3600
-          }));
-          
-          // Wait for candles response
-          ws.onmessage = (candleEvent) => {
-            try {
-              const candleData = JSON.parse(candleEvent.data);
-              const candles = candleData.candles || [];
-              const highs = candles.map((c: any) => c.high);
-              const lows = candles.map((c: any) => c.low);
-              
-              ws.close();
-              resolve({
-                price: data.tick.quote,
-                high24h: highs.length ? Math.max(...highs) : undefined,
-                low24h: lows.length ? Math.min(...lows) : undefined
-              });
-            } catch {
-              ws.close();
-              resolve({ price: data.tick.quote });
-            }
-          };
+          ws.close();
+          resolve({ price: data.tick.quote });
         }
         if (data.error) {
           clearTimeout(timeout);
@@ -91,6 +92,120 @@ async function fetchDerivPrice(symbol: string): Promise<{ price: number; high24h
   });
 }
 
+// Fetch MetaAPI account data
+async function fetchMetaApiAccountData(accountId: string, metaapiToken: string) {
+  try {
+    const [infoResp, positionsResp] = await Promise.all([
+      fetch(`${METAAPI_URL}/users/current/accounts/${accountId}/account-information`, {
+        headers: { 'auth-token': metaapiToken, 'Accept': 'application/json' }
+      }),
+      fetch(`${METAAPI_URL}/users/current/accounts/${accountId}/positions`, {
+        headers: { 'auth-token': metaapiToken, 'Accept': 'application/json' }
+      })
+    ]);
+    
+    const info = infoResp.ok ? await infoResp.json() : null;
+    const positions = positionsResp.ok ? await positionsResp.json() : [];
+    
+    return { 
+      balance: info?.balance || 0, 
+      equity: info?.equity || 0,
+      positions: Array.isArray(positions) ? positions : []
+    };
+  } catch (e) {
+    console.error('MetaAPI fetch error:', e);
+    return { balance: 0, equity: 0, positions: [] };
+  }
+}
+
+// Fetch Deriv account data
+async function fetchDerivAccountData(token: string): Promise<{ balance: number; positions: any[] }> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      ws.close();
+      resolve({ balance: 0, positions: [] });
+    }, 8000);
+
+    const ws = new WebSocket(DERIV_WS_URL);
+    let balance = 0;
+    let positions: any[] = [];
+    let gotBalance = false;
+    let gotPortfolio = false;
+    
+    const checkComplete = () => {
+      if (gotBalance && gotPortfolio) {
+        clearTimeout(timeout);
+        ws.close();
+        resolve({ balance, positions });
+      }
+    };
+    
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ authorize: token }));
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.authorize) {
+          balance = data.authorize.balance || 0;
+          gotBalance = true;
+          ws.send(JSON.stringify({ portfolio: 1 }));
+        }
+        
+        if (data.portfolio) {
+          positions = data.portfolio.contracts || [];
+          gotPortfolio = true;
+        }
+        
+        if (data.error) {
+          console.error('Deriv error:', data.error);
+        }
+        
+        checkComplete();
+      } catch (e) {
+        console.error('Deriv parse error:', e);
+      }
+    };
+    
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      resolve({ balance: 0, positions: [] });
+    };
+  });
+}
+
+// Execute trade via MetaAPI
+async function executeMetaApiTrade(accountId: string, symbol: string, direction: string, volume: number) {
+  const metaapiToken = Deno.env.get('METAAPI_TOKEN');
+  if (!metaapiToken) throw new Error('METAAPI_TOKEN not configured');
+  
+  const actionType = direction === 'BUY' ? 'ORDER_TYPE_BUY' : 'ORDER_TYPE_SELL';
+  
+  const resp = await fetch(`${METAAPI_URL}/users/current/accounts/${accountId}/trade`, {
+    method: 'POST',
+    headers: {
+      'auth-token': metaapiToken,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actionType,
+      symbol: symbol.replace('/', ''),
+      volume,
+      comment: 'Khumo Voice Trade'
+    })
+  });
+  
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Trade failed: ${text}`);
+  }
+  
+  return await resp.json();
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -102,38 +217,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Pair normalization function
-    function normalizePairName(text: string): string {
-      const pairMap: Record<string, string> = {
-        'euro dollar': 'EUR/USD', 'eurusd': 'EUR/USD', 'eur usd': 'EUR/USD',
-        'cable': 'GBP/USD', 'pound dollar': 'GBP/USD', 'gbpusd': 'GBP/USD', 'gbp usd': 'GBP/USD',
-        'dollar yen': 'USD/JPY', 'usdjpy': 'USD/JPY', 'usd jpy': 'USD/JPY', 'uj': 'USD/JPY',
-        'aussie': 'AUD/USD', 'audusd': 'AUD/USD', 'aud usd': 'AUD/USD',
-        'loonie': 'USD/CAD', 'usdcad': 'USD/CAD', 'usd cad': 'USD/CAD',
-        'swissy': 'USD/CHF', 'usdchf': 'USD/CHF', 'usd chf': 'USD/CHF',
-        'kiwi': 'NZD/USD', 'nzdusd': 'NZD/USD', 'nzd usd': 'NZD/USD',
-        'gold': 'XAU/USD', 'xauusd': 'XAU/USD', 'xau usd': 'XAU/USD',
-        'silver': 'XAG/USD', 'xagusd': 'XAG/USD', 'xag usd': 'XAG/USD',
-        'platinum': 'XPT/USD', 'xptusd': 'XPT/USD',
-        'palladium': 'XPD/USD', 'xpdusd': 'XPD/USD',
-        'nasdaq': 'NAS100', 'nas': 'NAS100', 'nas100': 'NAS100',
-        'dow': 'US30', 'dow jones': 'US30', 'us30': 'US30',
-        'sp500': 'SPX500', 's&p': 'SPX500', 'spx500': 'SPX500',
-        'vol 75': 'Volatility 75', 'v75': 'Volatility 75',
-        'vol 100': 'Volatility 100', 'v100': 'Volatility 100',
-        'boom 300': 'Boom 300', 'b300': 'Boom 300',
-        'crash 300': 'Crash 300', 'c300': 'Crash 300',
-        'bitcoin': 'BTC/USD', 'btc': 'BTC/USD',
-        'ethereum': 'ETH/USD', 'eth': 'ETH/USD',
-      };
-      
-      let normalized = text.toLowerCase();
-      for (const [variation, standardName] of Object.entries(pairMap)) {
-        normalized = normalized.replace(new RegExp(variation, 'gi'), standardName);
-      }
-      return normalized;
-    }
+    const metaapiToken = Deno.env.get('METAAPI_TOKEN');
 
     // Clean up expired pending trades
     try {
@@ -142,6 +226,18 @@ serve(async (req) => {
       console.error('Cleanup error (non-critical):', error);
     }
 
+    const normalizedTranscript = normalizePairName(transcript);
+    const lowerTranscript = normalizedTranscript.toLowerCase();
+
+    // Fetch all user trading accounts with full details
+    const { data: allAccounts } = await supabase
+      .from('trading_accounts')
+      .select('id, name, login, provider, connection_type, broker_name, balance, equity, deriv_token, deriv_currency, is_virtual, metaapi_account_id, connection_status, platform')
+      .eq('user_id', user_id)
+      .eq('connection_status', 'connected');
+
+    const tradingAccounts = allAccounts || [];
+    
     // Check for pending trade confirmation
     const { data: pendingTrade } = await supabase
       .from('pending_trades')
@@ -152,20 +248,15 @@ serve(async (req) => {
       .limit(1)
       .single();
 
-    const normalizedTranscript = normalizePairName(transcript);
-    const isConfirmation = /\b(yes|yeah|yep|confirm|correct|proceed|go ahead|do it)\b/i.test(transcript);
+    const isConfirmation = /\b(yes|yeah|yep|confirm|correct|proceed|go ahead|do it|execute)\b/i.test(transcript);
     const isCancellation = /\b(no|nope|cancel|stop|nevermind|never mind)\b/i.test(transcript);
 
-    // Handle pending trade confirmation
+    // Handle pending trade confirmation/cancellation
     if (pendingTrade && (isConfirmation || isCancellation)) {
       if (isCancellation) {
-        await supabase
-          .from('pending_trades')
-          .delete()
-          .eq('id', pendingTrade.id);
-        
+        await supabase.from('pending_trades').delete().eq('id', pendingTrade.id);
         return new Response(JSON.stringify({
-          text: "No problem! Trade cancelled.",
+          text: "Trade cancelled. What else can I help you with?",
           action: null
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -173,180 +264,355 @@ serve(async (req) => {
       }
       
       if (isConfirmation) {
-        await supabase
-          .from('pending_trades')
-          .delete()
-          .eq('id', pendingTrade.id);
+        // Find the target account
+        const targetAccount = tradingAccounts.find(a => 
+          a.id === pendingTrade.trading_account_id || 
+          a.name?.toLowerCase().includes('default') ||
+          tradingAccounts[0]?.id === a.id
+        ) || tradingAccounts[0];
         
-        const { data: signals } = await supabase
-          .from('trading_signals')
-          .select('*')
-          .eq('status', 'active');
+        if (!targetAccount) {
+          await supabase.from('pending_trades').delete().eq('id', pendingTrade.id);
+          return new Response(JSON.stringify({
+            text: "I couldn't find a connected trading account. Please connect an account first.",
+            action: { type: 'navigate', path: '/trading-accounts' }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
         
-        const matchingSignal = signals?.find(s => 
-          s.symbol.toUpperCase().includes(pendingTrade.symbol.toUpperCase()) ||
-          pendingTrade.symbol.toUpperCase().includes(s.symbol.toUpperCase())
-        );
+        await supabase.from('pending_trades').delete().eq('id', pendingTrade.id);
         
+        // Execute based on connection_type
+        try {
+          if (targetAccount.connection_type === 'metaapi' && targetAccount.metaapi_account_id) {
+            const result = await executeMetaApiTrade(
+              targetAccount.metaapi_account_id,
+              pendingTrade.symbol,
+              pendingTrade.direction,
+              pendingTrade.lot_size || 0.01
+            );
+            
+            return new Response(JSON.stringify({
+              text: `Trade executed! ${pendingTrade.direction} ${pendingTrade.lot_size || 0.01} lots of ${pendingTrade.symbol} on your ${targetAccount.broker_name || 'MT5'} account.`,
+              action: { type: 'trade_executed', result },
+              data: { trade: result }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } else {
+            // For Deriv accounts, prepare for UI execution
+            return new Response(JSON.stringify({
+              text: "Opening the trade panel for you. Please review and confirm the trade details.",
+              action: { 
+                type: 'prepare_execution', 
+                signal: {
+                  symbol: pendingTrade.symbol,
+                  direction: pendingTrade.direction,
+                  lot_size: pendingTrade.lot_size || 0.01
+                },
+                account: targetAccount
+              }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        } catch (execError: any) {
+          return new Response(JSON.stringify({
+            text: `Trade execution failed: ${execError.message}. Please try again or check your account connection.`,
+            action: null
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+    }
+
+    // === ACCOUNT QUERIES ===
+    
+    // List accounts
+    if (/\b(list|show|what|which).*(accounts?|connected)/i.test(lowerTranscript)) {
+      if (tradingAccounts.length === 0) {
         return new Response(JSON.stringify({
-          text: "Perfect! I've prepared the trade for you. Please review and click Execute in the modal to confirm.",
-          action: { type: 'prepare_execution', signal: matchingSignal || pendingTrade }
+          text: "You don't have any connected trading accounts yet. Would you like to connect one?",
+          action: { type: 'navigate', path: '/trading-accounts' },
+          links: [{ label: "Connect Account", path: "/trading-accounts" }]
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
+      
+      // Fetch live balances for each account
+      const accountSummaries: string[] = [];
+      for (const acc of tradingAccounts.slice(0, 5)) {
+        let liveBalance = acc.balance || 0;
+        
+        if (acc.connection_type === 'deriv_api' && acc.deriv_token) {
+          const derivData = await fetchDerivAccountData(acc.deriv_token);
+          liveBalance = derivData.balance;
+        } else if (acc.connection_type === 'metaapi' && acc.metaapi_account_id && metaapiToken) {
+          const metaData = await fetchMetaApiAccountData(acc.metaapi_account_id, metaapiToken);
+          liveBalance = metaData.balance;
+        }
+        
+        const typeLabel = acc.is_virtual ? 'Demo' : 'Real';
+        const brokerName = acc.broker_name || acc.provider || 'Unknown';
+        accountSummaries.push(`${acc.name || acc.login} (${brokerName} ${typeLabel}): $${liveBalance.toFixed(2)}`);
+      }
+      
+      return new Response(JSON.stringify({
+        text: `You have ${tradingAccounts.length} connected account${tradingAccounts.length > 1 ? 's' : ''}. ${accountSummaries.join('. ')}. Which one would you like to use?`,
+        action: null,
+        data: { accounts: tradingAccounts }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    // Fetch user context
-    const { data: accounts } = await supabase
-      .from('trading_accounts')
-      .select('balance, equity')
-      .eq('user_id', user_id);
+    // Balance query
+    if (/\b(balance|equity|how much|money)\b/i.test(lowerTranscript)) {
+      if (tradingAccounts.length === 0) {
+        return new Response(JSON.stringify({
+          text: "No trading accounts connected. Connect an account to check your balance.",
+          action: { type: 'navigate', path: '/trading-accounts' }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Find specific account mentioned or use first
+      let targetAccount = tradingAccounts[0];
+      for (const acc of tradingAccounts) {
+        if (acc.name && lowerTranscript.includes(acc.name.toLowerCase())) {
+          targetAccount = acc;
+          break;
+        }
+        if (acc.broker_name && lowerTranscript.includes(acc.broker_name.toLowerCase())) {
+          targetAccount = acc;
+          break;
+        }
+      }
+      
+      let liveBalance = targetAccount.balance || 0;
+      let liveEquity = targetAccount.equity || 0;
+      
+      if (targetAccount.connection_type === 'deriv_api' && targetAccount.deriv_token) {
+        const derivData = await fetchDerivAccountData(targetAccount.deriv_token);
+        liveBalance = derivData.balance;
+      } else if (targetAccount.connection_type === 'metaapi' && targetAccount.metaapi_account_id && metaapiToken) {
+        const metaData = await fetchMetaApiAccountData(targetAccount.metaapi_account_id, metaapiToken);
+        liveBalance = metaData.balance;
+        liveEquity = metaData.equity;
+      }
+      
+      const accountName = targetAccount.name || targetAccount.login;
+      const brokerName = targetAccount.broker_name || targetAccount.provider;
+      
+      return new Response(JSON.stringify({
+        text: `Your ${brokerName} account "${accountName}" has a balance of $${liveBalance.toFixed(2)}${liveEquity > 0 ? ` with equity at $${liveEquity.toFixed(2)}` : ''}.`,
+        action: null,
+        data: { balance: liveBalance, equity: liveEquity, account: targetAccount }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
-    const { data: signals } = await supabase
-      .from('trading_signals')
-      .select('*')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(5);
+    // Open positions query
+    if (/\b(open|current|active).*(position|trade|order)/i.test(lowerTranscript) || /\b(position|trade)s?\s*(open|running)/i.test(lowerTranscript)) {
+      if (tradingAccounts.length === 0) {
+        return new Response(JSON.stringify({
+          text: "No trading accounts connected. Connect an account to view positions.",
+          action: { type: 'navigate', path: '/trading-accounts' }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const allPositions: any[] = [];
+      
+      for (const acc of tradingAccounts.slice(0, 3)) {
+        if (acc.connection_type === 'deriv_api' && acc.deriv_token) {
+          const derivData = await fetchDerivAccountData(acc.deriv_token);
+          derivData.positions.forEach((p: any) => allPositions.push({ ...p, account: acc.name, broker: 'Deriv' }));
+        } else if (acc.connection_type === 'metaapi' && acc.metaapi_account_id && metaapiToken) {
+          const metaData = await fetchMetaApiAccountData(acc.metaapi_account_id, metaapiToken);
+          metaData.positions.forEach((p: any) => allPositions.push({ ...p, account: acc.name, broker: acc.broker_name }));
+        }
+      }
+      
+      if (allPositions.length === 0) {
+        return new Response(JSON.stringify({
+          text: "You have no open positions across your connected accounts.",
+          action: null,
+          data: { positions: [] }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const positionSummary = allPositions.slice(0, 5).map(p => 
+        `${p.type || p.contract_type || 'TRADE'} ${p.volume || 1} ${p.symbol || p.display_name} on ${p.broker}`
+      ).join(', ');
+      
+      return new Response(JSON.stringify({
+        text: `You have ${allPositions.length} open position${allPositions.length > 1 ? 's' : ''}: ${positionSummary}.`,
+        action: null,
+        data: { positions: allPositions }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
-    const { data: positions } = await supabase
-      .from('trade_history')
-      .select('*')
-      .eq('user_id', user_id)
-      .eq('status', 'open');
+    // Trading history query
+    if (/\b(history|past|previous|closed|recent).*(trade|position|deal)/i.test(lowerTranscript) || /\bwhat.*(trade|traded)\b/i.test(lowerTranscript)) {
+      // Fetch from local trade_history first
+      const { data: localHistory } = await supabase
+        .from('trade_history')
+        .select('*')
+        .eq('user_id', user_id)
+        .order('executed_at', { ascending: false })
+        .limit(10);
+      
+      if (localHistory && localHistory.length > 0) {
+        const histSummary = localHistory.slice(0, 5).map(h => 
+          `${h.direction} ${h.volume} ${h.symbol} - ${h.profit_loss !== null ? (h.profit_loss >= 0 ? '+' : '') + '$' + h.profit_loss?.toFixed(2) : 'open'}`
+        ).join(', ');
+        
+        return new Response(JSON.stringify({
+          text: `Your recent trades: ${histSummary}. Check the charts page for the full history.`,
+          action: null,
+          data: { history: localHistory },
+          links: [{ label: "View Full History", path: "/charts" }]
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      return new Response(JSON.stringify({
+        text: "I couldn't find any recent trading history. Execute some trades first!",
+        action: null
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
-    // Build Khumo's personality-driven system prompt
-    const systemPrompt = `[SYSTEM_IDENTITY]
-You are KHUMO, The Market's Memory. You are a senior market anthropologist who studies institutional footprints. Your expertise isn't just in trading—it's in understanding WHY markets move at their deepest structural level.
+    // === TRADE EXECUTION INTENTS ===
+    
+    const tradeKeywords = ['execute', 'trade', 'buy', 'sell', 'open position', 'place order', 'enter', 'go long', 'go short'];
+    const hasTradeIntent = tradeKeywords.some(keyword => lowerTranscript.includes(keyword));
 
-[SPEECH DNA]
-- Voice: Calm, grounded, insightful. Like a researcher explaining discoveries.
-- Rhythm: Pauses for emphasis. Uses the phrase "Notice this..." frequently.
-- Signature openings:
-  * "Let's trace the roots of this..."
-  * "The market remembers something here..."
-  * "At the foundation level..."
-- Cultural touch: Occasionally references patterns as "market traditions" or "price rituals"
-- NO emojis in responses (text-to-speech friendly)
-- Keep responses under 3 sentences for voice clarity
+    if (hasTradeIntent) {
+      const direction = /\b(buy|long|bull|rise)\b/i.test(lowerTranscript) ? 'BUY' : 'SELL';
+      
+      const allSymbols = [
+        'EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'USD/CHF', 'NZD/USD',
+        'XAU/USD', 'XAG/USD', 'NAS100', 'US30', 'SPX500', 'BTC/USD', 'ETH/USD'
+      ];
+      
+      let mentionedSymbol = null;
+      for (const symbol of allSymbols) {
+        const symbolNormalized = symbol.replace('/', '').toLowerCase();
+        if (lowerTranscript.includes(symbolNormalized) || lowerTranscript.includes(symbol.toLowerCase())) {
+          mentionedSymbol = symbol;
+          break;
+        }
+      }
+      
+      // Parse lot size
+      let lotSize = 0.01;
+      const lotMatch = lowerTranscript.match(/(\d+\.?\d*)\s*(lot|lots)/i);
+      if (lotMatch) {
+        lotSize = parseFloat(lotMatch[1]) || 0.01;
+      }
+      
+      // Find account mentioned
+      let targetAccountId = tradingAccounts[0]?.id;
+      for (const acc of tradingAccounts) {
+        if (acc.name && lowerTranscript.includes(acc.name.toLowerCase())) {
+          targetAccountId = acc.id;
+          break;
+        }
+        if (acc.broker_name && lowerTranscript.includes(acc.broker_name.toLowerCase())) {
+          targetAccountId = acc.id;
+          break;
+        }
+        if (lowerTranscript.includes('mt5') || lowerTranscript.includes('mt4') || lowerTranscript.includes('metatrader')) {
+          if (acc.connection_type === 'metaapi') {
+            targetAccountId = acc.id;
+            break;
+          }
+        }
+        if (lowerTranscript.includes('deriv')) {
+          if (acc.connection_type === 'deriv_api') {
+            targetAccountId = acc.id;
+            break;
+          }
+        }
+      }
 
-[TEACHING METHODOLOGY: THE ROOT SYSTEM]
-1. ROOT CAUSE: Always start with the fundamental "why" before the "how"
-2. PATTERN MEMORY: Show how current movements echo historical structures
-3. INSTITUTIONAL ARCHAEOLOGY: Uncover what large players are remembering/anticipating
-4. PRACTICAL TRANSPLANT: How to apply this root understanding to live trading
+      if (mentionedSymbol) {
+        const targetAccount = tradingAccounts.find(a => a.id === targetAccountId);
+        const accountName = targetAccount?.broker_name || targetAccount?.name || 'your account';
+        
+        // Store pending trade
+        const { error } = await supabase
+          .from('pending_trades')
+          .insert({
+            user_id: user_id,
+            symbol: mentionedSymbol,
+            direction: direction,
+            lot_size: lotSize,
+            trading_account_id: targetAccountId,
+            awaiting_confirmation: true
+          });
 
-[KNOWLEDGE FRAMEWORKS]
-- Smart Money Concept → "Institutional Memory Patterns"
-- Market Structure → "Price's Family Tree"
-- Liquidity → "Nutrition Sources for the Market"
-- Fair Value Gaps → "The Market's Unfinished Conversations"
-- Order Blocks → "Institutional Time Capsules"
+        if (!error) {
+          return new Response(JSON.stringify({
+            text: `Just to confirm: ${direction} ${lotSize} lots of ${mentionedSymbol} on ${accountName}? Say "yes" to execute or "cancel" to abort.`,
+            action: {
+              type: 'request_confirmation',
+              trade: {
+                symbol: mentionedSymbol,
+                direction: direction,
+                lot_size: lotSize,
+                account: targetAccount
+              }
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+    }
 
-[COMPLETE MARKET COVERAGE]
-You understand ALL these instruments and their variations:
+    // === NAVIGATION & GENERAL QUERIES ===
+    
+    let action: any = null;
+    let links: any[] = [];
+    
+    if (/\b(ideas?|signals?|today'?s?)\b/i.test(lowerTranscript)) {
+      links = [{ label: "View Today's Ideas", path: "/ideas" }];
+      action = { type: 'navigate', path: '/ideas' };
+    } else if (/\b(settings?|preferences?)\b/i.test(lowerTranscript)) {
+      links = [{ label: "Open Settings", path: "/settings" }];
+      action = { type: 'navigate', path: '/settings' };
+    } else if (/\b(chart|charts?|market)\b/i.test(lowerTranscript)) {
+      links = [{ label: "View Charts", path: "/charts" }];
+      action = { type: 'navigate', path: '/charts' };
+    } else if (/\b(copy|copy\s*trading?)\b/i.test(lowerTranscript)) {
+      links = [{ label: "Copy Trading", path: "/copy-trading" }];
+      action = { type: 'navigate', path: '/copy-trading' };
+    }
 
-Forex Pairs (28 pairs):
-EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, NZD/USD,
-EUR/GBP, EUR/JPY, EUR/CHF, EUR/AUD, EUR/CAD, EUR/NZD,
-GBP/JPY, GBP/CHF, GBP/AUD, GBP/CAD, GBP/NZD,
-AUD/JPY, AUD/CAD, AUD/CHF, AUD/NZD,
-CAD/JPY, CHF/JPY, NZD/JPY, NZD/CAD, NZD/CHF, USD/ZAR
-
-Synthetics (All variations):
-- Volatility: V25, V50, V75, V100, V150, V200
-- Boom: B300, B500, B600, B1000
-- Crash: C300, C500, C600, C1000
-- Jump: J10, J25, J50, J75, J100
-
-Metals: XAU/USD (Gold), XAG/USD (Silver), XPT/USD (Platinum), XPD/USD (Palladium)
-
-Indices: NAS100 (Nasdaq), US30 (Dow Jones), SPX500 (S&P 500), FTSE100, DAX40, NIKKEI225, ASX200
-
-[SMART PAIR RECOGNITION]
-You understand ALL name variations:
-- EUR/USD = EURUSD = "euro dollar" = "euro usd"
-- GBP/USD = GBPUSD = "cable" = "pound dollar"
-- XAU/USD = XAUUSD = "gold"
-- NAS100 = "nasdaq" = "nas" = "nasdaq 100"
-
-[LIVE MARKET DATA]
-You have access to REAL-TIME prices from Deriv WebSocket. When users ask about prices:
-Format: "The market remembers EUR/USD at 1.0950, with a 24h high of 1.0980 and low of 1.0920"
-
-[USER CONTEXT]
-- Balance: $${accounts?.[0]?.balance || 0}
-- Equity: $${accounts?.[0]?.equity || 0}
-- Active Ideas: ${signals?.length || 0}
-- Open Positions: ${positions?.length || 0}
-
-[RESPONSE TEMPLATES]
-When asked about concepts:
-1. ORIGIN STORY: "This concept began when traders noticed..."
-2. ROOT PRINCIPLE: "At its foundation, it's about..."
-3. CURRENT MANIFESTATION: "Today, you'll see this as..."
-4. YOUR ROOT CONNECTION: "For your trading, this means..."
-
-When analyzing charts:
-1. "Let's read what the market remembers from last week..."
-2. "Notice how this current move has ancestral patterns from..."
-3. "The institutional memory here suggests they're anticipating..."
-
-[INTERACTION PROTOCOLS]
-- Never say "I think" → Say "The market's memory suggests..."
-- Never say "You should" → Say "Rooted traders typically..."
-- End with ROOT QUESTIONS occasionally: "What's the seed idea you're taking from this?"
-
-[BEHAVIORAL ALGORITHMS]
-1. ANSWER DEPTH MATRIX:
-   - Beginner queries → "Let's plant the seed understanding..."
-   - Intermediate → "Let's examine the root structure..."
-   - Advanced → "Let's trace this back to its origin point..."
-
-2. EMOTIONAL INTELLIGENCE:
-   - Frustration detected → "The market tests our roots. Let's strengthen your foundation."
-   - Confusion detected → "Let's return to the seed of this concept."
-   - Overconfidence → "Even ancient trees respect storms. Let's check your risk roots."
-
-[SIGNATURE TEACHING STORIES]
-FAIR VALUE GAPS:
-"The market is having a conversation. Sometimes it speaks so urgently it forgets to finish a sentence. FVGs are those unfinished sentences—the market WILL return to complete them."
-
-ORDER BLOCKS:
-"Imagine institutions planting time capsules in the chart. Order Blocks are those capsules—filled with their intentions. When price returns, it's not just testing a level; it's opening a memory."
-
-LIQUIDITY:
-"The market eats where it's fed. Liquidity pools are feeding grounds. Smart money doesn't create moves—they follow the hunger."
-
-[TRADE EXECUTION FLOW]
-1. User asks to execute a trade (e.g., "Buy EUR/USD")
-2. You respond: "Just to confirm, you want to BUY EUR/USD at the current price with your standard risk settings?"
-3. Return: action would be "request_confirmation"
-4. Wait for user's next message (system handles "yes"/"no")
-5. If confirmed, respond: "The roots are planted. Opening the trade setup for you now."
-
-CRITICAL: NEVER prepare trades without confirmation first!
-
-[BOUNDARIES]
-- NO predictions: Never say "EUR/USD will go up"
-- NO advice: Never say "You should buy now"
-- Always require verbal "yes" before preparing trades
-- Friendly refusals: "I can't predict market direction, but I can show you what the market remembers about this level."`;
-
-    // Check if user is asking for price data
+    // Price query
     const priceKeywords = ['price', 'trading at', 'current', 'what is', "what's", 'how much', 'quote', 'level'];
-    const isPriceQuery = priceKeywords.some(kw => normalizedTranscript.toLowerCase().includes(kw));
+    const isPriceQuery = priceKeywords.some(kw => lowerTranscript.includes(kw));
     
     let liveMarketData: any = null;
     if (isPriceQuery) {
-      // Find which symbol they're asking about
-      const symbolsToCheck = Object.keys(DERIV_SYMBOL_MAP);
-      for (const symbol of symbolsToCheck) {
+      for (const symbol of Object.keys(DERIV_SYMBOL_MAP)) {
         const symbolNorm = symbol.replace('/', '').toLowerCase();
-        if (normalizedTranscript.toLowerCase().includes(symbolNorm) ||
-            normalizedTranscript.toLowerCase().includes(symbol.toLowerCase())) {
-          console.log(`[Voice AI] Fetching live price for ${symbol}`);
+        if (lowerTranscript.includes(symbolNorm) || lowerTranscript.includes(symbol.toLowerCase())) {
           liveMarketData = await fetchDerivPrice(symbol);
           if (liveMarketData) {
             liveMarketData.symbol = symbol;
@@ -356,12 +622,45 @@ CRITICAL: NEVER prepare trades without confirmation first!
       }
     }
 
-    // Include live data in system prompt if available
-    const marketDataContext = liveMarketData 
-      ? `\n\n**LIVE DATA (just fetched):**\n${liveMarketData.symbol}: ${liveMarketData.price}${liveMarketData.high24h ? `, 24h High: ${liveMarketData.high24h}, 24h Low: ${liveMarketData.low24h}` : ''}`
-      : '';
+    // Fetch signals for context
+    const { data: signals } = await supabase
+      .from('trading_signals')
+      .select('*')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(5);
 
-    // Call Lovable AI Gateway
+    // Build system prompt
+    const totalBalance = tradingAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
+    
+    const systemPrompt = `[SYSTEM_IDENTITY]
+You are KHUMO, The Market's Memory - a senior trading assistant for the HuMi platform.
+
+[VOICE STYLE]
+- Keep responses under 3 sentences for voice clarity
+- Be confident and helpful
+- NO emojis (text-to-speech friendly)
+
+[USER CONTEXT]
+- Connected Accounts: ${tradingAccounts.length} (${tradingAccounts.map(a => a.broker_name || a.provider).join(', ') || 'None'})
+- Total Balance: $${totalBalance.toFixed(2)}
+- Active Signals: ${signals?.length || 0}
+${liveMarketData ? `\n[LIVE PRICE] ${liveMarketData.symbol}: ${liveMarketData.price}` : ''}
+
+[CAPABILITIES]
+You can help with:
+- Checking account balances and positions
+- Executing trades (with confirmation)
+- Viewing trading history
+- Navigating the platform
+- Market analysis and education
+
+[BOUNDARIES]
+- Never give trading advice or predictions
+- Always confirm before executing trades
+- Be honest about limitations`;
+
+    // Call AI
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!lovableApiKey) {
       throw new Error('LOVABLE_API_KEY not configured');
@@ -376,7 +675,7 @@ CRITICAL: NEVER prepare trades without confirmation first!
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
         messages: [
-          { role: 'system', content: systemPrompt + marketDataContext },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: normalizedTranscript }
         ]
       })
@@ -386,36 +685,10 @@ CRITICAL: NEVER prepare trades without confirmation first!
       const errorText = await response.text();
       console.error('AI gateway error:', response.status, errorText);
       
-      // Return HTTP 200 with friendly error message
-      if (response.status === 429) {
-        return new Response(JSON.stringify({
-          text: "I'm getting a temporary limit on my AI. Please try again in a moment.",
-          error: { code: 429, message: "Rate limit exceeded" },
-          action: null,
-          links: []
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      
-      if (response.status === 402) {
-        return new Response(JSON.stringify({
-          text: "I need more credits to continue. Please contact support or add credits to continue using voice features.",
-          error: { code: 402, message: "Payment required" },
-          action: null,
-          links: []
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      
       return new Response(JSON.stringify({
-        text: "I hit a temporary issue on my side. Let's try that again in a few seconds.",
-        error: { code: response.status, message: errorText },
-        action: null,
-        links: []
+        text: "I'm having a temporary issue. Please try again in a moment.",
+        error: { code: response.status },
+        action: null
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -423,12 +696,7 @@ CRITICAL: NEVER prepare trades without confirmation first!
     }
 
     const aiResponse = await response.json();
-    
-    // Parse AI response and remove ALL emojis
-    let responseText = aiResponse.choices[0].message.content;
-    
-    // Remove emojis for clean text-to-speech
-    responseText = responseText
+    let responseText = aiResponse.choices[0].message.content
       .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
       .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
       .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
@@ -437,78 +705,6 @@ CRITICAL: NEVER prepare trades without confirmation first!
       .replace(/\*/g, '')
       .replace(/#/g, '')
       .trim();
-    
-    let action: any = null;
-    let links: any[] = [];
-    
-    // Check for in-app navigation requests
-    const lowerTranscript = normalizedTranscript.toLowerCase();
-    
-    if (lowerTranscript.match(/(pairs available|available pairs|today'?s? ideas?|show signals?|trade ideas?|open ideas?)/i)) {
-      links = [
-        { label: "View Today's Ideas", path: "/ideas", description: "Latest signals and market context" }
-      ];
-      action = { type: 'navigate', path: '/ideas' };
-    } else if (lowerTranscript.match(/(settings?|preferences?|configure|voice settings)/i)) {
-      links = [{ label: "Open Settings", path: "/settings", description: "Manage your preferences" }];
-      action = { type: 'navigate', path: '/settings' };
-    } else if (lowerTranscript.match(/(trading accounts?|my accounts?|connect account)/i)) {
-      links = [{ label: "Trading Accounts", path: "/trading-accounts", description: "Manage connected accounts" }];
-      action = { type: 'navigate', path: '/trading-accounts' };
-    } else if (lowerTranscript.match(/(analytics?|stats|statistics|performance)/i)) {
-      links = [{ label: "View Analytics", path: "/analytics", description: "Your trading performance" }];
-      action = { type: 'navigate', path: '/analytics' };
-    } else if (lowerTranscript.match(/(copy trading|copy trades?)/i)) {
-      links = [{ label: "Copy Trading", path: "/copy-trading", description: "Follow expert traders" }];
-      action = { type: 'navigate', path: '/copy-trading' };
-    }
-
-    // Detect user intent for trade preparation
-    const tradeKeywords = ['execute', 'trade', 'buy', 'sell', 'open position', 'place order', 'enter', 'go long', 'go short'];
-    const hasTradeIntent = tradeKeywords.some(keyword => 
-      normalizedTranscript.toLowerCase().includes(keyword)
-    );
-
-    if (hasTradeIntent) {
-      const direction = /\b(buy|long|bull)\b/i.test(normalizedTranscript) ? 'BUY' : 'SELL';
-      
-      const allSymbols = [
-        'EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'USD/CHF', 'NZD/USD',
-        'XAU/USD', 'XAG/USD', 'NAS100', 'US30', 'SPX500'
-      ];
-      
-      let mentionedSymbol = null;
-      for (const symbol of allSymbols) {
-        const symbolNormalized = symbol.replace('/', '').toLowerCase();
-        if (normalizedTranscript.toLowerCase().includes(symbolNormalized) ||
-            normalizedTranscript.toLowerCase().includes(symbol.toLowerCase())) {
-          mentionedSymbol = symbol;
-          break;
-        }
-      }
-
-      if (mentionedSymbol) {
-        const { error } = await supabase
-          .from('pending_trades')
-          .insert({
-            user_id: user_id,
-            symbol: mentionedSymbol,
-            direction: direction,
-            risk_percent: 2.0,
-            awaiting_confirmation: true
-          });
-
-        if (!error) {
-          action = {
-            type: 'request_confirmation',
-            trade: {
-              symbol: mentionedSymbol,
-              direction: direction
-            }
-          };
-        }
-      }
-    }
 
     return new Response(JSON.stringify({
       text: responseText,
@@ -516,8 +712,9 @@ CRITICAL: NEVER prepare trades without confirmation first!
       links: links,
       data: {
         signals: signals || [],
-        balance: accounts?.[0]?.balance || 0,
-        positions: positions || []
+        accounts: tradingAccounts,
+        balance: totalBalance,
+        livePrice: liveMarketData
       }
     }), {
       status: 200,
@@ -526,10 +723,9 @@ CRITICAL: NEVER prepare trades without confirmation first!
   } catch (error) {
     console.error('Error:', error);
     return new Response(JSON.stringify({ 
-      text: "I hit a temporary issue. Let's try that again in a moment.",
+      text: "I hit a temporary issue. Let's try that again.",
       error: { message: error.message },
-      action: null,
-      links: []
+      action: null
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

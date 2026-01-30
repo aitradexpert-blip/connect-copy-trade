@@ -25,10 +25,15 @@ interface DerivAccount {
   id: string;
   name: string;
   login: string;
-  deriv_token: string;
-  deriv_currency: string;
+  deriv_token: string | null;
+  deriv_currency: string | null;
   balance: number;
   is_virtual: boolean;
+  provider?: string;
+  connection_type?: string;
+  metaapi_account_id?: string | null;
+  broker_name?: string | null;
+  platform?: string | null;
 }
 
 export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initialDirection }: DerivQuickTradeProps) {
@@ -54,27 +59,39 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
   } | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
 
-  // Load Deriv accounts
+  // Load trading accounts (both Deriv and MetaAPI)
   useEffect(() => {
     if (!open || !user) return;
     
     const loadAccounts = async () => {
       setLoading(true);
       try {
+        // Fetch all connected accounts, not just Deriv
         const { data, error } = await supabase
           .from('trading_accounts')
-          .select('id, name, login, deriv_token, deriv_currency, balance, is_virtual')
+          .select('id, name, login, deriv_token, deriv_currency, balance, is_virtual, provider, connection_type, metaapi_account_id, broker_name, platform')
           .eq('user_id', user.id)
-          .eq('provider', 'deriv')
-          .not('deriv_token', 'is', null);
+          .eq('connection_status', 'connected');
           
         if (error) throw error;
-        setAccounts(data || []);
-        if (data && data.length > 0) {
-          setSelectedAccount(data[0].id);
+        
+        // Filter to accounts that can actually trade
+        const tradableAccounts = (data || []).filter(acc => {
+          // Deriv API accounts (Rise/Fall)
+          if (acc.connection_type === 'deriv_api' && acc.deriv_token) return true;
+          // MT4/MT5 via MetaAPI
+          if (acc.connection_type === 'metaapi' && acc.metaapi_account_id) return true;
+          // Legacy Deriv accounts
+          if (acc.provider === 'deriv' && acc.deriv_token && !acc.platform?.includes('mt5')) return true;
+          return false;
+        });
+        
+        setAccounts(tradableAccounts);
+        if (tradableAccounts.length > 0) {
+          setSelectedAccount(tradableAccounts[0].id);
         }
       } catch (err) {
-        console.error('Error loading Deriv accounts:', err);
+        console.error('Error loading trading accounts:', err);
       } finally {
         setLoading(false);
       }
@@ -83,12 +100,25 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
     loadAccounts();
   }, [open, user]);
 
-  // Subscribe to proposal updates
+  // Subscribe to proposal updates (Deriv API only)
+  // For MetaAPI accounts, we show a simple trade form without live quotes
   useEffect(() => {
     if (!open || !selectedAccount) return;
     
     const account = accounts.find(a => a.id === selectedAccount);
-    if (!account?.deriv_token) return;
+    
+    // For MetaAPI accounts, don't try to get Deriv proposals
+    if (account?.connection_type === 'metaapi' || !account?.deriv_token) {
+      // Set a placeholder "proposal" for MetaAPI accounts
+      setProposal({
+        id: 'metaapi',
+        payout: 0,
+        askPrice: parseFloat(stake) || 10,
+        spot: 0,
+      });
+      setProposalError(null);
+      return;
+    }
     
     // Reset states
     setProposal(null);
@@ -106,7 +136,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
         
         const ws = getSharedDerivWS();
         await ws.connect();
-        await authorizeDerivAccount(account.deriv_token, ws);
+        await authorizeDerivAccount(account.deriv_token!, ws);
         
         // Convert symbol to Deriv format (e.g., "EUR/USD" -> "frxEURUSD")
         const derivSymbol = getDerivSymbol(symbol) || symbol;
@@ -201,28 +231,57 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
   }, [open, selectedAccount, direction, stake, duration, durationUnit, symbol, accounts]);
 
   const handleExecute = async () => {
-    if (!proposal) {
-      toast({ title: 'No quote available', variant: 'destructive' });
-      return;
-    }
-    
     const account = accounts.find(a => a.id === selectedAccount);
-    if (!account?.deriv_token) {
+    if (!account) {
       toast({ title: 'No account selected', variant: 'destructive' });
       return;
     }
     
     setExecuting(true);
     try {
-      const ws = getSharedDerivWS();
-      await authorizeDerivAccount(account.deriv_token, ws);
-      
-      const result = await buyContract(proposal.id, proposal.askPrice, ws);
-      
-      toast({
-        title: 'Trade Executed!',
-        description: `Contract #${result.buy.contract_id} purchased for ${result.buy.buy_price} ${account.deriv_currency}`,
-      });
+      // Route based on connection_type
+      if (account.connection_type === 'metaapi' && account.metaapi_account_id) {
+        // Execute via MetaAPI
+        const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
+          body: {
+            accountId: account.metaapi_account_id,
+            trade: {
+              symbol: symbol.replace('/', ''),
+              direction: direction === 'CALL' ? 'BUY' : 'SELL',
+              volume: parseFloat(stake) / 1000 || 0.01, // Convert stake to lots
+              comment: `HuMi Quick Trade - ${symbol}`
+            }
+          }
+        });
+        
+        if (error || data?.error) {
+          throw new Error(data?.error || error?.message || 'Trade execution failed');
+        }
+        
+        toast({
+          title: 'Trade Executed!',
+          description: `${direction === 'CALL' ? 'BUY' : 'SELL'} order placed on ${account.broker_name || 'MT5'}`,
+        });
+      } else if (account.deriv_token) {
+        // Execute via Deriv API (Rise/Fall)
+        if (!proposal || proposal.id === 'metaapi') {
+          toast({ title: 'No quote available', variant: 'destructive' });
+          setExecuting(false);
+          return;
+        }
+        
+        const ws = getSharedDerivWS();
+        await authorizeDerivAccount(account.deriv_token, ws);
+        
+        const result = await buyContract(proposal.id, proposal.askPrice, ws);
+        
+        toast({
+          title: 'Trade Executed!',
+          description: `Contract #${result.buy.contract_id} purchased for ${result.buy.buy_price} ${account.deriv_currency}`,
+        });
+      } else {
+        throw new Error('No valid trading credentials for this account');
+      }
       
       onOpenChange(false);
     } catch (err: any) {

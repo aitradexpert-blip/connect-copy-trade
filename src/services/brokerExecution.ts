@@ -1,7 +1,7 @@
 /**
  * Unified Broker Execution Service
- * Routes trade execution to the appropriate API based on account provider
- * Supports: Deriv, MetaAPI, and future broker integrations
+ * Routes trade execution to the appropriate API based on account provider and connection_type
+ * Supports: Deriv (deriv_api), MetaAPI (metaapi), and future broker integrations
  */
 
 import { supabase } from '@/integrations/supabase/client';
@@ -11,12 +11,17 @@ import { supabase } from '@/integrations/supabase/client';
 export interface TradingAccount {
   id: string;
   provider: string;
+  connection_type?: string; // 'deriv_api' or 'metaapi'
+  broker_name?: string;
   metaapi_account_id: string | null;
   deriv_token: string | null;
   deriv_currency: string | null;
   is_virtual: boolean | null;
   name: string;
   login: string;
+  platform?: string;
+  balance?: number;
+  equity?: number;
 }
 
 export interface TradeSignal {
@@ -35,6 +40,13 @@ export interface ExecuteTradeResult {
   payout?: number;
   error?: string;
   provider: string;
+}
+
+export interface AccountDataResult {
+  balance: number;
+  equity: number;
+  positions: any[];
+  history?: any[];
 }
 
 // ============ Symbol Mapping ============
@@ -69,17 +81,14 @@ const DERIV_SYMBOL_MAP: Record<string, string> = {
 };
 
 function getDerivSymbol(symbol: string): string {
-  // Check direct mapping first
   if (DERIV_SYMBOL_MAP[symbol]) {
     return DERIV_SYMBOL_MAP[symbol];
   }
   
-  // Check if already in Deriv format
   if (symbol.startsWith('frx') || symbol.startsWith('cry') || symbol.startsWith('R_') || symbol.startsWith('1HZ')) {
     return symbol;
   }
   
-  // Try uppercase version
   const upperSymbol = symbol.toUpperCase().replace('/', '');
   if (DERIV_SYMBOL_MAP[upperSymbol]) {
     return DERIV_SYMBOL_MAP[upperSymbol];
@@ -88,11 +97,38 @@ function getDerivSymbol(symbol: string): string {
   return symbol;
 }
 
+/**
+ * Determine the connection type for routing
+ * Uses connection_type column if available, falls back to provider detection
+ */
+function getConnectionType(account: TradingAccount): 'deriv_api' | 'metaapi' {
+  // Use explicit connection_type if set
+  if (account.connection_type === 'metaapi') return 'metaapi';
+  if (account.connection_type === 'deriv_api') return 'deriv_api';
+  
+  // Fall back to platform detection
+  const platform = account.platform?.toLowerCase() || '';
+  if (platform.includes('mt4') || platform.includes('mt5') || platform.includes('metatrader')) {
+    return 'metaapi';
+  }
+  
+  // Fall back to provider detection
+  if (account.provider === 'metaapi' || account.provider === 'mt4' || account.provider === 'mt5') {
+    return 'metaapi';
+  }
+  
+  // Default to deriv_api for Deriv accounts with tokens
+  if (account.deriv_token) return 'deriv_api';
+  if (account.metaapi_account_id) return 'metaapi';
+  
+  return 'deriv_api';
+}
+
 // ============ Main Execution Function ============
 
 /**
  * Execute a trade on the specified account
- * Automatically routes to the correct broker API
+ * Automatically routes to the correct broker API based on connection_type
  */
 export async function executeOnAccount(
   account: TradingAccount,
@@ -100,25 +136,15 @@ export async function executeOnAccount(
 ): Promise<ExecuteTradeResult> {
   console.log(`[BrokerExecution] Executing trade on ${account.provider} account:`, account.name);
   console.log(`[BrokerExecution] Signal:`, signal);
+  console.log(`[BrokerExecution] Connection type:`, getConnectionType(account));
   
-  // Route based on provider
-  switch (account.provider) {
-    case 'deriv':
-      return executeDerivTrade(account, signal);
-    
-    case 'metaapi':
-    case 'mt4':
-    case 'mt5':
-      return executeMetaApiTrade(account, signal);
-    
-    default:
-      // Future brokers (FxPro, Exness, etc.) - log and return error
-      console.warn(`[BrokerExecution] Unsupported broker: ${account.provider}`);
-      return { 
-        success: false, 
-        error: `Broker "${account.provider}" is not yet supported for trade execution. Please use Deriv or MetaAPI-connected accounts.`,
-        provider: account.provider
-      };
+  // Route based on connection_type (not just provider)
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
+    return executeDerivTrade(account, signal);
+  } else {
+    return executeMetaApiTrade(account, signal);
   }
 }
 
@@ -243,10 +269,12 @@ async function executeMetaApiTrade(
  * Check if an account supports trade execution
  */
 export function canExecuteTrades(account: TradingAccount): boolean {
-  if (account.provider === 'deriv') {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
     return !!account.deriv_token;
   }
-  if (account.provider === 'metaapi' || account.provider === 'mt4' || account.provider === 'mt5') {
+  if (connectionType === 'metaapi') {
     return !!account.metaapi_account_id;
   }
   return false;
@@ -260,10 +288,12 @@ export function getTradeDisabledReason(account: TradingAccount): string | null {
     return null;
   }
   
-  if (account.provider === 'deriv') {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
     return 'Deriv API token not configured';
   }
-  if (account.provider === 'metaapi' || account.provider === 'mt4' || account.provider === 'mt5') {
+  if (connectionType === 'metaapi') {
     return 'MetaAPI connection not configured';
   }
   return `${account.provider} broker not yet supported for trade execution`;
@@ -272,35 +302,99 @@ export function getTradeDisabledReason(account: TradingAccount): string | null {
 /**
  * Get provider-specific trade execution details
  */
-export function getProviderInfo(provider: string): {
+export function getProviderInfo(account: TradingAccount): {
   name: string;
   supportsOptions: boolean;
   supportsForex: boolean;
   supportsSynthetics: boolean;
+  connectionType: 'deriv_api' | 'metaapi';
 } {
-  switch (provider) {
-    case 'deriv':
-      return {
-        name: 'Deriv',
-        supportsOptions: true,
-        supportsForex: true,
-        supportsSynthetics: true,
-      };
-    case 'metaapi':
-    case 'mt4':
-    case 'mt5':
-      return {
-        name: 'MetaAPI (MT4/MT5)',
-        supportsOptions: false,
-        supportsForex: true,
-        supportsSynthetics: false,
-      };
-    default:
-      return {
-        name: provider,
-        supportsOptions: false,
-        supportsForex: false,
-        supportsSynthetics: false,
-      };
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
+    return {
+      name: account.broker_name || 'Deriv',
+      supportsOptions: true,
+      supportsForex: true,
+      supportsSynthetics: true,
+      connectionType: 'deriv_api',
+    };
   }
+  
+  return {
+    name: account.broker_name || 'MetaAPI (MT4/MT5)',
+    supportsOptions: false,
+    supportsForex: true,
+    supportsSynthetics: false,
+    connectionType: 'metaapi',
+  };
+}
+
+// ============ Account Data Fetching ============
+
+/**
+ * Fetch live account data (balance, equity, positions) from the appropriate API
+ */
+export async function fetchAccountData(account: TradingAccount): Promise<AccountDataResult> {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'metaapi' && account.metaapi_account_id) {
+    return fetchMetaApiData(account.metaapi_account_id);
+  }
+  
+  // Default to empty for Deriv (handled via WebSocket in UI)
+  return {
+    balance: account.balance || 0,
+    equity: account.equity || 0,
+    positions: [],
+  };
+}
+
+async function fetchMetaApiData(accountId: string): Promise<AccountDataResult> {
+  try {
+    const [infoResp, positionsResp] = await Promise.all([
+      supabase.functions.invoke('metaapi-account-info', {
+        body: { accountId }
+      }),
+      supabase.functions.invoke('metaapi-get-positions', {
+        body: { accountId }
+      })
+    ]);
+    
+    const info = infoResp.data || {};
+    const positions = positionsResp.data?.positions || [];
+    
+    return {
+      balance: info.balance || 0,
+      equity: info.equity || 0,
+      positions,
+    };
+  } catch (error) {
+    console.error('[BrokerExecution] MetaAPI data fetch error:', error);
+    return { balance: 0, equity: 0, positions: [] };
+  }
+}
+
+/**
+ * Fetch trading history from the appropriate API
+ */
+export async function fetchTradingHistory(account: TradingAccount, days: number = 7): Promise<any[]> {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'metaapi' && account.metaapi_account_id) {
+    try {
+      const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const { data, error } = await supabase.functions.invoke('metaapi-get-history', {
+        body: { accountId: account.metaapi_account_id, startTime }
+      });
+      
+      if (error) throw error;
+      return data?.history || [];
+    } catch (error) {
+      console.error('[BrokerExecution] History fetch error:', error);
+      return [];
+    }
+  }
+  
+  return [];
 }

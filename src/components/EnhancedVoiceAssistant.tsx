@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Loader2, Send } from "lucide-react";
+import { Mic, MicOff, Loader2, Send, Wallet, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -20,6 +22,15 @@ interface Message {
   }>;
 }
 
+interface TradingAccountSummary {
+  id: string;
+  name: string;
+  broker_name?: string;
+  balance: number;
+  is_virtual?: boolean;
+  connection_type?: string;
+}
+
 export default function EnhancedVoiceAssistant() {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -28,6 +39,7 @@ export default function EnhancedVoiceAssistant() {
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [textInput, setTextInput] = useState("");
   const [pendingConfirmation, setPendingConfirmation] = useState<any>(null);
+  const [accountsSummary, setAccountsSummary] = useState<TradingAccountSummary[]>([]);
   const [voicePreference, setVoicePreference] = useState({
     type: 'female',
     name: '',
@@ -38,6 +50,7 @@ export default function EnhancedVoiceAssistant() {
   const { toast } = useToast();
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -55,7 +68,6 @@ export default function EnhancedVoiceAssistant() {
     recognitionInstance.onresult = async (event: any) => {
       const transcript = event.results[0][0].transcript;
       console.log('Voice command:', transcript);
-      
       await handleCommand(transcript);
     };
 
@@ -86,7 +98,6 @@ export default function EnhancedVoiceAssistant() {
   }, []);
 
   useEffect(() => {
-    // Load voice preferences from localStorage
     const savedPrefs = localStorage.getItem('voice_preferences');
     if (savedPrefs) {
       try {
@@ -99,15 +110,32 @@ export default function EnhancedVoiceAssistant() {
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       setAvailableVoices(voices);
-      console.log('Available voices:', voices.map(v => `${v.name} (${v.lang})`));
     };
     
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
-    
     loadVoices();
   }, []);
+
+  // Load accounts summary
+  useEffect(() => {
+    if (!user) return;
+    
+    const loadAccounts = async () => {
+      const { data } = await supabase
+        .from('trading_accounts')
+        .select('id, name, broker_name, balance, is_virtual, connection_type')
+        .eq('user_id', user.id)
+        .eq('connection_status', 'connected');
+      
+      if (data) {
+        setAccountsSummary(data);
+      }
+    };
+    
+    loadAccounts();
+  }, [user]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -120,8 +148,6 @@ export default function EnhancedVoiceAssistant() {
     setIsProcessing(true);
 
     try {
-      console.log('Invoking voice-ai-assistant with:', { transcript, user_id: user?.id });
-      
       const { data, error } = await supabase.functions.invoke('voice-ai-assistant', {
         body: { 
           transcript,
@@ -129,27 +155,15 @@ export default function EnhancedVoiceAssistant() {
         }
       });
 
-      console.log('Edge function response:', { data, error });
-
-      // Handle structured errors (server returns 200 with error field)
       if (data?.error) {
         const errorMessage = data.text || "I'm having trouble right now. Please try again in a moment.";
-        setConversation(prev => [...prev, {
-          role: 'assistant',
-          text: errorMessage
-        }]);
+        setConversation(prev => [...prev, { role: 'assistant', text: errorMessage }]);
         speak(errorMessage);
-        toast({
-          title: "Temporary Issue",
-          description: errorMessage,
-          variant: "destructive",
-        });
         setIsProcessing(false);
         return;
       }
 
       if (!data || !data.text) {
-        console.error('Invalid response from edge function:', data);
         throw new Error('Invalid response from AI assistant');
       }
 
@@ -163,7 +177,6 @@ export default function EnhancedVoiceAssistant() {
       
       setConversation(prev => [...prev, assistantMessage]);
 
-      // Clean text for speech - remove emojis and markdown
       const cleanText = data.text
         .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
         .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
@@ -179,32 +192,39 @@ export default function EnhancedVoiceAssistant() {
       // Handle actions
       if (data.action?.type === 'request_confirmation') {
         setPendingConfirmation(data.action.trade);
+      } else if (data.action?.type === 'trade_executed') {
+        setPendingConfirmation(null);
+        toast({
+          title: "Trade Executed!",
+          description: data.text,
+        });
       } else if (data.action?.type === 'prepare_execution') {
         setPendingConfirmation(null);
         toast({
           title: "Trade Prepared",
           description: "Review the trade details and click Execute to confirm",
         });
+      } else if (data.action?.type === 'navigate') {
+        setTimeout(() => {
+          navigate(data.action.path);
+        }, 1500);
+      }
+
+      // Update accounts if returned
+      if (data.data?.accounts) {
+        setAccountsSummary(data.data.accounts.slice(0, 5));
       }
     } catch (error: any) {
       console.error('Command handling error:', error);
-      const errorMessage = error.message || 'Sorry, I encountered an error processing your request. Please try again.';
-      
+      const errorMessage = 'Sorry, I encountered an error. Please try again.';
       setConversation(prev => [...prev, { role: 'assistant', text: errorMessage }]);
       speak(errorMessage);
-      
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
     } finally {
       setIsProcessing(false);
     }
   };
 
   const speak = (text: string) => {
-    // Cancel any ongoing speech
     window.speechSynthesis.cancel();
 
     const cleanedText = text
@@ -219,51 +239,34 @@ export default function EnhancedVoiceAssistant() {
     utterance.rate = voicePreference.rate;
     utterance.volume = voicePreference.volume;
     
-    // Always select voice based on current preferences (consistent for both text and voice)
     let selectedVoice = null;
 
-    // If custom voice name is set, use it
     if (voicePreference.name) {
       selectedVoice = availableVoices.find(v => v.name === voicePreference.name);
     }
     
-    // Otherwise select by type preference
     if (!selectedVoice && voicePreference.type === 'female') {
       const femaleVoices = availableVoices.filter(voice => 
         voice.name.toLowerCase().includes('samantha') ||
         voice.name.toLowerCase().includes('victoria') ||
         voice.name.toLowerCase().includes('karen') ||
         voice.name.toLowerCase().includes('zira') ||
-        voice.name.toLowerCase().includes('tessa') ||
-        voice.name.toLowerCase().includes('allison') ||
-        voice.name.toLowerCase().includes('joanna') ||
-        voice.name.toLowerCase().includes('fiona') ||
-        (voice.name.toLowerCase().includes('google') && voice.name.toLowerCase().includes('female'))
+        voice.name.toLowerCase().includes('tessa')
       );
       selectedVoice = femaleVoices[0];
     } else if (!selectedVoice && voicePreference.type === 'male') {
       const maleVoices = availableVoices.filter(voice =>
         voice.name.toLowerCase().includes('alex') ||
-        voice.name.toLowerCase().includes('fred') ||
-        voice.name.toLowerCase().includes('daniel') ||
-        voice.name.toLowerCase().includes('diego') ||
-        (voice.name.toLowerCase().includes('google') && voice.name.toLowerCase().includes('male'))
+        voice.name.toLowerCase().includes('daniel')
       );
       selectedVoice = maleVoices[0];
     }
 
-    // Fallback to any English voice
     if (!selectedVoice) {
       selectedVoice = availableVoices.find(v => v.lang.startsWith('en'));
     }
 
-    // Final fallback
-    if (!selectedVoice && availableVoices.length > 0) {
-      selectedVoice = availableVoices[0];
-    }
-
     if (selectedVoice) {
-      console.log('Using voice:', selectedVoice.name);
       utterance.voice = selectedVoice;
     }
     
@@ -295,26 +298,43 @@ export default function EnhancedVoiceAssistant() {
 
   const handleTextSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    
     if (!textInput.trim() || isProcessing) return;
-    
     const message = textInput.trim();
     setTextInput("");
     await handleCommand(message);
   };
 
+  const totalBalance = accountsSummary.reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
   return (
     <div className="flex flex-col h-full space-y-4">
+      {/* Account Summary Header */}
+      {accountsSummary.length > 0 && (
+        <div className="flex items-center gap-2 px-2">
+          <Wallet className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">
+            {accountsSummary.length} account{accountsSummary.length > 1 ? 's' : ''} • ${totalBalance.toFixed(2)}
+          </span>
+          {pendingConfirmation && (
+            <Badge variant="secondary" className="ml-auto animate-pulse">
+              Awaiting confirmation
+            </Badge>
+          )}
+        </div>
+      )}
+
       <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col">
         <CardContent className="p-4 border-b">
           <div className="space-y-1">
             <h3 className="text-lg font-semibold">Khumo — The Market's Memory</h3>
             <p className="text-sm text-muted-foreground">
-              I study institutional footprints to help you understand WHY markets move. Ask about your balance, positions, trading concepts, or any trading pair.
+              I can check balances, execute trades, show positions, and navigate the platform. Try "What's my balance?" or "Buy EUR/USD".
             </p>
             {pendingConfirmation && (
-              <div className="mt-2 p-2 bg-primary/10 rounded text-xs text-primary font-medium">
-                Awaiting your confirmation for {pendingConfirmation.symbol} {pendingConfirmation.direction}
+              <div className="mt-2 p-2 bg-primary/10 rounded text-xs text-primary font-medium flex items-center gap-2">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Pending: {pendingConfirmation.direction} {pendingConfirmation.lot_size || 0.01} {pendingConfirmation.symbol}
+                {pendingConfirmation.account?.broker_name && ` on ${pendingConfirmation.account.broker_name}`}
               </div>
             )}
           </div>
@@ -329,7 +349,7 @@ export default function EnhancedVoiceAssistant() {
                     key={idx} 
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-[80%] rounded-lg p-3 ${
+                    <div className={`max-w-[85%] rounded-lg p-3 ${
                       msg.role === 'user' 
                         ? 'bg-primary text-primary-foreground' 
                         : 'bg-muted'
@@ -343,7 +363,7 @@ export default function EnhancedVoiceAssistant() {
                               key={linkIndex}
                               variant="outline"
                               size="sm"
-                              onClick={() => window.location.href = link.path}
+                              onClick={() => navigate(link.path)}
                               className="text-xs"
                             >
                               {link.label}
@@ -352,11 +372,33 @@ export default function EnhancedVoiceAssistant() {
                         </div>
                       )}
 
-                      {msg.data?.signals && msg.data.signals.length > 0 && (
+                      {msg.data?.positions && msg.data.positions.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
-                          {msg.data.signals.slice(0, 3).map((signal: any) => (
-                            <div key={signal.id} className="text-xs opacity-90">
-                              <span className="font-medium">{signal.symbol}</span> {signal.direction} @ {signal.lot_size} lots
+                          <p className="text-xs font-medium mb-1">Open Positions:</p>
+                          {msg.data.positions.slice(0, 3).map((pos: any, i: number) => (
+                            <div key={i} className="text-xs opacity-90">
+                              {pos.type || pos.direction} {pos.volume || 1} {pos.symbol || pos.display_name}
+                              {pos.profit !== undefined && (
+                                <span className={pos.profit >= 0 ? 'text-profit' : 'text-loss'}>
+                                  {' '}({pos.profit >= 0 ? '+' : ''}{pos.profit?.toFixed(2)})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {msg.data?.history && msg.data.history.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+                          <p className="text-xs font-medium mb-1">Recent History:</p>
+                          {msg.data.history.slice(0, 3).map((h: any, i: number) => (
+                            <div key={i} className="text-xs opacity-90">
+                              {h.direction} {h.volume} {h.symbol}
+                              {h.profit_loss !== undefined && (
+                                <span className={h.profit_loss >= 0 ? 'text-profit' : 'text-loss'}>
+                                  {' '}({h.profit_loss >= 0 ? '+' : ''}${h.profit_loss?.toFixed(2)})
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -380,11 +422,19 @@ export default function EnhancedVoiceAssistant() {
               <div className="text-center space-y-2">
                 <p className="text-sm font-medium">Welcome to Khumo</p>
                 <p className="text-xs text-muted-foreground">
-                  I help you understand market memory and institutional patterns. Ask about your balance, positions, trading concepts, or any symbol.
+                  Your AI trading assistant. I can help you trade, check balances, view positions, and more.
                 </p>
-                <p className="text-xs text-muted-foreground/70 mt-4">
-                  Try: "What's my balance?", "Explain Fair Value Gaps", "Show me gold"
-                </p>
+                <div className="flex flex-wrap gap-2 justify-center mt-4">
+                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-accent" onClick={() => handleCommand("What's my balance?")}>
+                    Check balance
+                  </Badge>
+                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-accent" onClick={() => handleCommand("List my accounts")}>
+                    My accounts
+                  </Badge>
+                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-accent" onClick={() => handleCommand("Show open positions")}>
+                    Positions
+                  </Badge>
+                </div>
               </div>
             </div>
           )}
@@ -413,7 +463,7 @@ export default function EnhancedVoiceAssistant() {
             <Input
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Ask about market patterns, root causes, or your positions..."
+              placeholder="Ask about balance, positions, or say 'Buy EUR/USD'..."
               className="flex-1"
               disabled={isProcessing || isListening}
             />
