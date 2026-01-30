@@ -793,7 +793,9 @@ export type Database = {
       trading_accounts: {
         Row: {
           balance: number | null
+          broker_name: string | null
           connection_status: string | null
+          connection_type: string
           created_at: string
           deriv_currency: string | null
           deriv_token: string | null
@@ -813,7 +815,9 @@ export type Database = {
         }
         Insert: {
           balance?: number | null
+          broker_name?: string | null
           connection_status?: string | null
+          connection_type?: string
           created_at?: string
           deriv_currency?: string | null
           deriv_token?: string | null
@@ -833,7 +837,9 @@ export type Database = {
         }
         Update: {
           balance?: number | null
+          broker_name?: string | null
           connection_status?: string | null
+          connection_type?: string
           created_at?: string
           deriv_currency?: string | null
           deriv_token?: string | null
