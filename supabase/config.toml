@@ -3,6 +3,9 @@ project_id = "tkgguyjoynnrsayfxzvj"
 [functions.metaapi-account-info]
 verify_jwt = false
 
+[functions.metaapi-provision-account]
+verify_jwt = false
+
 [functions.metaapi-enable-copy-factory]
 verify_jwt = false
 
