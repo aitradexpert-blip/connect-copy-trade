@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getDerivLoginUrl, validateDerivToken } from "@/services/derivAuth";
-import { ExternalLink, Wallet, Key, Loader2, Copy, Check, AlertCircle } from "lucide-react";
+import { ExternalLink, Wallet, Key, Loader2, Copy, Check, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface ConnectAccountModalProps {
@@ -41,9 +41,11 @@ export function ConnectAccountModal({
   const [formData, setFormData] = useState({
     name: "",
     login: "",
+    password: "",
     server: "",
     platform: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualToken, setManualToken] = useState('');
@@ -127,22 +129,60 @@ export function ConnectAccountModal({
   const handleMetaApiSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    
+    // Validate all required fields
+    if (!formData.login || !formData.password || !formData.server || !formData.platform) {
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all fields including password",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
-      // Insert trading account with pending status (admin will add MetaAPI ID)
+      // Call MetaAPI provisioning edge function
+      const { data, error } = await supabase.functions.invoke('metaapi-provision-account', {
+        body: {
+          login: formData.login,
+          password: formData.password,
+          server: formData.server,
+          platform: formData.platform,
+          name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data?.success) {
+        // Show user-friendly error from MetaAPI
+        toast({
+          title: "Connection Failed",
+          description: data?.error || "Failed to connect account. Please check your credentials.",
+          variant: "destructive"
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // Success - save to database with MetaAPI account ID
       const { error: insertError } = await supabase
         .from("trading_accounts")
         .insert([
           {
             user_id: user.id,
             provider: 'metaapi',
-            name: formData.name,
+            metaapi_account_id: data.metaapi_account_id,
+            name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
             login: formData.login,
             server: formData.server,
             platform: formData.platform,
-            connection_status: "pending_approval",
-            metaapi_account_id: null,
+            connection_type: 'metaapi',
+            connection_status: data.state === 'DEPLOYED' ? 'connected' : 'provisioning',
             balance: 0,
             equity: 0,
           },
@@ -151,30 +191,38 @@ export function ConnectAccountModal({
       if (insertError) throw insertError;
 
       toast({
-        title: "Account submitted for approval!",
-        description: `${formData.name} will be connected once admin approves and adds MetaAPI credentials.`,
+        title: "Account connected!",
+        description: `${formData.name || formData.login} has been connected successfully via MetaAPI.`,
       });
 
       setFormData({ 
         name: "", 
         login: "", 
+        password: "",
         server: "", 
         platform: "" 
       });
+      setShowPassword(false);
       setProvider('');
       setIsLoading(false);
       onOpenChange(false);
       onAccountConnected?.();
+      navigate('/accounts');
     } catch (error: any) {
-      console.error(error);
-      toast({ title: "Failed to connect account", description: error.message, variant: "destructive" });
+      console.error('MetaAPI connection error:', error);
+      toast({ 
+        title: "Failed to connect account", 
+        description: error.message, 
+        variant: "destructive" 
+      });
       setIsLoading(false);
     }
   };
 
   const handleBack = () => {
     setProvider('');
-    setFormData({ name: "", login: "", server: "", platform: "" });
+    setFormData({ name: "", login: "", password: "", server: "", platform: "" });
+    setShowPassword(false);
   };
 
   return (
@@ -372,22 +420,28 @@ export function ConnectAccountModal({
             </Tabs>
           </div>
         ) : (
-          // MetaAPI Form
+          // MetaAPI Form - Now with automatic provisioning
           <form onSubmit={handleMetaApiSubmit} className="space-y-4">
+            <div className="bg-muted/50 rounded-lg p-3 text-sm">
+              <p className="font-medium mb-1">Connect any MT4/MT5 broker</p>
+              <p className="text-muted-foreground text-xs">
+                Your credentials are used once to connect via MetaAPI and are never stored.
+              </p>
+            </div>
+
             <div className="space-y-2">
-              <Label htmlFor="name">Account Name</Label>
+              <Label htmlFor="name">Account Name (optional)</Label>
               <Input
                 id="name"
                 placeholder="My Trading Account"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="login">Login</Label>
+                <Label htmlFor="login">Login ID *</Label>
                 <Input
                   id="login"
                   placeholder="12345678"
@@ -397,40 +451,68 @@ export function ConnectAccountModal({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="server">Server</Label>
+                <Label htmlFor="password">Password *</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Your MT password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="server">Server *</Label>
                 <Input
                   id="server"
-                  placeholder="Broker-Server"
+                  placeholder="ICMarketsSC-Demo"
                   value={formData.server}
                   onChange={(e) => setFormData({ ...formData, server: e.target.value })}
                   required
                 />
               </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="platform">Platform</Label>
-              <Select 
-                value={formData.platform} 
-                onValueChange={(value) => setFormData({ ...formData, platform: value })}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select platform" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mt4">MetaTrader 4</SelectItem>
-                  <SelectItem value="mt5">MetaTrader 5</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Label htmlFor="platform">Platform *</Label>
+                <Select 
+                  value={formData.platform} 
+                  onValueChange={(value) => setFormData({ ...formData, platform: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mt4">MetaTrader 4</SelectItem>
+                    <SelectItem value="mt5">MetaTrader 5</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             
             <div className="flex gap-2 pt-4">
               <Button type="button" variant="outline" onClick={handleBack}>
                 Back
               </Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading ? "Connecting..." : "Submit for Approval"}
+              <Button 
+                type="submit" 
+                disabled={isLoading || !formData.login || !formData.password || !formData.server || !formData.platform}
+                className="flex-1 gap-2"
+              >
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isLoading ? "Connecting..." : "Connect Account"}
               </Button>
             </div>
           </form>

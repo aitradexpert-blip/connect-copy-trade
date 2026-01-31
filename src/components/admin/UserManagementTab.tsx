@@ -25,6 +25,8 @@ interface User {
     id: string;
     name: string;
     connection_status: string;
+    metaapi_account_id?: string | null;
+    provider?: string;
   }[];
 }
 
@@ -75,10 +77,10 @@ export function UserManagementTab() {
             .eq('user_id', profile.user_id)
             .single();
 
-          // Get trading accounts
+          // Get trading accounts with more details
           const { data: accounts } = await supabase
             .from('trading_accounts')
-            .select('id, name, connection_status')
+            .select('id, name, connection_status, metaapi_account_id, provider')
             .eq('user_id', profile.user_id);
 
           // Get user email from user_roles table
@@ -137,24 +139,7 @@ export function UserManagementTab() {
     setProcessing(true);
 
     try {
-      // 1. Update pending trading account with MetaAPI ID
-      const pendingAccount = selectedUser.trading_accounts?.find(
-        acc => acc.connection_status === 'pending_approval'
-      );
-
-      if (pendingAccount && metaapiId) {
-        const { error: accountError } = await supabase
-          .from('trading_accounts')
-          .update({
-            metaapi_account_id: metaapiId,
-            connection_status: 'connected'
-          })
-          .eq('id', pendingAccount.id);
-
-        if (accountError) throw accountError;
-      }
-
-      // 2. Create/activate subscription
+      // Create/activate subscription (accounts are auto-provisioned now)
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
 
@@ -166,6 +151,8 @@ export function UserManagementTab() {
           status: 'active',
           started_at: new Date().toISOString(),
           expires_at: expiresAt.toISOString()
+        }, {
+          onConflict: 'user_id'
         });
 
       if (subError) throw subError;
@@ -223,6 +210,8 @@ export function UserManagementTab() {
           status: 'active',
           started_at: new Date().toISOString(),
           expires_at: expiresAt.toISOString()
+        }, {
+          onConflict: 'user_id'
         });
 
       if (subError) throw subError;
@@ -345,11 +334,17 @@ export function UserManagementTab() {
                       variant={
                         acc.connection_status === 'connected'
                           ? 'default'
+                          : acc.connection_status === 'provisioning'
+                          ? 'secondary'
                           : 'outline'
                       }
-                      className="text-xs"
+                      className={`text-xs ${
+                        acc.connection_status === 'connected' ? 'bg-green-600' : 
+                        acc.connection_status === 'provisioning' ? 'bg-amber-600' : ''
+                      }`}
                     >
                       {acc.name}: {acc.connection_status}
+                      {acc.metaapi_account_id && ' ✓'}
                     </Badge>
                   ))}
                   {(!user.trading_accounts || user.trading_accounts.length === 0) && (
@@ -403,29 +398,43 @@ export function UserManagementTab() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {selectedUser?.trading_accounts?.find(
-              acc => acc.connection_status === 'pending_approval'
-            ) && (
-              <div className="p-3 bg-amber-900/20 border border-amber-700 rounded-lg">
-                <p className="text-sm text-amber-200">
-                  Pending Account: {selectedUser.trading_accounts.find(
-                    acc => acc.connection_status === 'pending_approval'
-                  )?.name}
-                </p>
+            {/* Show account status - accounts are now auto-provisioned */}
+            {selectedUser?.trading_accounts && selectedUser.trading_accounts.length > 0 && (
+              <div className="space-y-2">
+                <Label>Trading Accounts</Label>
+                <div className="space-y-2">
+                  {selectedUser.trading_accounts.map((acc) => (
+                    <div 
+                      key={acc.id} 
+                      className={`p-3 rounded-lg border ${
+                        acc.connection_status === 'connected' 
+                          ? 'bg-green-900/20 border-green-700' 
+                          : acc.connection_status === 'provisioning'
+                          ? 'bg-amber-900/20 border-amber-700'
+                          : 'bg-muted border-border'
+                      }`}
+                    >
+                      <p className="text-sm font-medium">{acc.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Status: <span className={
+                          acc.connection_status === 'connected' ? 'text-green-400' :
+                          acc.connection_status === 'provisioning' ? 'text-amber-400' : 'text-muted-foreground'
+                        }>{acc.connection_status}</span>
+                        {acc.metaapi_account_id && (
+                          <span className="ml-2">• MetaAPI: ✓ Connected</span>
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label>MetaAPI Account ID (Optional)</Label>
-              <Input
-                placeholder="Enter MetaAPI Account ID"
-                value={metaapiId}
-                onChange={(e) => setMetaapiId(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                This will link the user's trading account to MetaAPI
-              </p>
-            </div>
+            {(!selectedUser?.trading_accounts || selectedUser.trading_accounts.length === 0) && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">No trading accounts connected</p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Subscription Plan</Label>
@@ -441,6 +450,9 @@ export function UserManagementTab() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Trading accounts are now auto-provisioned via MetaAPI when users connect.
+              </p>
             </div>
 
             <div className="flex gap-2">
@@ -456,7 +468,7 @@ export function UserManagementTab() {
                 className="flex-1 bg-gradient-primary"
                 disabled={processing}
               >
-                {processing ? 'Processing...' : (selectedUser?.subscription?.status === 'active' ? 'Update' : 'Approve & Activate')}
+                {processing ? 'Processing...' : (selectedUser?.subscription?.status === 'active' ? 'Update Subscription' : 'Activate Subscription')}
               </Button>
             </div>
           </div>
