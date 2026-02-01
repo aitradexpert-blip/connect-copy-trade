@@ -1,293 +1,263 @@
 
-# Automated MetaAPI Account Provisioning & Admin Fixes
+# HuMi MetaAPI Integration Fix & Enhancement Plan
 
-## Overview
-This plan implements fully automated MetaAPI account provisioning when users add MT4/MT5 accounts, fixes the admin subscription approval error, and adds password visibility toggle to the Connect Account modal.
+## Root Cause Analysis
+
+### Issue 1: MetaAPI Provisioning Error (Code 64524)
+**Location:** Edge function returns `{"success":false,"error":"Validation failed","code":64524,"details":"Validation failed"}`
+
+**Root Cause:** The MetaAPI Provisioning URL in the edge function has a **typo with a double domain**:
+```typescript
+// INCORRECT (line 13 in metaapi-provision-account/index.ts):
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
+
+// CORRECT:
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.ai'
+```
+
+This causes all provisioning requests to fail with a validation error because the URL doesn't resolve correctly.
+
+**Additional Issue:** The `src/services/metaapi.ts` file was previously fixed but the edge function was not.
+
+### Issue 2: Viewing Deriv Balances Works
+The existing Deriv account (VRTC3710616) shows balance correctly because it uses:
+- Deriv WebSocket API via `authorizeDerivAccount()` and `getDerivBalance()`
+- These functions in `src/services/derivBroker.ts` are working correctly
+- This confirms the Deriv integration is **fully functional**
+
+### Issue 3: MetaAPI Accounts Not Displaying Data
+Accounts provisioned via MetaAPI (like "Mpho Maphanga Deriv MT5") cannot fetch data because:
+1. The provisioning failed due to the URL typo, so no valid `metaapi_account_id` was stored
+2. Without a valid `metaapi_account_id`, the `metaapi-account-info` edge function cannot query MetaAPI
 
 ---
 
-## Part 1: Fix Admin Subscription Unique Constraint Error
+## Phase 1: Fix MetaAPI Connection Error
 
-### Problem
-The error `duplicate key value violates unique constraint "user_subscriptions_user_id_key"` occurs because the `upsert` operation isn't specifying the correct conflict target.
+### 1.1 Fix Edge Function URL
+**File:** `supabase/functions/metaapi-provision-account/index.ts`
 
-### Solution
-Update `UserManagementTab.tsx` to use proper `upsert` with `onConflict`:
+Change line 13:
+```typescript
+// FROM:
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
 
-**File: `src/components/admin/UserManagementTab.tsx`**
-- Line 161-169: Change `upsert` to specify `onConflict: 'user_id'`
-- Line 218-226: Same fix for `updateSubscription` function
+// TO:
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.ai'
+```
+
+### 1.2 Add Detailed Logging
+Enhance the edge function with better error reporting to diagnose future issues:
+- Log the exact MetaAPI response
+- Parse specific error codes (E_AUTH, E_SERVER_TIMEZONE, ERR_OTP_REQUIRED)
+- Return actionable error messages
+
+### 1.3 Add Server Name Suggestions
+Create a dropdown with common broker server names to prevent user typos:
+- Headway-Real, Headway-Demo
+- Deriv-Server, Deriv-Demo
+- ICMarkets-Live01, ICMarkets-Demo01
+- XM-Real-1, XM-Demo-1
+- Exness-Real, Exness-Demo
+
+**File:** `src/components/ConnectAccountModal.tsx`
+
+Add autocomplete/suggestions for the server field.
+
+---
+
+## Phase 2: Implement LotSizeInput Component
+
+### 2.1 Create Reusable Component
+**New File:** `src/components/ui/lot-size-input.tsx`
+
+Features:
+- Default value: 0.01 (micro lot)
+- [-] and [+] buttons for increment/decrement
+- Manual text input with validation
+- Min: 0.01, Max: configurable (default 100)
+- Step: 0.01
+- 2 decimal precision
+- Disable minus button at minimum
+- Synced state between buttons and input
 
 ```typescript
-// Change this:
-const { error: subError } = await supabase
-  .from('user_subscriptions')
-  .upsert({
-    user_id: selectedUser.id,
-    // ...
-  });
-
-// To this:
-const { error: subError } = await supabase
-  .from('user_subscriptions')
-  .upsert({
-    user_id: selectedUser.id,
-    // ...
-  }, {
-    onConflict: 'user_id'
-  });
+interface LotSizeInputProps {
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+}
 ```
+
+### 2.2 Integrate Into Trading Interfaces
+Update the following components to use the new LotSizeInput:
+- `src/components/deriv/DerivQuickTrade.tsx` - For MT4/MT5 trades
+- `src/pages/TradingIdeas.tsx` - For signal execution
+- `src/pages/Admin.tsx` - For signal creation
 
 ---
 
-## Part 2: Create MetaAPI Provisioning Edge Function
+## Phase 3: Full MetaAPI Trading Implementation
 
-### New Edge Function: `metaapi-provision-account`
-This function will call MetaAPI's Provisioning API to create account connections automatically.
+### 3.1 Ensure Trade Execution Works
+**File:** `supabase/functions/metaapi-execute-trade/index.ts`
 
-**File: `supabase/functions/metaapi-provision-account/index.ts`**
+Current implementation is correct. Verify:
+- Symbol format (no slash: EURUSD instead of EUR/USD)
+- Volume in lots (0.01 for micro)
+- Direction mapping (ORDER_TYPE_BUY, ORDER_TYPE_SELL)
 
+### 3.2 Update DerivQuickTrade for Lot Size
+**File:** `src/components/deriv/DerivQuickTrade.tsx`
+
+For MetaAPI accounts:
+- Replace stake-based input with lot size input
+- Use the new LotSizeInput component
+- Remove duration selection (not applicable to CFD)
+- Add proper symbol formatting
+
+Current problematic code (line 250-253):
 ```typescript
-// Purpose: Automatically provision MT4/MT5 accounts via MetaAPI
-// Called when user submits account credentials
-
-const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.ai';
-
-Deno.serve(async (req) => {
-  // Input: { login, password, server, platform, name }
-  // 1. Call POST /users/current/accounts on MetaAPI
-  // 2. Return { metaapi_account_id, state, error }
-  // 3. Handle specific errors (E_AUTH, E_SERVER_TIMEZONE, etc.)
-});
+volume: parseFloat(stake) / 1000 || 0.01, // Convert stake to lots
 ```
 
-**Key Features:**
-- Calls MetaAPI Provisioning API with user's broker credentials
-- Returns the `metaapi_account_id` on success
-- Handles specific MetaAPI errors with user-friendly messages
-- Uses METAAPI_TOKEN from secrets
+This conversion is confusing. Replace with direct lot size input.
 
----
+### 3.3 Add Position Management
+**File:** `supabase/functions/metaapi-close-position/index.ts` (NEW)
 
-## Part 3: Update Connect Account Modal
-
-### Changes to `src/components/ConnectAccountModal.tsx`
-
-#### 3.1 Add Password Field with Eye Toggle
-- Add `password` to form state
-- Add password input with visibility toggle
-- Import `Eye`, `EyeOff` from lucide-react
-
-#### 3.2 Call MetaAPI Provisioning on Submit
-Instead of just saving credentials with `pending_approval`, call the new edge function:
-
+Create endpoint to close positions:
 ```typescript
-// New flow:
-const handleMetaApiSubmit = async (e: React.FormEvent) => {
-  // 1. Call metaapi-provision-account edge function
-  const { data, error } = await supabase.functions.invoke('metaapi-provision-account', {
-    body: {
-      login: formData.login,
-      password: formData.password,
-      server: formData.server,
-      platform: formData.platform,
-      name: formData.name
-    }
-  });
-
-  if (error || data?.error) {
-    // Show user-friendly error
-    toast({ title: 'Connection Failed', description: data?.error || error.message });
-    return;
-  }
-
-  // 2. Save to database with metaapi_account_id
-  await supabase.from('trading_accounts').insert({
-    user_id: user.id,
-    provider: 'metaapi',
-    metaapi_account_id: data.metaapi_account_id, // Auto-populated!
-    connection_type: 'metaapi',
-    connection_status: data.state === 'DEPLOYED' ? 'connected' : 'provisioning',
-    // ...
-  });
-};
+POST /trade with actionType: 'POSITION_CLOSE_ID'
+body: { positionId: string }
 ```
 
-#### 3.3 Form State Updates
+---
+
+## Phase 4: MetaAPI Copy Trading (CopyFactory)
+
+### 4.1 CopyFactory Architecture
+MetaAPI uses CopyFactory for copy trading, which is separate from the main Trading API:
+
+**Base URL:** `https://copyfactory-api-v1.agiliumtrade.ai`
+
+**Key Endpoints:**
+1. Configure account as Provider: Update account with `copyFactoryRoles: ['PROVIDER']`
+2. Create Strategy: `POST /users/current/configuration/strategies`
+3. List Available Strategies: `GET /users/current/configuration/strategies`
+4. Subscribe to Strategy: `POST /users/current/configuration/subscribers/{subscriberId}/subscriptions`
+
+### 4.2 Enable CopyFactory Role
+**File:** `supabase/functions/metaapi-enable-copy-factory/index.ts` (UPDATE)
+
+Update the existing function to properly configure an account as a Provider or Subscriber:
 ```typescript
-const [formData, setFormData] = useState({
-  name: "",
-  login: "",
-  password: "",  // NEW
-  server: "",
-  platform: "",
-});
-const [showPassword, setShowPassword] = useState(false);  // NEW
-```
-
----
-
-## Part 4: Update Admin Panel for New Flow
-
-### Changes to `src/components/admin/UserManagementTab.tsx`
-
-#### 4.1 Remove MetaAPI ID Manual Entry
-- Remove the MetaAPI Account ID input field (no longer needed)
-- Admin now only manages subscriptions
-
-#### 4.2 Show Account Connection Status
-- Display connection status clearly: `connected`, `provisioning`, `failed`
-- Show MetaAPI error message if account failed to provision
-
-#### 4.3 Allow Re-provisioning Failed Accounts
-- Add "Retry Connection" button for failed accounts
-- Calls the edge function again with stored credentials
-
----
-
-## Part 5: Fix MetaAPI Service URL Typo
-
-### File: `src/services/metaapi.ts`
-**Line 3:** Fix typo in provisioning URL
-
-```typescript
-// Change:
-const PROVISIONING_API_URL = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
-
-// To:
-const PROVISIONING_API_URL = "https://mt-provisioning-api-v1.agiliumtrade.ai";
-```
-
----
-
-## Implementation Files
-
-| File | Action | Description |
-|------|--------|-------------|
-| `supabase/functions/metaapi-provision-account/index.ts` | CREATE | New edge function for account provisioning |
-| `supabase/config.toml` | UPDATE | Add new function entry |
-| `src/components/ConnectAccountModal.tsx` | UPDATE | Add password field, auto-provision on submit |
-| `src/components/admin/UserManagementTab.tsx` | UPDATE | Fix upsert, remove manual MetaAPI ID entry |
-| `src/services/metaapi.ts` | UPDATE | Fix provisioning URL typo |
-
----
-
-## New User Flow (Automated)
-
-```text
-User clicks "Add MT4/MT5 Account"
-    │
-    ▼
-User enters: Name, Login, Password, Server, Platform
-    │
-    ▼
-HuMi calls metaapi-provision-account edge function
-    │
-    ├── SUCCESS: MetaAPI returns account ID
-    │   │
-    │   ▼
-    │   Save to DB with metaapi_account_id
-    │   connection_status = 'connected' or 'provisioning'
-    │   │
-    │   ▼
-    │   User sees account in list immediately
-    │
-    └── FAILURE: MetaAPI returns error
-        │
-        ▼
-        Show user-friendly error:
-        - "Invalid credentials" (E_AUTH)
-        - "Broker server not reachable" (E_SERVER_TIMEZONE)
-        - "Please enable 2FA in MT terminal" (ERR_OTP_REQUIRED)
-        │
-        ▼
-        Account NOT saved (or saved as 'failed')
-```
-
----
-
-## Admin Flow (Simplified)
-
-```text
-Admin opens User Management
-    │
-    ▼
-Sees accounts with status:
-- connected (green) - Working account
-- provisioning (yellow) - MetaAPI is syncing
-- failed (red) - Provisioning failed, shows error
-    │
-    ▼
-Admin can:
-1. Approve/modify subscription tier
-2. Retry failed account connections
-3. View MetaAPI error details
-```
-
----
-
-## MetaAPI Error Handling
-
-| Error Code | User Message | Action |
-|------------|--------------|--------|
-| `E_AUTH` | "Invalid login credentials. Please check with your broker." | Don't save account |
-| `E_SERVER_TIMEZONE` | "Broker server not reachable. Please verify server name." | Don't save account |
-| `ERR_OTP_REQUIRED` | "Please disable 2FA in your MT terminal to connect." | Don't save account |
-| `E_NO_SYMBOLS` | "No trading symbols enabled. Contact your broker." | Save but mark as 'failed' |
-| `E_PASSWORD_CHANGE_REQUIRED` | "Please change your password in MT terminal first." | Don't save account |
-
----
-
-## Technical Details
-
-### MetaAPI Provisioning API Call
-```typescript
-const response = await fetch(`${PROVISIONING_API_URL}/users/current/accounts`, {
-  method: 'POST',
-  headers: {
-    'auth-token': METAAPI_TOKEN,
-    'transaction-id': generateTransactionId(),
-    'Content-Type': 'application/json',
-  },
+await fetch(`${PROVISIONING_URL}/users/current/accounts/${accountId}`, {
+  method: 'PUT',
+  headers: { 'auth-token': token },
   body: JSON.stringify({
-    name: `HuMi-${login}`,
-    type: 'cloud',
-    login: login,
-    password: password,
-    server: server,
-    platform: platform, // 'mt4' or 'mt5'
-    magic: 0,
-    application: 'MetaApi',
-    connectionStatus: 'connected'
+    copyFactoryRoles: ['PROVIDER', 'SUBSCRIBER']
   })
 });
 ```
 
-### Response Handling
+### 4.3 Create CopyFactory Strategy Endpoints
+**New Files:**
+- `supabase/functions/copyfactory-create-strategy/index.ts`
+- `supabase/functions/copyfactory-list-strategies/index.ts`
+- `supabase/functions/copyfactory-subscribe/index.ts`
+- `supabase/functions/copyfactory-unsubscribe/index.ts`
+
+### 4.4 Update Copy Trading UI
+**File:** `src/pages/CopyTradingNew.tsx`
+
+Add a third tab: "MetaAPI Masters" for CopyFactory strategies:
+- List available strategies from CopyFactory API
+- Show performance metrics
+- Allow subscribing with custom multiplier and risk settings
+
+---
+
+## Phase 5: Unified Dashboard Experience
+
+### 5.1 getAllAccounts() Unified Function
+**File:** `src/services/unifiedAccountService.ts` (NEW)
+
 ```typescript
-if (response.ok) {
-  const { _id: metaapi_account_id, state } = await response.json();
-  return { success: true, metaapi_account_id, state };
-} else {
-  const error = await response.json();
-  return { success: false, error: error.message, code: error.id };
+export async function getAllAccounts(userId: string) {
+  const { data: dbAccounts } = await supabase
+    .from('trading_accounts')
+    .select('*')
+    .eq('user_id', userId);
+  
+  // Fetch live balances for each account
+  const enrichedAccounts = await Promise.all(
+    dbAccounts.map(async (account) => {
+      if (account.provider === 'deriv' && account.deriv_token) {
+        const balance = await fetchDerivBalance(account.deriv_token);
+        return { ...account, balance, equity: balance };
+      } else if (account.metaapi_account_id) {
+        const { balance, equity } = await fetchMetaApiBalance(account.metaapi_account_id);
+        return { ...account, balance, equity };
+      }
+      return account;
+    })
+  );
+  
+  return enrichedAccounts;
 }
 ```
 
+### 5.2 Unified Portfolio View
+**File:** `src/pages/Charts.tsx`
+
+Already partially implemented. Enhance to:
+- Show combined equity across all accounts
+- Display positions from all sources with source badges
+- Calculate total P&L
+
+### 5.3 Admin Panel Updates
+**File:** `src/components/admin/UserManagementTab.tsx`
+
+Current implementation correctly:
+- Fixed the upsert with `onConflict: 'user_id'`
+- Removed manual MetaAPI ID entry
+- Shows connection status
+
+Add:
+- View MetaAPI account synchronization status
+- Retry failed provisioning button
+- Display MetaAPI error messages
+
 ---
 
-## Security Considerations
+## Implementation Summary
 
-1. **Password Handling**: User passwords are sent to edge function, used to call MetaAPI, then discarded (not stored in our DB)
-2. **MetaAPI Token**: Stored securely in Supabase secrets
-3. **RLS**: Account data protected by user_id policies
+### Files to Modify:
+| File | Changes |
+|------|---------|
+| `supabase/functions/metaapi-provision-account/index.ts` | Fix URL typo, enhance error handling |
+| `src/components/ui/lot-size-input.tsx` | NEW - Reusable lot size component |
+| `src/components/deriv/DerivQuickTrade.tsx` | Add lot size input for MetaAPI accounts |
+| `src/pages/TradingIdeas.tsx` | Use LotSizeInput component |
+| `src/components/ConnectAccountModal.tsx` | Add server suggestions, improve UX |
+| `supabase/functions/metaapi-enable-copy-factory/index.ts` | Fix CopyFactory role configuration |
+| `supabase/functions/copyfactory-create-strategy/index.ts` | NEW - Create provider strategy |
+| `supabase/functions/copyfactory-subscribe/index.ts` | NEW - Subscribe to strategy |
+| `src/pages/CopyTradingNew.tsx` | Add MetaAPI CopyFactory tab |
 
----
+### Verification Steps:
+1. **Test Provisioning**: Add a new Headway-Demo account → Should succeed with metaapi_account_id
+2. **Test Balance Fetch**: Refresh the newly added account → Should show balance/equity
+3. **Test Trade Execution**: Place 0.01 lot BUY EURUSD → Should execute via MetaAPI
+4. **Test Lot Size Input**: Verify +/- buttons and manual entry work correctly
+5. **Test Copy Trading**: Enable account as provider → Should appear in copy trading list
 
-## Testing Checklist
-
-1. [ ] Add new MT4/MT5 account → Should auto-provision via MetaAPI
-2. [ ] Invalid credentials → Should show clear error message
-3. [ ] Admin approve subscription → Should work without unique constraint error
-4. [ ] Refresh account balance → Should fetch from MetaAPI correctly
-5. [ ] Password visibility toggle → Eye icon should show/hide password
+### Priority Order:
+1. **CRITICAL**: Fix the provisioning URL typo (Phase 1.1)
+2. **HIGH**: Create LotSizeInput component (Phase 2)
+3. **MEDIUM**: Implement CopyFactory endpoints (Phase 4)
+4. **LOW**: Unified dashboard enhancements (Phase 5)
