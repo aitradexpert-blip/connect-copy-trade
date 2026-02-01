@@ -9,7 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
 
-// MetaAPI Provisioning API URL - note the double domain is intentional per MetaAPI docs
+// MetaAPI Provisioning API URL (official domain per MetaAPI docs)
 const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
 
 // Map MetaAPI error codes to user-friendly messages
@@ -25,7 +25,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 function generateTransactionId(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+  // Must be exactly 32 characters as per MetaAPI requirements
+  return crypto.randomUUID().replace(/-/g, '')
 }
 
 Deno.serve(async (req) => {
@@ -78,31 +79,29 @@ Deno.serve(async (req) => {
       })
     }
 
+    const transactionId = generateTransactionId()
     console.log(`Provisioning MetaAPI account: login=${login}, server=${server}, platform=${platform}`)
+    console.log(`Transaction ID: ${transactionId} (length: ${transactionId.length})`)
 
     // Call MetaAPI Provisioning API to create account
     const response = await fetch(`${PROVISIONING_API_URL}/users/current/accounts`, {
       method: 'POST',
       headers: {
         'auth-token': token,
-        'transaction-id': generateTransactionId(),
+        'transaction-id': transactionId,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
       body: JSON.stringify({
         name: name || `HuMi-${login}`,
-        type: 'cloud',
+        type: 'cloud-g2',
         login: login,
         password: password,
         server: server,
         platform: platform.toLowerCase(),
         magic: 0,
-        application: 'MetaApi',
-        connectionStatus: 'connected',
-        // Optional: configure synchronization
         quoteStreamingIntervalInSeconds: 2.5,
-        symbolSyncMode: 'all',
-        reliability: 'regular',
+        reliability: 'high',
       }),
     })
 

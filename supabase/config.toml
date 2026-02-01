@@ -44,3 +44,12 @@ verify_jwt = false
 
 [functions.deriv-copy-bridge]
 verify_jwt = false
+
+[functions.copyfactory-create-strategy]
+verify_jwt = false
+
+[functions.copyfactory-subscribe]
+verify_jwt = false
+
+[functions.copyfactory-list-strategies]
+verify_jwt = false
