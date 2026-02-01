@@ -6,13 +6,14 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowUp, ArrowDown, Loader2, TrendingUp, Clock, DollarSign, AlertCircle } from 'lucide-react';
+import { ArrowUp, ArrowDown, Loader2, TrendingUp, Clock, DollarSign, AlertCircle, Layers } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { getSharedDerivWS, getDerivSymbol } from '@/services/derivWebSocket';
 import { authorizeDerivAccount } from '@/services/derivBroker';
 import { subscribeProposal, buyContract, ProposalParams } from '@/services/derivTrading';
+import { LotSizeInput } from '@/components/ui/lot-size-input';
 
 interface DerivQuickTradeProps {
   open: boolean;
@@ -48,6 +49,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
   
   const [direction, setDirection] = useState<'CALL' | 'PUT'>(initialDirection === 'SELL' ? 'PUT' : 'CALL');
   const [stake, setStake] = useState('10');
+  const [lotSize, setLotSize] = useState(0.01); // For MetaAPI accounts
   const [duration, setDuration] = useState('5');
   const [durationUnit, setDurationUnit] = useState<'t' | 'm' | 'h'>('m');
   
@@ -241,14 +243,14 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
     try {
       // Route based on connection_type
       if (account.connection_type === 'metaapi' && account.metaapi_account_id) {
-        // Execute via MetaAPI
+        // Execute via MetaAPI using lot size directly
         const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
           body: {
             accountId: account.metaapi_account_id,
             trade: {
               symbol: symbol.replace('/', ''),
               direction: direction === 'CALL' ? 'BUY' : 'SELL',
-              volume: parseFloat(stake) / 1000 || 0.01, // Convert stake to lots
+              volume: lotSize, // Use the lotSize state directly
               comment: `HuMi Quick Trade - ${symbol}`
             }
           }
@@ -260,7 +262,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
         
         toast({
           title: 'Trade Executed!',
-          description: `${direction === 'CALL' ? 'BUY' : 'SELL'} order placed on ${account.broker_name || 'MT5'}`,
+          description: `${direction === 'CALL' ? 'BUY' : 'SELL'} ${lotSize} lots ${symbol} on ${account.broker_name || 'MT5'}`,
         });
       } else if (account.deriv_token) {
         // Execute via Deriv API (Rise/Fall)
@@ -297,6 +299,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
   };
 
   const selectedAccountData = accounts.find(a => a.id === selectedAccount);
+  const isMetaApiAccount = selectedAccountData?.connection_type === 'metaapi';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -307,7 +310,9 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
             Quick Trade - {symbol}
           </DialogTitle>
           <DialogDescription>
-            Execute Rise/Fall contracts on Deriv
+            {isMetaApiAccount 
+              ? `Execute CFD trades on ${selectedAccountData?.broker_name || 'MT5'}`
+              : 'Execute Rise/Fall contracts on Deriv'}
           </DialogDescription>
         </DialogHeader>
         
@@ -355,60 +360,97 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="CALL" className="data-[state=active]:bg-profit data-[state=active]:text-white">
                   <ArrowUp className="w-4 h-4 mr-2" />
-                  Rise
+                  {isMetaApiAccount ? 'Buy' : 'Rise'}
                 </TabsTrigger>
                 <TabsTrigger value="PUT" className="data-[state=active]:bg-loss data-[state=active]:text-white">
                   <ArrowDown className="w-4 h-4 mr-2" />
-                  Fall
+                  {isMetaApiAccount ? 'Sell' : 'Fall'}
                 </TabsTrigger>
               </TabsList>
             </Tabs>
             
-            {/* Stake Input */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                Stake ({selectedAccountData?.deriv_currency || 'USD'})
-              </Label>
-              <Input
-                type="number"
-                value={stake}
-                onChange={(e) => setStake(e.target.value)}
-                min="1"
-                step="1"
-              />
-            </div>
-            
-            {/* Duration */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                Duration
-              </Label>
-              <div className="flex gap-2">
+            {/* Stake/Lot Size Input - Changes based on account type */}
+            {isMetaApiAccount ? (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  Lot Size
+                </Label>
+                <LotSizeInput
+                  value={lotSize}
+                  onChange={setLotSize}
+                  min={0.01}
+                  max={100}
+                  step={0.01}
+                />
+                <p className="text-xs text-muted-foreground">Standard lot = 1.0, Mini = 0.1, Micro = 0.01</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4" />
+                  Stake ({selectedAccountData?.deriv_currency || 'USD'})
+                </Label>
                 <Input
                   type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  value={stake}
+                  onChange={(e) => setStake(e.target.value)}
                   min="1"
-                  className="flex-1"
+                  step="1"
                 />
-                <Select value={durationUnit} onValueChange={(v) => setDurationUnit(v as 't' | 'm' | 'h')}>
-                  <SelectTrigger className="w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="t">Ticks</SelectItem>
-                    <SelectItem value="m">Minutes</SelectItem>
-                    <SelectItem value="h">Hours</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
-            </div>
+            )}
             
-            {/* Quote Display */}
+            {/* Duration - Only for Deriv contracts, not MetaAPI CFD */}
+            {!isMetaApiAccount && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Duration
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    min="1"
+                    className="flex-1"
+                  />
+                  <Select value={durationUnit} onValueChange={(v) => setDurationUnit(v as 't' | 'm' | 'h')}>
+                    <SelectTrigger className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="t">Ticks</SelectItem>
+                      <SelectItem value="m">Minutes</SelectItem>
+                      <SelectItem value="h">Hours</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            
+            {/* Quote Display - Different for MetaAPI vs Deriv */}
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-              {proposalError ? (
+              {isMetaApiAccount ? (
+                // MetaAPI account summary
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Symbol:</span>
+                    <span className="font-medium">{symbol}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Direction:</span>
+                    <span className={`font-medium ${direction === 'CALL' ? 'text-profit' : 'text-loss'}`}>
+                      {direction === 'CALL' ? 'BUY' : 'SELL'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Volume:</span>
+                    <span className="font-bold">{lotSize.toFixed(2)} lots</span>
+                  </div>
+                </>
+              ) : proposalError ? (
                 <div className="text-sm text-destructive flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
                   {proposalError}
@@ -440,7 +482,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
             <Button
               className={`w-full ${direction === 'CALL' ? 'bg-profit hover:bg-profit/90' : 'bg-loss hover:bg-loss/90'}`}
               onClick={handleExecute}
-              disabled={!proposal || executing}
+              disabled={(!isMetaApiAccount && !proposal) || executing}
             >
               {executing ? (
                 <>
@@ -450,7 +492,9 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
               ) : (
                 <>
                   {direction === 'CALL' ? <ArrowUp className="w-4 h-4 mr-2" /> : <ArrowDown className="w-4 h-4 mr-2" />}
-                  {direction === 'CALL' ? 'Buy Rise' : 'Buy Fall'}
+                  {isMetaApiAccount 
+                    ? (direction === 'CALL' ? 'Place Buy Order' : 'Place Sell Order')
+                    : (direction === 'CALL' ? 'Buy Rise' : 'Buy Fall')}
                 </>
               )}
             </Button>

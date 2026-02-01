@@ -476,13 +476,38 @@ export function ConnectAccountModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="server">Server *</Label>
-                <Input
-                  id="server"
-                  placeholder="ICMarketsSC-Demo"
-                  value={formData.server}
-                  onChange={(e) => setFormData({ ...formData, server: e.target.value })}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="server"
+                    placeholder="ICMarketsSC-Demo"
+                    value={formData.server}
+                    onChange={(e) => setFormData({ ...formData, server: e.target.value })}
+                    list="server-suggestions"
+                    required
+                  />
+                  <datalist id="server-suggestions">
+                    <option value="Headway-Real" />
+                    <option value="Headway-Demo" />
+                    <option value="Deriv-Server" />
+                    <option value="Deriv-Demo" />
+                    <option value="ICMarketsSC-Live" />
+                    <option value="ICMarketsSC-Demo" />
+                    <option value="ICMarkets-Live01" />
+                    <option value="ICMarkets-Demo01" />
+                    <option value="XMGlobal-Real 3" />
+                    <option value="XMGlobal-MT5-Demo" />
+                    <option value="Exness-Real" />
+                    <option value="Exness-MT5Real" />
+                    <option value="Exness-Demo" />
+                    <option value="FBS-Real" />
+                    <option value="FBS-Demo" />
+                    <option value="FTMO-Demo" />
+                    <option value="FTMO-Server" />
+                    <option value="OctaFX-Real" />
+                    <option value="OctaFX-Demo" />
+                  </datalist>
+                </div>
+                <p className="text-xs text-muted-foreground">Type to search or select from suggestions</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="platform">Platform *</Label>
