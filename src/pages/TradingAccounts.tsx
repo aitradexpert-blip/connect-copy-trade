@@ -220,7 +220,7 @@ const TradingAccounts = () => {
         <CreditCard className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
         <h3 className="text-lg font-semibold text-foreground mb-2">No accounts connected</h3>
         <p className="text-muted-foreground mb-6">
-          Connect your trading accounts (Deriv, MetaTrader, etc.) to start trading
+          Connect your broker accounts (Deriv, MT4, MT5) to start trading
         </p>
         <Button onClick={() => setIsModalOpen(true)} className="bg-gradient-primary">
           <Plus className="w-4 h-4 mr-2" />

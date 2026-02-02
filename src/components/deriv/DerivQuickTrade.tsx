@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowUp, ArrowDown, Loader2, TrendingUp, Clock, DollarSign, AlertCircle, Layers } from 'lucide-react';
+import { ArrowUp, ArrowDown, Loader2, TrendingUp, Clock, DollarSign, AlertCircle, Layers, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,6 +15,7 @@ import { getSharedDerivWS, getDerivSymbol } from '@/services/derivWebSocket';
 import { authorizeDerivAccount } from '@/services/derivBroker';
 import { subscribeProposal, buyContract, ProposalParams } from '@/services/derivTrading';
 import { LotSizeInput } from '@/components/ui/lot-size-input';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface DerivQuickTradeProps {
   open: boolean;
@@ -37,9 +39,16 @@ interface DerivAccount {
   platform?: string | null;
 }
 
+// Helper to detect synthetic symbols
+const isSyntheticSymbol = (symbol: string): boolean => {
+  const syntheticPatterns = ['Volatility', 'Boom', 'Crash', 'Step', 'Jump', 'Range Break', 'R_', '1HZ', 'BOOM', 'CRASH'];
+  return syntheticPatterns.some(p => symbol.includes(p) || symbol.startsWith(p));
+};
+
 export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initialDirection }: DerivQuickTradeProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const unsubscribeRef = useRef<(() => Promise<void>) | null>(null);
   
   const [accounts, setAccounts] = useState<DerivAccount[]>([]);
@@ -239,6 +248,16 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
       return;
     }
     
+    // Validate: MT4/MT5 accounts cannot trade Deriv synthetics
+    if (isMetaApiAccount && isSyntheticSymbol(symbol)) {
+      toast({
+        title: 'Unsupported Instrument',
+        description: 'Synthetic indices can only be traded on Deriv accounts, not MT4/MT5.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
     setExecuting(true);
     try {
       // Route based on connection_type
@@ -323,7 +342,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
         ) : accounts.length === 0 ? (
           <div className="text-center py-8">
             <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">No Deriv accounts connected</p>
+            <p className="text-muted-foreground">No trading accounts connected</p>
             <Button 
               variant="outline" 
               className="mt-4"
@@ -332,7 +351,7 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
                 window.location.href = '/accounts';
               }}
             >
-              Connect Deriv Account
+              Connect Trading Account
             </Button>
           </div>
         ) : (
@@ -368,6 +387,21 @@ export function DerivQuickTrade({ open, onOpenChange, symbol, direction: initial
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            
+            {/* Synthetic Index Warning */}
+            {isSyntheticSymbol(symbol) && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-600">Synthetic Index</p>
+                    <p className="text-muted-foreground text-xs">
+                      24/7 simulated market. High volatility. Not tied to real-world assets.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* Stake/Lot Size Input - Changes based on account type */}
             {isMetaApiAccount ? (

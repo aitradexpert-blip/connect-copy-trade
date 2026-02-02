@@ -16,7 +16,9 @@ import {
   LineChart,
   ArrowDown,
   ArrowUp,
-  Clock
+  Clock,
+  Download,
+  CreditCard
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import EconomicCalendar from "@/components/EconomicCalendar";
@@ -40,7 +42,7 @@ interface TradeHistoryItem {
   direction: string;
   profit_loss: number | null;
   executed_at: string;
-  source: 'deriv' | 'metaapi' | 'local';
+  source: 'deriv' | 'broker' | 'local';
 }
 
 const Index = () => {
@@ -56,6 +58,31 @@ const Index = () => {
   const [hasDerivAccounts, setHasDerivAccounts] = useState(false);
   const [brokerAction, setBrokerAction] = useState<'deposit' | 'withdraw' | null>(null);
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
+  
+  // PWA Install state
+  const [canInstall, setCanInstall] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+
+  // PWA Install handler
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setCanInstall(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setCanInstall(false);
+      setInstallPrompt(null);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -396,6 +423,10 @@ const Index = () => {
                 <Plus className="w-4 h-4" />
                 Add Account
               </Button>
+              <Button onClick={() => navigate('/accounts')} variant="outline" className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Trading Accounts
+              </Button>
               <Button 
                 onClick={() => setBrokerAction('deposit')} 
                 variant="secondary" 
@@ -422,6 +453,12 @@ const Index = () => {
                 <Eye className="w-4 h-4" />
                 View Ideas
               </Button>
+              {canInstall && (
+                <Button onClick={handleInstallApp} variant="outline" className="flex items-center gap-2">
+                  <Download className="w-4 h-4" />
+                  Install App
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -543,7 +580,7 @@ const Index = () => {
                         </span>
                       )}
                       <Badge variant="outline" className="text-xs">
-                        {trade.source}
+                        {trade.source === 'deriv' ? 'Deriv' : trade.source === 'broker' ? 'Broker' : 'Local'}
                       </Badge>
                     </div>
                   </div>

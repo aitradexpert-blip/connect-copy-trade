@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { COMPREHENSIVE_WATCHLIST } from '@/config/watchlist';
+import { getSharedDerivWS } from '@/services/derivWebSocket';
 
 interface WatchlistDropdownProps {
   onSymbolSelect: (symbol: string) => void;
@@ -12,12 +13,46 @@ interface WatchlistDropdownProps {
 export const WatchlistDropdown = ({ onSymbolSelect, activeSymbol }: WatchlistDropdownProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [derivSynthetics, setDerivSynthetics] = useState<string[]>([]);
+
+  // Fetch live synthetic indices from Deriv on mount
+  useEffect(() => {
+    const loadDerivSynthetics = async () => {
+      try {
+        const ws = getSharedDerivWS();
+        await ws.connect();
+        const response = await ws.send({ active_symbols: 'brief', product_type: 'basic' });
+        
+        // Filter synthetic indices
+        const synthetics = (response.active_symbols || [])
+          .filter((s: any) => s.market === 'synthetic_index' && !s.is_trading_suspended)
+          .map((s: any) => s.display_name);
+        
+        if (synthetics.length > 0) {
+          setDerivSynthetics(synthetics);
+        }
+      } catch (err) {
+        console.warn('Could not fetch live synthetics:', err);
+      }
+    };
+    
+    loadDerivSynthetics();
+  }, []);
+
+  // Merge static watchlist with live synthetics
+  const mergedWatchlist = useMemo(() => {
+    const base = { ...COMPREHENSIVE_WATCHLIST };
+    if (derivSynthetics.length > 0) {
+      base['SYNTHETICS (Live)'] = derivSynthetics;
+    }
+    return base;
+  }, [derivSynthetics]);
 
   const filteredWatchlist = useMemo(() => {
-    if (!searchTerm) return COMPREHENSIVE_WATCHLIST;
+    if (!searchTerm) return mergedWatchlist;
     
     const filtered: Record<string, string[]> = {};
-    Object.entries(COMPREHENSIVE_WATCHLIST).forEach(([category, symbols]) => {
+    Object.entries(mergedWatchlist).forEach(([category, symbols]) => {
       const matchedSymbols = symbols.filter(symbol =>
         symbol.toLowerCase().includes(searchTerm.toLowerCase())
       );
@@ -26,7 +61,7 @@ export const WatchlistDropdown = ({ onSymbolSelect, activeSymbol }: WatchlistDro
       }
     });
     return filtered;
-  }, [searchTerm]);
+  }, [searchTerm, mergedWatchlist]);
 
   return (
     <div className="relative w-full max-w-md">

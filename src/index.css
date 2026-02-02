@@ -135,3 +135,18 @@ Light mode is default (:root), dark mode is .dark class
     @apply bg-background text-foreground;
   }
 }
+
+/* Mobile UX Enhancements - Touch Targets */
+@media (max-width: 768px) {
+  button,
+  [role="button"],
+  .touch-target {
+    min-height: 44px;
+  }
+  
+  /* Ensure lot size buttons are easily tappable */
+  .lot-size-button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
