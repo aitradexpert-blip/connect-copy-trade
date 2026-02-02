@@ -20,13 +20,13 @@ export const COMPREHENSIVE_WATCHLIST = {
     "XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD", "XAU/EUR", "XAG/EUR",
     "XAU/GBP", "XAG/GBP", "XAU/JPY", "XAG/JPY", "XAU/AUD", "XAG/AUD"
   ],
-  "SYNTHETIC INDEXES (25)": [
-    "VOLATILITY_25", "VOLATILITY_50", "VOLATILITY_75", "VOLATILITY_100", "VOLATILITY_150", "VOLATILITY_200",
-    "BOOM_300", "BOOM_500", "BOOM_600", "BOOM_1000",
-    "CRASH_300", "CRASH_500", "CRASH_600", "CRASH_1000",
-    "JUMP_10", "JUMP_25", "JUMP_50", "JUMP_75", "JUMP_100",
-    "STEP_50", "STEP_100", "STEP_150", "STEP_200",
-    "RANGE_BREAK_100", "RANGE_BREAK_200"
+  "SYNTHETIC INDEXES (22)": [
+    "Volatility 10 (1s)", "Volatility 25 (1s)", "Volatility 50 (1s)", "Volatility 75 (1s)", "Volatility 100 (1s)",
+    "Volatility 10", "Volatility 25", "Volatility 50", "Volatility 75", "Volatility 100",
+    "Boom 300", "Boom 500", "Boom 1000",
+    "Crash 300", "Crash 500", "Crash 1000",
+    "Step Index",
+    "Jump 10", "Jump 25", "Jump 50", "Jump 75", "Jump 100"
   ],
   "CRYPTO (35)": [
     "BTC/USD", "ETH/USD", "LTC/USD", "XRP/USD", "BCH/USD", "ADA/USD", "DOT/USD",

@@ -192,7 +192,7 @@ export function ConnectAccountModal({
 
       toast({
         title: "Account connected!",
-        description: `${formData.name || formData.login} has been connected successfully via MetaAPI.`,
+        description: `${formData.name || formData.login} has been connected successfully.`,
       });
 
       setFormData({ 

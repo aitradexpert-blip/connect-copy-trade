@@ -36,6 +36,11 @@ interface TradingAccount {
   provider: string;
   deriv_token: string | null;
   is_virtual: boolean;
+  metaapi_account_id: string | null;
+  connection_type: string;
+  connection_status: string;
+  broker_name: string | null;
+  platform: string;
 }
 
 interface OpenPosition {
@@ -45,7 +50,7 @@ interface OpenPosition {
   profit_loss: number;
   entry_price: number;
   current_price?: number;
-  source: 'deriv' | 'metaapi';
+  source: 'deriv' | 'broker';
 }
 
 interface TradeHistoryItem {
@@ -54,7 +59,7 @@ interface TradeHistoryItem {
   direction: string;
   profit_loss: number | null;
   executed_at: string;
-  source: 'deriv' | 'metaapi' | 'local';
+  source: 'deriv' | 'broker' | 'local';
 }
 
 export default function Charts() {
@@ -142,8 +147,9 @@ export default function Charts() {
     try {
       const { data, error } = await supabase
         .from('trading_accounts')
-        .select('id, name, balance, provider, deriv_token, is_virtual')
-        .eq('user_id', user.id);
+        .select('id, name, balance, provider, deriv_token, is_virtual, metaapi_account_id, connection_type, connection_status, broker_name, platform')
+        .eq('user_id', user.id)
+        .eq('connection_status', 'connected');
       
       if (error) throw error;
       
@@ -232,32 +238,29 @@ export default function Charts() {
         } catch (err) {
           console.warn('Error fetching balance:', err);
         }
-      } else if (account.provider === 'metaapi') {
-        // Fetch MetaAPI positions
-        const metaapiAccountId = await getMetaApiAccountId(account.id);
-        if (metaapiAccountId) {
-          try {
-            const { data: positionsData } = await supabase.functions.invoke(
-              'metaapi-get-positions',
-              { body: { accountId: metaapiAccountId } }
-            );
-            
-            if (positionsData?.positions) {
-              positionsData.positions.forEach((pos: any) => {
-                positions.push({
-                  id: `metaapi-${pos.id}`,
-                  symbol: pos.symbol,
-                  direction: pos.type?.toUpperCase() || 'BUY',
-                  profit_loss: pos.profit || 0,
-                  entry_price: pos.openPrice || 0,
-                  current_price: pos.currentPrice,
-                  source: 'metaapi'
-                });
+      } else if (account.metaapi_account_id) {
+        // Fetch broker positions via Trading Bridge
+        try {
+          const { data: positionsData } = await supabase.functions.invoke(
+            'metaapi-get-positions',
+            { body: { accountId: account.metaapi_account_id } }
+          );
+          
+          if (positionsData?.positions) {
+            positionsData.positions.forEach((pos: any) => {
+              positions.push({
+                id: `broker-${pos.id}`,
+                symbol: pos.symbol,
+                direction: pos.type?.toUpperCase() || 'BUY',
+                profit_loss: pos.profit || 0,
+                entry_price: pos.openPrice || 0,
+                current_price: pos.currentPrice,
+                source: 'broker'
               });
-            }
-          } catch (err) {
-            console.warn('Error fetching MetaAPI positions:', err);
+            });
           }
+        } catch (err) {
+          console.warn('Error fetching broker positions:', err);
         }
       }
       

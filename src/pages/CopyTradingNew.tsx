@@ -6,7 +6,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap, Layers, RefreshCw, Shield, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -23,6 +25,8 @@ interface TradingAccount {
   is_virtual: boolean;
   provider: string;
   deriv_token: string | null;
+  metaapi_account_id: string | null;
+  connection_type: string;
 }
 
 interface MasterTrader {
@@ -57,16 +61,31 @@ interface DerivCopyTrader {
   };
 }
 
+interface CopyFactoryStrategy {
+  id: string;
+  name: string;
+  accountId: string;
+  description?: string;
+  connectionId?: string;
+}
+
 export default function CopyTradingNew() {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [masterTraders, setMasterTraders] = useState<MasterTrader[]>([]);
   const [derivCopyTraders, setDerivCopyTraders] = useState<DerivCopyTrader[]>([]);
+  const [copyFactoryStrategies, setCopyFactoryStrategies] = useState<CopyFactoryStrategy[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [copyStats, setCopyStats] = useState<Record<string, CopyStats>>({});
   const [loading, setLoading] = useState(true);
   const [loadingDeriv, setLoadingDeriv] = useState(false);
+  const [loadingCopyFactory, setLoadingCopyFactory] = useState(false);
   const [activeTab, setActiveTab] = useState("local");
+  
+  // CopyFactory Strategy Form
+  const [strategyName, setStrategyName] = useState("");
+  const [strategyDescription, setStrategyDescription] = useState("");
+  const [creatingStrategy, setCreatingStrategy] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -104,8 +123,9 @@ export default function CopyTradingNew() {
       // Load user's trading accounts with provider info
       const { data: accountsData, error: accountsError } = await supabase
         .from("trading_accounts")
-        .select("id,name,platform,balance,is_master,is_virtual,provider,deriv_token")
-        .eq("user_id", user.id);
+        .select("id,name,platform,balance,is_master,is_virtual,provider,deriv_token,metaapi_account_id,connection_type")
+        .eq("user_id", user.id)
+        .eq("connection_status", "connected");
 
       if (accountsError) throw accountsError;
       setAccounts(accountsData || []);
@@ -455,6 +475,132 @@ export default function CopyTradingNew() {
     }
   };
 
+  // Load CopyFactory strategies (MT4/MT5)
+  const loadCopyFactoryStrategies = async () => {
+    setLoadingCopyFactory(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('copyfactory-list-strategies');
+      
+      if (error) throw error;
+      
+      if (data?.strategies) {
+        setCopyFactoryStrategies(data.strategies);
+      }
+    } catch (error: any) {
+      console.error('[CopyTrading] Error loading CopyFactory strategies:', error);
+      toast({
+        title: "Error loading strategies",
+        description: error.message || "Could not load MT4/MT5 copy trading strategies",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingCopyFactory(false);
+    }
+  };
+
+  // Create a CopyFactory strategy (become a provider)
+  const createCopyFactoryStrategy = async () => {
+    const metaApiAccount = accounts.find(acc => acc.metaapi_account_id && !acc.is_master);
+    
+    if (!metaApiAccount?.metaapi_account_id) {
+      toast({
+        title: "No MT4/MT5 Account",
+        description: "Connect an MT4/MT5 account first to create a copy trading strategy",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!strategyName.trim()) {
+      toast({
+        title: "Strategy name required",
+        description: "Please enter a name for your strategy",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingStrategy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('copyfactory-create-strategy', {
+        body: {
+          accountId: metaApiAccount.metaapi_account_id,
+          name: strategyName.trim(),
+          description: strategyDescription.trim() || undefined,
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Strategy created!",
+        description: `Your strategy "${strategyName}" is now available for others to copy`,
+      });
+
+      setStrategyName("");
+      setStrategyDescription("");
+      loadCopyFactoryStrategies();
+      
+      // Update account as master
+      await supabase
+        .from("trading_accounts")
+        .update({ is_master: true })
+        .eq("id", metaApiAccount.id);
+      
+      loadData();
+    } catch (error: any) {
+      console.error('[CopyTrading] Error creating strategy:', error);
+      toast({
+        title: "Failed to create strategy",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingStrategy(false);
+    }
+  };
+
+  // Subscribe to a CopyFactory strategy
+  const subscribeToCopyFactory = async (strategyId: string) => {
+    const subscriberAccount = accounts.find(acc => 
+      acc.metaapi_account_id && 
+      acc.id === selectedAccount
+    );
+
+    if (!subscriberAccount?.metaapi_account_id) {
+      toast({
+        title: "Select an MT4/MT5 account",
+        description: "Choose an MT4/MT5 account to copy trades to",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('copyfactory-subscribe', {
+        body: {
+          strategyId,
+          subscriberAccountId: subscriberAccount.metaapi_account_id,
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Successfully subscribed!",
+        description: "You are now copying trades from this strategy",
+      });
+
+      loadCopyFactoryStrategies();
+    } catch (error: any) {
+      toast({
+        title: "Subscription failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <AppLayout>
@@ -576,13 +722,17 @@ export default function CopyTradingNew() {
               </Select>
             </div>
 
-            {/* Tabs for Local Masters and Deriv Copy Trading */}
+            {/* Tabs for Local Masters, Deriv Copy Trading, and CopyFactory */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="local">Local Masters</TabsTrigger>
                 <TabsTrigger value="deriv" onClick={() => derivCopyTraders.length === 0 && loadDerivCopyTraders()}>
                   <Zap className="w-4 h-4 mr-1" />
                   Deriv Options
+                </TabsTrigger>
+                <TabsTrigger value="copyfactory" onClick={() => copyFactoryStrategies.length === 0 && loadCopyFactoryStrategies()}>
+                  <Layers className="w-4 h-4 mr-1" />
+                  MT4/MT5
                 </TabsTrigger>
               </TabsList>
               
@@ -750,6 +900,149 @@ export default function CopyTradingNew() {
                     ))}
                   </div>
                 )}
+              </TabsContent>
+              
+              {/* CopyFactory Tab - MT4/MT5 Copy Trading */}
+              <TabsContent value="copyfactory" className="space-y-6 mt-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">MT4/MT5 Copy Trading</h3>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={loadCopyFactoryStrategies}
+                    disabled={loadingCopyFactory}
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${loadingCopyFactory ? 'animate-spin' : ''}`} />
+                    {loadingCopyFactory ? "Loading..." : "Refresh"}
+                  </Button>
+                </div>
+                
+                {/* Become a Provider Section */}
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-primary" />
+                      Become a Master Trader
+                    </CardTitle>
+                    <CardDescription>
+                      Share your trades and let others copy your strategies
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="strategyName">Strategy Name</Label>
+                        <Input
+                          id="strategyName"
+                          placeholder="e.g., Gold Scalping Pro"
+                          value={strategyName}
+                          onChange={(e) => setStrategyName(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="strategyDesc">Description (Optional)</Label>
+                        <Input
+                          id="strategyDesc"
+                          placeholder="Brief description of your strategy"
+                          value={strategyDescription}
+                          onChange={(e) => setStrategyDescription(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Button
+                        onClick={createCopyFactoryStrategy}
+                        disabled={creatingStrategy || !accounts.some(a => a.metaapi_account_id)}
+                        className="bg-gradient-primary"
+                      >
+                        {creatingStrategy ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 mr-2" />
+                            Create Strategy
+                          </>
+                        )}
+                      </Button>
+                      {!accounts.some(a => a.metaapi_account_id) && (
+                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4" />
+                          Connect an MT4/MT5 account first
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Available Strategies to Copy */}
+                <div className="space-y-4">
+                  <h4 className="font-medium">Available Strategies</h4>
+                  
+                  {loadingCopyFactory ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : copyFactoryStrategies.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Layers className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No MT4/MT5 strategies available yet</p>
+                      <p className="text-sm">Be the first to create a strategy or check back later</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {copyFactoryStrategies.map((strategy) => (
+                        <Card key={strategy.id} className="border border-border hover:border-primary/30 transition-colors">
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-medium">{strategy.name}</h4>
+                                  <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
+                                    <Layers className="w-3 h-3 mr-1" />
+                                    MT4/MT5
+                                  </Badge>
+                                </div>
+                                {strategy.description && (
+                                  <p className="text-sm text-muted-foreground">{strategy.description}</p>
+                                )}
+                                <p className="text-xs text-muted-foreground">
+                                  Account: {strategy.accountId?.slice(0, 8)}...
+                                </p>
+                              </div>
+                              <Button
+                                onClick={() => subscribeToCopyFactory(strategy.id)}
+                                disabled={!accounts.some(a => a.metaapi_account_id && a.id === selectedAccount)}
+                                className="bg-gradient-primary"
+                              >
+                                <Copy className="w-4 h-4 mr-2" />
+                                Copy
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-muted/50 p-4 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-primary mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium mb-1">How MT4/MT5 Copy Trading Works</p>
+                      <ul className="text-muted-foreground space-y-1">
+                        <li>• Providers share their trades automatically</li>
+                        <li>• Subscribers copy trades to their own accounts</li>
+                        <li>• Trades are mirrored in real-time with customizable lot sizing</li>
+                        <li>• Works with any MT4/MT5 broker connected to HuMi</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </TabsContent>
             </Tabs>
           </CardContent>
