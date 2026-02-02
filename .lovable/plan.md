@@ -1,263 +1,509 @@
 
-# HuMi MetaAPI Integration Fix & Enhancement Plan
+# Synthetic Indexes Trading & UX Enhancement Plan
 
-## Root Cause Analysis
-
-### Issue 1: MetaAPI Provisioning Error (Code 64524)
-**Location:** Edge function returns `{"success":false,"error":"Validation failed","code":64524,"details":"Validation failed"}`
-
-**Root Cause:** The MetaAPI Provisioning URL in the edge function has a **typo with a double domain**:
-```typescript
-// INCORRECT (line 13 in metaapi-provision-account/index.ts):
-const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
-
-// CORRECT:
-const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.ai'
-```
-
-This causes all provisioning requests to fail with a validation error because the URL doesn't resolve correctly.
-
-**Additional Issue:** The `src/services/metaapi.ts` file was previously fixed but the edge function was not.
-
-### Issue 2: Viewing Deriv Balances Works
-The existing Deriv account (VRTC3710616) shows balance correctly because it uses:
-- Deriv WebSocket API via `authorizeDerivAccount()` and `getDerivBalance()`
-- These functions in `src/services/derivBroker.ts` are working correctly
-- This confirms the Deriv integration is **fully functional**
-
-### Issue 3: MetaAPI Accounts Not Displaying Data
-Accounts provisioned via MetaAPI (like "Mpho Maphanga Deriv MT5") cannot fetch data because:
-1. The provisioning failed due to the URL typo, so no valid `metaapi_account_id` was stored
-2. Without a valid `metaapi_account_id`, the `metaapi-account-info` edge function cannot query MetaAPI
+## Overview
+This plan implements comprehensive Synthetic Indexes trading support, fixes the /charts page account selection bug, adds an Install App PWA button to Quick Actions, adds Trading Accounts button to Quick Actions, and replaces all visible "MetaAPI"/"Deriv API" branding with user-friendly terminology.
 
 ---
 
-## Phase 1: Fix MetaAPI Connection Error
+## Phase 1: Bug Fixes & Quick Wins
 
-### 1.1 Fix Edge Function URL
-**File:** `supabase/functions/metaapi-provision-account/index.ts`
+### 1.1 Fix /charts Page Account Selection Bug
 
-Change line 13:
+**Root Cause Analysis:**
+Looking at `src/pages/Charts.tsx` (lines 139-157), the `loadAccounts()` function fetches:
+```typescript
+.select('id, name, balance, provider, deriv_token, is_virtual')
+```
+
+This is **missing critical fields**:
+- `connection_type`
+- `metaapi_account_id`
+- `connection_status`
+
+Meanwhile, `DerivQuickTrade.tsx` (lines 71-76) correctly fetches all fields including `connection_type` and `connection_status='connected'`.
+
+**The Fix:**
+Update `src/pages/Charts.tsx` line 143-146:
+
 ```typescript
 // FROM:
-const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
+.select('id, name, balance, provider, deriv_token, is_virtual')
 
 // TO:
-const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.ai'
+.select('id, name, balance, provider, deriv_token, is_virtual, metaapi_account_id, connection_type, connection_status, broker_name, platform')
+.eq('connection_status', 'connected')
 ```
 
-### 1.2 Add Detailed Logging
-Enhance the edge function with better error reporting to diagnose future issues:
-- Log the exact MetaAPI response
-- Parse specific error codes (E_AUTH, E_SERVER_TIMEZONE, ERR_OTP_REQUIRED)
-- Return actionable error messages
-
-### 1.3 Add Server Name Suggestions
-Create a dropdown with common broker server names to prevent user typos:
-- Headway-Real, Headway-Demo
-- Deriv-Server, Deriv-Demo
-- ICMarkets-Live01, ICMarkets-Demo01
-- XM-Real-1, XM-Demo-1
-- Exness-Real, Exness-Demo
-
-**File:** `src/components/ConnectAccountModal.tsx`
-
-Add autocomplete/suggestions for the server field.
+Also update the `TradingAccount` interface (line 32-39) to include the missing fields.
 
 ---
 
-## Phase 2: Implement LotSizeInput Component
+### 1.2 Add "Install App" Button to Quick Actions
 
-### 2.1 Create Reusable Component
-**New File:** `src/components/ui/lot-size-input.tsx`
+**Current State:** PWA install prompt exists as `PWAInstallPrompt.tsx` - a floating banner at bottom.
 
-Features:
-- Default value: 0.01 (micro lot)
-- [-] and [+] buttons for increment/decrement
-- Manual text input with validation
-- Min: 0.01, Max: configurable (default 100)
-- Step: 0.01
-- 2 decimal precision
-- Disable minus button at minimum
-- Synced state between buttons and input
+**Enhancement:** Add an explicit "Install App" button in Quick Actions section for better visibility.
+
+**File:** `src/pages/Index.tsx`
+
+Add a new state hook and button:
+```typescript
+// Add state for PWA install
+const [canInstall, setCanInstall] = useState(false);
+const [installPrompt, setInstallPrompt] = useState<any>(null);
+
+useEffect(() => {
+  const handler = (e: Event) => {
+    e.preventDefault();
+    setInstallPrompt(e);
+    setCanInstall(true);
+  };
+  window.addEventListener('beforeinstallprompt', handler);
+  return () => window.removeEventListener('beforeinstallprompt', handler);
+}, []);
+
+const handleInstallApp = async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice;
+  if (outcome === 'accepted') {
+    setCanInstall(false);
+    setInstallPrompt(null);
+  }
+};
+```
+
+Add button to Quick Actions section (around line 394-425):
+```tsx
+{canInstall && (
+  <Button onClick={handleInstallApp} variant="outline" className="flex items-center gap-2">
+    <Download className="w-4 h-4" />
+    Install App
+  </Button>
+)}
+```
+
+---
+
+### 1.3 Add "Trading Accounts" Button to Quick Actions
+
+**File:** `src/pages/Index.tsx`
+
+In the Quick Actions section (line ~394-425), add:
+```tsx
+<Button onClick={() => navigate('/accounts')} variant="outline" className="flex items-center gap-2">
+  <CreditCard className="w-4 h-4" />
+  Trading Accounts
+</Button>
+```
+
+Import `CreditCard` from lucide-react (already imported on line 3).
+
+---
+
+## Phase 2: API Branding Cleanup
+
+### 2.1 Replace "MetaAPI" with User-Friendly Terms
+
+**Goal:** Users should not see internal API names. Replace with broker-centric terminology.
+
+| Current Text | Replacement |
+|-------------|-------------|
+| "MetaAPI" | "MT4/MT5 Broker" or "Trading Bridge" |
+| "Deriv API" | "Deriv" or "Direct Connection" |
+| "metaapi" | "mt4_mt5" (internal) |
+| "via MetaAPI" | "via Trading Bridge" |
+| "deriv_api" | Show as "Deriv Direct" |
+
+**Files to Update:**
+
+1. **`src/components/ConnectAccountModal.tsx`** (lines 160-200):
+   - Line 195: "connected successfully via MetaAPI" → "connected successfully"
+   - Line 265-268: "Connect your MT4 or MT5 account" → keep (good)
+
+2. **`src/components/deriv/DerivQuickTrade.tsx`**:
+   - Line 314: "Execute CFD trades on ${selectedAccountData?.broker_name || 'MT5'}" → keep (shows broker name)
+   - Line 326: "No Deriv accounts connected" → "No trading accounts connected"
+   - Line 333: "Connect Deriv Account" → "Connect Trading Account"
+
+3. **`src/pages/TradingAccounts.tsx`**:
+   - Line 198-200: Provider badge shows "MT4/MT5" → keep (good)
+   - Line 223: "Deriv, MetaTrader, etc." → "your broker accounts (Deriv, MT4, MT5)"
+
+4. **`src/pages/Charts.tsx`**:
+   - Line 48: `source: 'deriv' | 'metaapi'` → `source: 'deriv' | 'broker'`
+   - Line 254: `source: 'metaapi'` → `source: 'broker'`
+
+5. **`src/pages/Index.tsx`**:
+   - Line 43: `source: 'deriv' | 'metaapi' | 'local'` → `source: 'deriv' | 'broker' | 'local'`
+   - Line 547: Badge showing `{trade.source}` - map to friendly names
+
+---
+
+## Phase 3: Synthetic Indexes Trading Integration
+
+### 3.1 Update Watchlist with Proper Deriv Symbol Mapping
+
+**Current State:** `src/config/watchlist.ts` has synthetic symbols like "VOLATILITY_25" but these need proper mapping.
+
+**Fix:** Update watchlist to use Deriv-compatible display names:
 
 ```typescript
-interface LotSizeInputProps {
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  disabled?: boolean;
+"SYNTHETIC INDEXES (25)": [
+  "Volatility 10 (1s)", "Volatility 25 (1s)", "Volatility 50 (1s)", "Volatility 75 (1s)", "Volatility 100 (1s)",
+  "Volatility 10", "Volatility 25", "Volatility 50", "Volatility 75", "Volatility 100",
+  "Boom 300", "Boom 500", "Boom 1000",
+  "Crash 300", "Crash 500", "Crash 1000",
+  "Step Index",
+  "Jump 10", "Jump 25", "Jump 50", "Jump 75", "Jump 100",
+  "Range Break 100", "Range Break 200"
+],
+```
+
+The symbol mapping in `src/services/derivWebSocket.ts` (lines 294-316) already handles these correctly.
+
+---
+
+### 3.2 Add Dynamic Instrument Discovery via Deriv API
+
+**New Service Function:** `src/services/derivMarketData.ts`
+
+Add function to fetch and categorize active symbols:
+
+```typescript
+export interface InstrumentCategory {
+  name: string;
+  symbols: ActiveSymbol[];
+}
+
+export async function getInstrumentsByCategory(
+  ws?: DerivWS
+): Promise<Record<string, ActiveSymbol[]>> {
+  const symbols = await getActiveSymbols(ws, 'full');
+  
+  const categories: Record<string, ActiveSymbol[]> = {
+    'forex': [],
+    'synthetic': [],
+    'crypto': [],
+    'commodities': [],
+    'indices': [],
+    'stocks': []
+  };
+  
+  for (const sym of symbols) {
+    if (sym.market === 'synthetic_index') {
+      categories.synthetic.push(sym);
+    } else if (sym.market === 'forex') {
+      categories.forex.push(sym);
+    } else if (sym.market === 'cryptocurrency') {
+      categories.crypto.push(sym);
+    } else if (sym.market === 'commodities') {
+      categories.commodities.push(sym);
+    } else if (sym.market === 'indices') {
+      categories.indices.push(sym);
+    }
+  }
+  
+  return categories;
 }
 ```
 
-### 2.2 Integrate Into Trading Interfaces
-Update the following components to use the new LotSizeInput:
-- `src/components/deriv/DerivQuickTrade.tsx` - For MT4/MT5 trades
-- `src/pages/TradingIdeas.tsx` - For signal execution
-- `src/pages/Admin.tsx` - For signal creation
+---
+
+### 3.3 Update WatchlistDropdown for Dynamic Synthetics
+
+**File:** `src/components/WatchlistDropdown.tsx`
+
+Add dynamic fetching of available synthetics from Deriv:
+
+```typescript
+const [derivSymbols, setDerivSymbols] = useState<Record<string, string[]>>({});
+
+useEffect(() => {
+  const loadDerivSymbols = async () => {
+    try {
+      const ws = getSharedDerivWS();
+      await ws.connect();
+      const response = await ws.send({ active_symbols: 'brief', product_type: 'basic' });
+      
+      // Filter synthetic indices
+      const synthetics = (response.active_symbols || [])
+        .filter((s: any) => s.market === 'synthetic_index' && !s.is_trading_suspended)
+        .map((s: any) => s.display_name);
+      
+      if (synthetics.length > 0) {
+        setDerivSymbols(prev => ({
+          ...prev,
+          'SYNTHETICS (Live)': synthetics
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not fetch Deriv synthetics:', err);
+    }
+  };
+  
+  loadDerivSymbols();
+}, []);
+
+// Merge with static watchlist
+const mergedWatchlist = useMemo(() => ({
+  ...COMPREHENSIVE_WATCHLIST,
+  ...derivSymbols
+}), [derivSymbols]);
+```
 
 ---
 
-## Phase 3: Full MetaAPI Trading Implementation
+### 3.4 Add Synthetic-Specific Risk Warning
 
-### 3.1 Ensure Trade Execution Works
-**File:** `supabase/functions/metaapi-execute-trade/index.ts`
-
-Current implementation is correct. Verify:
-- Symbol format (no slash: EURUSD instead of EUR/USD)
-- Volume in lots (0.01 for micro)
-- Direction mapping (ORDER_TYPE_BUY, ORDER_TYPE_SELL)
-
-### 3.2 Update DerivQuickTrade for Lot Size
 **File:** `src/components/deriv/DerivQuickTrade.tsx`
 
-For MetaAPI accounts:
-- Replace stake-based input with lot size input
-- Use the new LotSizeInput component
-- Remove duration selection (not applicable to CFD)
-- Add proper symbol formatting
+Add risk warning when synthetic is selected:
 
-Current problematic code (line 250-253):
 ```typescript
-volume: parseFloat(stake) / 1000 || 0.01, // Convert stake to lots
-```
+const isSyntheticSymbol = (symbol: string): boolean => {
+  const syntheticPatterns = ['Volatility', 'Boom', 'Crash', 'Step', 'Jump', 'Range Break'];
+  return syntheticPatterns.some(p => symbol.includes(p));
+};
 
-This conversion is confusing. Replace with direct lot size input.
-
-### 3.3 Add Position Management
-**File:** `supabase/functions/metaapi-close-position/index.ts` (NEW)
-
-Create endpoint to close positions:
-```typescript
-POST /trade with actionType: 'POSITION_CLOSE_ID'
-body: { positionId: string }
+// In the JSX, after direction tabs:
+{isSyntheticSymbol(symbol) && (
+  <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+    <div className="flex items-start gap-2">
+      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5" />
+      <div className="text-sm">
+        <p className="font-medium text-amber-600">Synthetic Index</p>
+        <p className="text-muted-foreground text-xs">
+          24/7 simulated market. High volatility. Not tied to real-world assets.
+        </p>
+      </div>
+    </div>
+  </div>
+)}
 ```
 
 ---
 
-## Phase 4: MetaAPI Copy Trading (CopyFactory)
+### 3.5 Validate Account Supports Synthetic Trading
 
-### 4.1 CopyFactory Architecture
-MetaAPI uses CopyFactory for copy trading, which is separate from the main Trading API:
+**File:** `src/components/deriv/DerivQuickTrade.tsx`
 
-**Base URL:** `https://copyfactory-api-v1.agiliumtrade.ai`
-
-**Key Endpoints:**
-1. Configure account as Provider: Update account with `copyFactoryRoles: ['PROVIDER']`
-2. Create Strategy: `POST /users/current/configuration/strategies`
-3. List Available Strategies: `GET /users/current/configuration/strategies`
-4. Subscribe to Strategy: `POST /users/current/configuration/subscribers/{subscriberId}/subscriptions`
-
-### 4.2 Enable CopyFactory Role
-**File:** `supabase/functions/metaapi-enable-copy-factory/index.ts` (UPDATE)
-
-Update the existing function to properly configure an account as a Provider or Subscriber:
-```typescript
-await fetch(`${PROVISIONING_URL}/users/current/accounts/${accountId}`, {
-  method: 'PUT',
-  headers: { 'auth-token': token },
-  body: JSON.stringify({
-    copyFactoryRoles: ['PROVIDER', 'SUBSCRIBER']
-  })
-});
-```
-
-### 4.3 Create CopyFactory Strategy Endpoints
-**New Files:**
-- `supabase/functions/copyfactory-create-strategy/index.ts`
-- `supabase/functions/copyfactory-list-strategies/index.ts`
-- `supabase/functions/copyfactory-subscribe/index.ts`
-- `supabase/functions/copyfactory-unsubscribe/index.ts`
-
-### 4.4 Update Copy Trading UI
-**File:** `src/pages/CopyTradingNew.tsx`
-
-Add a third tab: "MetaAPI Masters" for CopyFactory strategies:
-- List available strategies from CopyFactory API
-- Show performance metrics
-- Allow subscribing with custom multiplier and risk settings
-
----
-
-## Phase 5: Unified Dashboard Experience
-
-### 5.1 getAllAccounts() Unified Function
-**File:** `src/services/unifiedAccountService.ts` (NEW)
+Add validation before trade execution:
 
 ```typescript
-export async function getAllAccounts(userId: string) {
-  const { data: dbAccounts } = await supabase
-    .from('trading_accounts')
-    .select('*')
-    .eq('user_id', userId);
-  
-  // Fetch live balances for each account
-  const enrichedAccounts = await Promise.all(
-    dbAccounts.map(async (account) => {
-      if (account.provider === 'deriv' && account.deriv_token) {
-        const balance = await fetchDerivBalance(account.deriv_token);
-        return { ...account, balance, equity: balance };
-      } else if (account.metaapi_account_id) {
-        const { balance, equity } = await fetchMetaApiBalance(account.metaapi_account_id);
-        return { ...account, balance, equity };
-      }
-      return account;
-    })
-  );
-  
-  return enrichedAccounts;
+// MetaAPI accounts cannot trade Deriv synthetics
+if (isMetaApiAccount && isSyntheticSymbol(symbol)) {
+  toast({
+    title: 'Unsupported Instrument',
+    description: 'Synthetic indices can only be traded on Deriv accounts, not MT4/MT5.',
+    variant: 'destructive'
+  });
+  return;
 }
 ```
 
-### 5.2 Unified Portfolio View
-**File:** `src/pages/Charts.tsx`
+---
 
-Already partially implemented. Enhance to:
-- Show combined equity across all accounts
-- Display positions from all sources with source badges
-- Calculate total P&L
+## Phase 4: Mobile UX Enhancements
 
-### 5.3 Admin Panel Updates
-**File:** `src/components/admin/UserManagementTab.tsx`
+### 4.1 Touch Target Sizing
 
-Current implementation correctly:
-- Fixed the upsert with `onConflict: 'user_id'`
-- Removed manual MetaAPI ID entry
-- Shows connection status
+**File:** `src/index.css`
 
-Add:
-- View MetaAPI account synchronization status
-- Retry failed provisioning button
-- Display MetaAPI error messages
+Add global mobile-friendly touch targets:
+
+```css
+@media (max-width: 768px) {
+  button, 
+  [role="button"],
+  input,
+  select,
+  textarea,
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+  
+  /* Ensure lot size buttons are easily tappable */
+  .lot-size-button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
+```
+
+### 4.2 Trade Ticket as Bottom Sheet on Mobile
+
+**Enhancement for `DerivQuickTrade.tsx`:**
+
+Use `vaul` (already installed) for bottom sheet on mobile:
+
+```typescript
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
+
+// In component:
+const isMobile = useIsMobile();
+
+// In render:
+if (isMobile) {
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>Quick Trade - {symbol}</DrawerTitle>
+        </DrawerHeader>
+        {/* Same content as Dialog */}
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+return (
+  <Dialog open={open} onOpenChange={onOpenChange}>
+    {/* Existing Dialog content */}
+  </Dialog>
+);
+```
 
 ---
 
-## Implementation Summary
+## Phase 5: Performance Optimizations
 
-### Files to Modify:
+### 5.1 Debounce Lot Size Input
+
+**File:** `src/components/ui/lot-size-input.tsx`
+
+Add debounce to prevent rapid state updates:
+
+```typescript
+import { useCallback, useState, useEffect, useRef } from 'react';
+
+// Debounced onChange
+const debouncedOnChange = useRef(
+  debounce((value: number) => onChange(value), 150)
+).current;
+
+const handleChange = (newValue: number) => {
+  setInternalValue(newValue);
+  debouncedOnChange(newValue);
+};
+```
+
+### 5.2 Stale-While-Revalidate for Account List
+
+**File:** `src/pages/Charts.tsx` and `src/pages/Index.tsx`
+
+Cache account list in localStorage:
+
+```typescript
+const CACHE_KEY = 'humi_accounts_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const getCachedAccounts = () => {
+  const cached = localStorage.getItem(CACHE_KEY);
+  if (!cached) return null;
+  const { data, timestamp } = JSON.parse(cached);
+  if (Date.now() - timestamp < CACHE_TTL) return data;
+  return null;
+};
+
+const setCachedAccounts = (data: TradingAccount[]) => {
+  localStorage.setItem(CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
+};
+
+// In loadAccounts:
+const cached = getCachedAccounts();
+if (cached) {
+  setAccounts(cached); // Show immediately
+}
+// Then fetch fresh data in background
+```
+
+---
+
+## Implementation Files Summary
+
 | File | Changes |
 |------|---------|
-| `supabase/functions/metaapi-provision-account/index.ts` | Fix URL typo, enhance error handling |
-| `src/components/ui/lot-size-input.tsx` | NEW - Reusable lot size component |
-| `src/components/deriv/DerivQuickTrade.tsx` | Add lot size input for MetaAPI accounts |
-| `src/pages/TradingIdeas.tsx` | Use LotSizeInput component |
-| `src/components/ConnectAccountModal.tsx` | Add server suggestions, improve UX |
-| `supabase/functions/metaapi-enable-copy-factory/index.ts` | Fix CopyFactory role configuration |
-| `supabase/functions/copyfactory-create-strategy/index.ts` | NEW - Create provider strategy |
-| `supabase/functions/copyfactory-subscribe/index.ts` | NEW - Subscribe to strategy |
-| `src/pages/CopyTradingNew.tsx` | Add MetaAPI CopyFactory tab |
+| `src/pages/Charts.tsx` | Fix account query, add missing fields, rename 'metaapi' source |
+| `src/pages/Index.tsx` | Add Install App + Trading Accounts buttons, PWA state, source label mapping |
+| `src/config/watchlist.ts` | Update synthetic symbol names to match Deriv format |
+| `src/components/WatchlistDropdown.tsx` | Add dynamic Deriv synthetics fetching |
+| `src/components/deriv/DerivQuickTrade.tsx` | Add synthetic validation, risk warning, mobile drawer |
+| `src/components/ConnectAccountModal.tsx` | Remove "MetaAPI" from user-facing text |
+| `src/pages/TradingAccounts.tsx` | Update empty state text |
+| `src/services/derivMarketData.ts` | Add getInstrumentsByCategory function |
+| `src/index.css` | Add mobile touch target styles |
+| `src/components/ui/lot-size-input.tsx` | Add debounce |
 
-### Verification Steps:
-1. **Test Provisioning**: Add a new Headway-Demo account → Should succeed with metaapi_account_id
-2. **Test Balance Fetch**: Refresh the newly added account → Should show balance/equity
-3. **Test Trade Execution**: Place 0.01 lot BUY EURUSD → Should execute via MetaAPI
-4. **Test Lot Size Input**: Verify +/- buttons and manual entry work correctly
-5. **Test Copy Trading**: Enable account as provider → Should appear in copy trading list
+---
 
-### Priority Order:
-1. **CRITICAL**: Fix the provisioning URL typo (Phase 1.1)
-2. **HIGH**: Create LotSizeInput component (Phase 2)
-3. **MEDIUM**: Implement CopyFactory endpoints (Phase 4)
-4. **LOW**: Unified dashboard enhancements (Phase 5)
+## Testing Checklist
+
+1. **Charts Page Bug:**
+   - [ ] Navigate to /charts → All connected accounts appear in dropdown
+   - [ ] Both Deriv and MT4/MT5 accounts show correctly
+   - [ ] Account switching works
+
+2. **PWA Install:**
+   - [ ] On mobile browser, "Install App" button appears in Quick Actions
+   - [ ] Clicking triggers browser install prompt
+   - [ ] Button hides after installation
+
+3. **Trading Accounts Button:**
+   - [ ] "Trading Accounts" button appears in Quick Actions
+   - [ ] Clicking navigates to /accounts
+
+4. **Branding Cleanup:**
+   - [ ] No "MetaAPI" text visible to users
+   - [ ] No "Deriv API" text visible (except official Deriv references)
+   - [ ] Trade sources show "Deriv" or "Broker" not "metaapi"
+
+5. **Synthetic Trading:**
+   - [ ] Volatility indices appear in symbol search
+   - [ ] Risk warning shows for synthetics
+   - [ ] MT4/MT5 accounts blocked from trading synthetics
+   - [ ] Deriv accounts can successfully trade R_100
+
+6. **Mobile UX:**
+   - [ ] Trade ticket opens as bottom sheet on mobile
+   - [ ] All buttons have 48px touch targets
+   - [ ] Lot size +/- buttons easily tappable
+
+---
+
+## Technical Notes
+
+### Synthetic Symbol Detection Logic
+```typescript
+const SYNTHETIC_PREFIXES = ['R_', '1HZ', 'BOOM', 'CRASH', 'JD', 'stpRNG', 'RDBEAR', 'RDBULL'];
+
+function isSyntheticDerivSymbol(derivSymbol: string): boolean {
+  return SYNTHETIC_PREFIXES.some(p => derivSymbol.startsWith(p));
+}
+```
+
+### Account Capability Matrix
+| Account Type | Forex | Crypto | Synthetics | CFD |
+|-------------|-------|--------|------------|-----|
+| Deriv (CR/VRTC) | ✅ | ✅ | ✅ | ❌ |
+| Deriv MT5 | ✅ | ✅ | ❌ | ✅ |
+| Other MT4/MT5 | ✅ | ✅* | ❌ | ✅ |
+
+*Depends on broker
+
+---
+
+## Priority Order
+
+1. **CRITICAL**: Fix /charts account selection bug (Phase 1.1)
+2. **HIGH**: Branding cleanup - remove MetaAPI references (Phase 2)
+3. **HIGH**: Add Trading Accounts + Install App buttons (Phase 1.2, 1.3)
+4. **MEDIUM**: Synthetic trading validation & warnings (Phase 3.4, 3.5)
+5. **MEDIUM**: Dynamic synthetic symbol fetching (Phase 3.2, 3.3)
+6. **LOW**: Mobile UX enhancements (Phase 4)
+7. **LOW**: Performance optimizations (Phase 5)
+
+Let's make sure that we also Integrate the CopyFactory to the App, we want to be sure that our users can access and use the Copy Trading from the HuMi App efficiently. This should be easy to use and easy on the eyes of our users.
