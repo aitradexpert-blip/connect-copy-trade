@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import AppLayout from "@/components/AppLayout";
-import RiskCalculator from "@/components/RiskCalculator";
-import { TrendingUp, TrendingDown, Play, Zap } from "lucide-react";
+import { LotSizeInput } from "@/components/ui/lot-size-input";
+import { TrendingUp, TrendingDown, Play, Zap, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,11 +41,20 @@ export default function TradingIdeas() {
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
-  const [calculatedLotSize, setCalculatedLotSize] = useState<number>(0);
+  const [manualLotSize, setManualLotSize] = useState<number>(0.01);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+
+  // Calculate estimated risk percentage
+  const calculateRiskPercent = (): number => {
+    const account = accounts.find(a => a.id === selectedAccount);
+    if (!account || !account.balance || account.balance === 0) return 0;
+    // Rough estimate: $10 per pip per lot for major pairs
+    const estimatedRiskPerLot = 100; // $100 risk per lot as baseline
+    return (manualLotSize * estimatedRiskPerLot / account.balance) * 100;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -93,7 +103,7 @@ export default function TradingIdeas() {
 
     setExecuting(true);
     try {
-      const lotSize = calculatedLotSize > 0 ? calculatedLotSize : selectedSignal.lot_size;
+      const lotSize = manualLotSize > 0 ? manualLotSize : selectedSignal.lot_size;
       
       // Create the trade signal
       const signal: TradeSignal = {
@@ -246,7 +256,9 @@ export default function TradingIdeas() {
                 <Dialog open={selectedSignal?.id === signal.id} onOpenChange={(open) => {
                   if (!open) {
                     setSelectedSignal(null);
-                    setCalculatedLotSize(0);
+                    setManualLotSize(signal.lot_size || 0.01);
+                  } else {
+                    setManualLotSize(signal.lot_size || 0.01);
                   }
                 }}>
                   <DialogTrigger asChild>
@@ -286,15 +298,21 @@ export default function TradingIdeas() {
                         </Select>
                       </div>
 
-                      {selectedAccount && signal.stop_loss && (
-                        <div className="border-t pt-4">
-                          <RiskCalculator
-                            accountBalance={accounts.find(a => a.id === selectedAccount)?.balance || 0}
-                            stopLossPips={50} // Simplified - would calculate from signal.stop_loss
-                            onCalculate={setCalculatedLotSize}
-                          />
-                        </div>
-                      )}
+                      {/* Editable Lot Size */}
+                      <div className="space-y-2">
+                        <Label>Lot Size</Label>
+                        <LotSizeInput
+                          value={manualLotSize}
+                          onChange={setManualLotSize}
+                          min={0.01}
+                          max={10}
+                          step={0.01}
+                        />
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Estimated Risk: ~{calculateRiskPercent().toFixed(1)}% of account balance
+                        </p>
+                      </div>
 
                       <div className="bg-accent/50 p-3 rounded-lg">
                         <div className="text-sm space-y-1">
@@ -308,10 +326,20 @@ export default function TradingIdeas() {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Lot Size:</span>
-                            <span className="font-medium">
-                              {calculatedLotSize > 0 ? calculatedLotSize.toFixed(2) : signal.lot_size}
-                            </span>
+                            <span className="font-medium">{manualLotSize.toFixed(2)}</span>
                           </div>
+                          {signal.stop_loss && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Stop Loss:</span>
+                              <span className="font-medium">{signal.stop_loss}</span>
+                            </div>
+                          )}
+                          {signal.take_profit && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Take Profit:</span>
+                              <span className="font-medium">{signal.take_profit}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 

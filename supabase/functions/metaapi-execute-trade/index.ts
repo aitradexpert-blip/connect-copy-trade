@@ -19,6 +19,22 @@ interface MetaApiTradeRequest {
   comment?: string
 }
 
+// Normalize symbol for MetaAPI (remove slashes, handle common formats)
+function normalizeSymbol(symbol: string): string {
+  // Remove slashes and spaces
+  let normalized = symbol.replace(/[\s\/]/g, '').toUpperCase();
+  
+  // Common symbol mappings for MetaAPI
+  const SYMBOL_MAP: Record<string, string> = {
+    'XAUUSD': 'XAUUSD',
+    'GOLD': 'XAUUSD',
+    'XAGUSD': 'XAGUSD',
+    'SILVER': 'XAGUSD',
+  };
+  
+  return SYMBOL_MAP[normalized] || normalized;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -72,9 +88,12 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Normalize symbol for MetaAPI compatibility
+    const normalizedSymbol = normalizeSymbol(trade.symbol);
+    
     const tradeData: MetaApiTradeRequest = {
       actionType,
-      symbol: trade.symbol,
+      symbol: normalizedSymbol,
       volume: trade.volume,
       stopLoss: trade.stopLoss,
       takeProfit: trade.takeProfit,
@@ -82,6 +101,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Executing trade for account ${accountId}:`, tradeData)
+    console.log(`Original symbol: ${trade.symbol} -> Normalized: ${normalizedSymbol}`)
 
     let resp;
     let result;

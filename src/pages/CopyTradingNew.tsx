@@ -38,6 +38,7 @@ interface MasterTrader {
   account_id: string;
   source: 'local' | 'deriv';
   token?: string; // For Deriv copy trading
+  isOwn?: boolean; // Flag if this is the user's own account
 }
 
 interface CopyStats {
@@ -142,37 +143,39 @@ export default function CopyTradingNew() {
           user_id,
           display_id,
           is_virtual
-        `)
-        .neq("user_id", user.id);
+        `);
+      // Note: Removed .neq("user_id", user.id) to allow users to see and copy their own accounts
 
       if (mastersError) {
         console.error("Error loading masters:", mastersError);
         // Fallback to direct query if view doesn't exist
         const { data: fallbackData } = await supabase
           .from("trading_accounts")
-          .select("id,name,platform,balance,user_id")
-          .eq("is_master", true)
-          .neq("user_id", user.id);
+          .select("id,name,platform,balance,user_id,is_master")
+          .eq("is_master", true);
+          // Removed .neq("user_id", user.id) to allow users to see their own master accounts
         
         const masters = (fallbackData || []).map((master: any) => ({
           id: master.id,
           name: master.name,
-          user_email: "Master Trader",
+          user_email: master.user_id === user?.id ? "Your Account" : "Master Trader",
           performance: 12.5,
           followers: 0,
           account_id: master.id,
-          source: 'local' as const
+          source: 'local' as const,
+          isOwn: master.user_id === user?.id
         }));
         setMasterTraders(masters);
       } else {
         const masters = (mastersData || []).map((master: any) => ({
           id: master.id,
           name: master.name,
-          user_email: master.is_virtual ? "Demo Master" : "Master Trader",
+          user_email: master.user_id === user?.id ? "Your Account" : (master.is_virtual ? "Demo Master" : "Master Trader"),
           performance: 12.5,
           followers: 0,
           account_id: master.id,
-          source: 'local' as const
+          source: 'local' as const,
+          isOwn: master.user_id === user?.id
         }));
         setMasterTraders(masters);
       }
