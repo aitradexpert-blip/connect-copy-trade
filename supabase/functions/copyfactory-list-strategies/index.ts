@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
 
-const COPYFACTORY_API_URL = 'https://copyfactory-api-v1.agiliumtrade.agiliumtrade.ai'
+const COPYFACTORY_API_URL = 'https://copyfactory-api-v1.london.agiliumtrade.ai'
 
 interface StrategyInfo {
   _id: string
