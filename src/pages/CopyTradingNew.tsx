@@ -503,7 +503,7 @@ export default function CopyTradingNew() {
 
   // Create a CopyFactory strategy (become a provider)
   const createCopyFactoryStrategy = async () => {
-    const metaApiAccount = accounts.find(acc => acc.metaapi_account_id && !acc.is_master);
+    const metaApiAccount = accounts.find(acc => acc.metaapi_account_id);
     
     if (!metaApiAccount?.metaapi_account_id) {
       toast({
@@ -525,6 +525,32 @@ export default function CopyTradingNew() {
 
     setCreatingStrategy(true);
     try {
+      // Step 1: Enable CopyFactory PROVIDER role on the account
+      console.log('[CopyTrading] Step 1: Enabling CopyFactory PROVIDER role...');
+      toast({
+        title: "Setting up provider role...",
+        description: "Configuring your account for copy trading",
+      });
+
+      const { data: enableData, error: enableError } = await supabase.functions.invoke(
+        'metaapi-enable-copy-factory',
+        {
+          body: {
+            accountId: metaApiAccount.metaapi_account_id,
+            copyFactoryRoles: ['PROVIDER'],
+          }
+        }
+      );
+
+      if (enableError) {
+        console.error('[CopyTrading] Failed to enable CopyFactory role:', enableError);
+        // Continue anyway - might already be enabled or we'll get a clearer error in step 2
+      } else {
+        console.log('[CopyTrading] CopyFactory PROVIDER role enabled:', enableData);
+      }
+
+      // Step 2: Create the strategy
+      console.log('[CopyTrading] Step 2: Creating strategy...');
       const { data, error } = await supabase.functions.invoke('copyfactory-create-strategy', {
         body: {
           accountId: metaApiAccount.metaapi_account_id,
@@ -534,10 +560,14 @@ export default function CopyTradingNew() {
       });
 
       if (error) throw error;
+      
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to create strategy');
+      }
 
       toast({
         title: "Strategy created!",
-        description: `Your strategy "${strategyName}" is now available for others to copy`,
+        description: `Your strategy "${strategyName}" is now available for others to copy. Strategy ID: ${data.strategyId}`,
       });
 
       setStrategyName("");
@@ -555,7 +585,7 @@ export default function CopyTradingNew() {
       console.error('[CopyTrading] Error creating strategy:', error);
       toast({
         title: "Failed to create strategy",
-        description: error.message,
+        description: error.message || 'Unknown error occurred',
         variant: "destructive",
       });
     } finally {
@@ -580,14 +610,42 @@ export default function CopyTradingNew() {
     }
 
     try {
+      // Step 1: Enable CopyFactory SUBSCRIBER role on the account
+      console.log('[CopyTrading] Enabling SUBSCRIBER role...');
+      toast({
+        title: "Setting up subscription...",
+        description: "Configuring your account for copy trading",
+      });
+
+      const { error: enableError } = await supabase.functions.invoke(
+        'metaapi-enable-copy-factory',
+        {
+          body: {
+            accountId: subscriberAccount.metaapi_account_id,
+            copyFactoryRoles: ['SUBSCRIBER'],
+          }
+        }
+      );
+
+      if (enableError) {
+        console.error('[CopyTrading] Failed to enable SUBSCRIBER role:', enableError);
+        // Continue anyway - might already be enabled
+      }
+
+      // Step 2: Subscribe to the strategy
+      console.log('[CopyTrading] Subscribing to strategy:', strategyId);
       const { data, error } = await supabase.functions.invoke('copyfactory-subscribe', {
         body: {
           strategyId,
-          subscriberAccountId: subscriberAccount.metaapi_account_id,
+          subscriberId: subscriberAccount.metaapi_account_id,
         }
       });
 
       if (error) throw error;
+      
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to subscribe');
+      }
 
       toast({
         title: "Successfully subscribed!",
@@ -596,9 +654,10 @@ export default function CopyTradingNew() {
 
       loadCopyFactoryStrategies();
     } catch (error: any) {
+      console.error('[CopyTrading] Subscription error:', error);
       toast({
         title: "Subscription failed",
-        description: error.message,
+        description: error.message || 'Unknown error occurred',
         variant: "destructive",
       });
     }
