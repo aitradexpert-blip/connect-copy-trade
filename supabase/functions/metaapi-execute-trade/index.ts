@@ -149,6 +149,22 @@ Deno.serve(async (req) => {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       
+       // Log credit usage for trade execution
+       await fetch(`${supabaseUrl}/rest/v1/credit_usage`, {
+         method: 'POST',
+         headers: {
+           'apikey': supabaseKey,
+           'Authorization': `Bearer ${supabaseKey}`,
+           'Content-Type': 'application/json'
+         },
+         body: JSON.stringify({
+           user_id: trade.user_id,
+           service: 'trade_execution',
+           credits_used: 2,
+           description: `Trade executed: ${trade.direction} ${trade.volume} ${trade.symbol}`
+         })
+       });
+ 
       await fetch(`${supabaseUrl}/rest/v1/trade_history`, {
         method: 'POST',
         headers: {

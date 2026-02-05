@@ -25,6 +25,8 @@ import Analytics from "./pages/Analytics";
 import CryptoWallet from "./pages/CryptoWallet";
 import CreditUsage from "./pages/CreditUsage";
 import KhumoIntroModal from "./components/KhumoIntroModal";
+ import Notifications from "./pages/Notifications";
+ import ApiDocs from "./pages/ApiDocs";
 
 const queryClient = new QueryClient();
 
@@ -125,6 +127,8 @@ const App = () => (
             <Route path="/wallet" element={<ProtectedRoute><CryptoWallet /></ProtectedRoute>} />
             <Route path="/credits" element={<ProtectedRoute><CreditUsage /></ProtectedRoute>} />
             <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
+           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+           <Route path="/api-docs" element={<ApiDocs />} />
             <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
             <Route path="/admin-panel" element={<AdminRoute><AdminPanel /></AdminRoute>} />
             <Route path="/deriv-callback" element={<DerivCallbackRoute><DerivCallback /></DerivCallbackRoute>} />

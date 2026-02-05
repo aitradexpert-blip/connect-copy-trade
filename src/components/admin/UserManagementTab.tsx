@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+ import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Users, Trash2, CheckCircle, Crown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+ import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
 
 interface User {
   id: string;
@@ -30,15 +31,10 @@ interface User {
   }[];
 }
 
-const SUBSCRIPTION_PLANS = [
-  { value: 'basic', label: 'Basic', price: 'R99/mo' },
-  { value: 'professional', label: 'Professional', price: 'R299/mo' },
-  { value: 'enterprise', label: 'Enterprise', price: 'R399/mo' },
-];
-
 export function UserManagementTab() {
   const { user: adminUser } = useAuth();
   const { toast } = useToast();
+   const { plans: dbPlans } = useSubscriptionPlans();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -49,6 +45,22 @@ export function UserManagementTab() {
   const [processing, setProcessing] = useState(false);
   const [modalTab, setModalTab] = useState<'account' | 'subscription'>('account');
 
+   // Transform database plans to dropdown format
+   const SUBSCRIPTION_PLANS = useMemo(() => {
+     if (dbPlans.length === 0) {
+       return [
+         { value: 'basic', label: 'Basic', price: 'R99/mo' },
+         { value: 'professional', label: 'Professional', price: 'R299/mo' },
+         { value: 'enterprise', label: 'Enterprise', price: 'R399/mo' },
+       ];
+     }
+     return dbPlans.map(plan => ({
+       value: plan.name.toLowerCase(),
+       label: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
+       price: `R${plan.price_zar}/mo`,
+     }));
+   }, [dbPlans]);
+ 
   useEffect(() => {
     loadUsers();
   }, []);
