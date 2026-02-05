@@ -1,4 +1,4 @@
-import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun } from "lucide-react";
+ import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Check } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +13,15 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+ import { useNotifications } from "@/hooks/useNotifications";
+ import { formatDistanceToNow } from "date-fns";
+ import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function TopHeader() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(10);
 
   const handleLogout = async () => {
     await signOut();
@@ -51,19 +55,69 @@ export function TopHeader() {
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
               <Bell className="w-5 h-5" />
-              <Badge
-                variant="destructive"
-                className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
-              >
-                0
-              </Badge>
+               {unreadCount > 0 && (
+                 <Badge
+                   variant="destructive"
+                   className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
+                 >
+                   {unreadCount > 9 ? '9+' : unreadCount}
+                 </Badge>
+               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-72 bg-popover border border-border">
-            <div className="text-sm font-medium mb-2">Notifications</div>
-            <div className="text-sm text-muted-foreground py-4 text-center">
-              You're all caught up.
-            </div>
+           <PopoverContent align="end" className="w-80 p-0 bg-popover border border-border">
+             <div className="flex items-center justify-between p-3 border-b border-border">
+               <span className="text-sm font-medium">Notifications</span>
+               {unreadCount > 0 && (
+                 <Button variant="ghost" size="sm" className="text-xs h-7" onClick={markAllAsRead}>
+                   Mark all read
+                 </Button>
+               )}
+             </div>
+             <ScrollArea className="max-h-80">
+               {notifications.length === 0 ? (
+                 <div className="text-sm text-muted-foreground py-8 text-center">
+                   You're all caught up.
+                 </div>
+               ) : (
+                 <div className="divide-y divide-border">
+                   {notifications.slice(0, 5).map((notification) => (
+                     <div 
+                       key={notification.id} 
+                       className={`p-3 hover:bg-muted/50 cursor-pointer ${!notification.read ? 'bg-primary/5' : ''}`}
+                       onClick={() => {
+                         if (!notification.read) markAsRead(notification.id);
+                         if (notification.data?.link) navigate(notification.data.link);
+                       }}
+                     >
+                       <div className="flex items-start gap-2">
+                         <div className="flex-1 min-w-0">
+                           <p className="text-sm font-medium truncate">{notification.title}</p>
+                           <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
+                           <p className="text-xs text-muted-foreground mt-1">
+                             {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                           </p>
+                         </div>
+                         {!notification.read && (
+                           <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                         )}
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
+             </ScrollArea>
+             {notifications.length > 0 && (
+               <div className="p-2 border-t border-border">
+                 <Button 
+                   variant="ghost" 
+                   className="w-full text-xs" 
+                   onClick={() => navigate('/notifications')}
+                 >
+                   View all notifications
+                 </Button>
+               </div>
+             )}
           </PopoverContent>
         </Popover>
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+ import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const USD_TO_ZAR = 18;
+ import { useSubscriptionPlans, getFeatureList } from "@/hooks/useSubscriptionPlans";
 
 interface Plan {
   name: string;
@@ -22,54 +21,6 @@ interface Plan {
   popular?: boolean;
 }
 
-const plans: Plan[] = [
-  {
-    name: "Basic",
-    priceUsd: 9.90,
-    priceZar: 9.90 * USD_TO_ZAR,
-    tier: "basic",
-    features: [
-      "10 Auto-trades per month",
-      "2 Trading accounts",
-      "1 Copy trading connection",
-      "Email support (48h response)",
-      "Basic analytics"
-    ]
-  },
-  {
-    name: "Professional",
-    priceUsd: 29.90,
-    priceZar: 29.90 * USD_TO_ZAR,
-    tier: "professional",
-    popular: true,
-    features: [
-      "30 Auto-trades per month",
-      "5 Trading accounts",
-      "3 Copy trading connections",
-      "Priority email + Live chat",
-      "Advanced analytics",
-      "Custom risk settings",
-      "AI Bot access"
-    ]
-  },
-  {
-    name: "Enterprise",
-    priceUsd: 39.99,
-    priceZar: 39.99 * USD_TO_ZAR,
-    tier: "enterprise",
-    features: [
-      "Unlimited Auto-trades",
-      "10 Trading accounts",
-      "5 Copy trading connections",
-      "24/7 Phone + VIP support",
-      "Full analytics suite",
-      "Custom risk settings",
-      "All AI Bots",
-      "Dedicated account manager"
-    ]
-  }
-];
-
 export default function Subscription() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -78,6 +29,20 @@ export default function Subscription() {
   const [showProofDialog, setShowProofDialog] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+   const { plans: dbPlans, loading: plansLoading } = useSubscriptionPlans();
+ 
+   // Transform database plans to UI format
+   const plans: Plan[] = useMemo(() => {
+     if (dbPlans.length === 0) return [];
+     return dbPlans.map(plan => ({
+       name: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
+       priceUsd: plan.price_usd,
+       priceZar: plan.price_zar,
+       tier: plan.name.toLowerCase(),
+       features: getFeatureList(plan),
+       popular: plan.name.toLowerCase() === 'professional',
+     }));
+   }, [dbPlans]);
 
   const handleYocoPayment = async (plan: Plan) => {
     if (!user) {
@@ -209,8 +174,13 @@ export default function Subscription() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {plans.map((plan) => (
+         {plansLoading ? (
+           <div className="flex items-center justify-center py-12">
+             <Loader2 className="w-8 h-8 animate-spin text-primary" />
+           </div>
+         ) : (
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             {plans.map((plan) => (
             <Card 
               key={plan.name} 
               className={`relative bg-gradient-card border-border shadow-card ${
@@ -264,9 +234,10 @@ export default function Subscription() {
                   )}
                 </Button>
               </CardContent>
-            </Card>
-          ))}
-        </div>
+             </Card>
+           ))}
+           </div>
+         )}
 
         <div className="text-center text-sm text-muted-foreground">
           <p>All payments are processed securely via Yoco.</p>

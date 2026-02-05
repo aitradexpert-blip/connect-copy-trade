@@ -8,8 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Bell, Shield, Globe, Palette, Database, Mic, Wrench } from "lucide-react";
+ import { Bell, Shield, Globe, Palette, Database, Mic, Wrench, Code } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
@@ -34,6 +35,7 @@ interface UserSettings {
 export default function Settings() {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
+   const navigate = useNavigate();
   const [settings, setSettings] = useState<UserSettings>({
     email_notifications: {
       trading_signals: true,
@@ -530,16 +532,26 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* Developer & Diagnostics */}
+         {/* Developer & API */}
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Wrench className="w-5 h-5" />
-              Developer & Diagnostics
+               Developer & API
             </CardTitle>
-            <CardDescription>Tools for debugging and testing integrations</CardDescription>
+             <CardDescription>API documentation and debugging tools</CardDescription>
           </CardHeader>
-          <CardContent>
+           <CardContent className="space-y-4">
+             <div className="flex items-center justify-between">
+               <div>
+                 <p className="font-medium">API Documentation</p>
+                 <p className="text-sm text-muted-foreground">For brokers and enterprise integration partners</p>
+               </div>
+               <Button variant="outline" size="sm" onClick={() => navigate('/api-docs')}>
+                 <Code className="w-4 h-4 mr-2" />
+                 View Docs
+               </Button>
+             </div>
             <DerivDiagnostic />
           </CardContent>
         </Card>
