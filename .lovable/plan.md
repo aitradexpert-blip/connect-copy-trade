@@ -1,509 +1,388 @@
 
-# Synthetic Indexes Trading & UX Enhancement Plan
+# Full Implementation Plan: Notifications, API Docs, Credits & Admin System
 
-## Overview
-This plan implements comprehensive Synthetic Indexes trading support, fixes the /charts page account selection bug, adds an Install App PWA button to Quick Actions, adds Trading Accounts button to Quick Actions, and replaces all visible "MetaAPI"/"Deriv API" branding with user-friendly terminology.
+## Executive Summary
+
+This plan addresses five critical areas:
+1. **Notification Center** - Real-time alerts for copy trading, ideas, AI bot trades
+2. **API Documentation Page** - Public-facing docs for broker & enterprise integration
+3. **Credits Monitoring** - Fix non-functional credit tracking system
+4. **Subscription & Admin System** - Sync pricing, fix admin access, enable plan assignment
+5. **Platform Documentation** - Comprehensive business/investor-ready documentation
 
 ---
 
-## Phase 1: Bug Fixes & Quick Wins
+## Phase 1: Fix Credits Monitoring System
 
-### 1.1 Fix /charts Page Account Selection Bug
+### Problem Identified
+The `credit_usage` table exists but is **never populated**. Edge functions and client-side actions don't log credit usage.
 
-**Root Cause Analysis:**
-Looking at `src/pages/Charts.tsx` (lines 139-157), the `loadAccounts()` function fetches:
+### Solution
+
+#### 1.1 Create Credit Service (`src/services/creditService.ts`)
+```text
+New service file with:
+- CREDIT_COSTS constant defining costs per service
+- deductCredits() function to log usage to database
+- getRemainingCredits() function to check balance
+```
+
+**Credit Costs:**
+- `khumo_ai_query`: 5 credits
+- `trade_execution`: 2 credits
+- `copy_trade_setup`: 3 credits
+- `signal_unlock`: 1 credit
+- `voice_assistant`: 3 credits
+
+#### 1.2 Instrument Edge Functions
+
+**Files to modify:**
+| Edge Function | Credit Type | Credits |
+|--------------|-------------|---------|
+| `voice-ai-assistant/index.ts` | `khumo_ai_query` | 5 |
+| `metaapi-execute-trade/index.ts` | `trade_execution` | 2 |
+| `deriv-execute-signal/index.ts` | `trade_execution` | 2 |
+| `auto-execute-signal/index.ts` | `ai_bot_trade` | 2 per execution |
+
+Add credit logging after successful operations.
+
+#### 1.3 Database Migration
+Add INSERT policy to allow authenticated users to log their own credit usage:
+```sql
+CREATE POLICY "Users can insert own credit usage"
+ON public.credit_usage FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+```
+
+---
+
+## Phase 2: Fix Subscription & Admin System
+
+### Problem Identified
+**Major pricing inconsistency:**
+
+| Source | Basic | Professional | Enterprise |
+|--------|-------|--------------|------------|
+| Database (`subscription_plans`) | R9.90 | R29.90 | R39.99 |
+| Frontend (`Pricing.tsx`) | R178.20 | R538.20 | R719.82 |
+| Admin (`UserManagementTab.tsx`) | R99 | R299 | R399 |
+
+### Solution
+
+#### 2.1 Update Database Pricing (Migration)
+Align database with intended ZAR pricing:
+```sql
+UPDATE subscription_plans SET price_zar = 99, price_usd = 5.50 WHERE name = 'basic';
+UPDATE subscription_plans SET price_zar = 299, price_usd = 16.61 WHERE name = 'professional';
+UPDATE subscription_plans SET price_zar = 399, price_usd = 22.17 WHERE name = 'enterprise';
+```
+
+#### 2.2 Create Subscription Plans Hook (`src/hooks/useSubscriptionPlans.ts`)
+```text
+New hook that:
+- Fetches plans from subscription_plans table
+- Returns plans with price_zar, price_usd, features
+- Caches data to avoid repeated queries
+```
+
+#### 2.3 Update Pricing Pages
+**Files to modify:**
+- `src/pages/Pricing.tsx` - Replace hardcoded `plans` array with database query
+- `src/pages/Subscription.tsx` - Replace hardcoded `plans` array with database query
+- `src/components/admin/UserManagementTab.tsx` - Replace `SUBSCRIPTION_PLANS` constant with database query
+
+#### 2.4 Admin Subscription Assignment
+The existing `UserManagementTab.tsx` already supports plan assignment. Changes:
+- Fetch plans from database instead of hardcoded array
+- Ensure subscription modal displays accurate pricing
+- Add activity logging for admin actions
+
+---
+
+## Phase 3: Real-Time Notification Center
+
+### Database Schema
+
+**New table: `notifications`**
+```text
+Columns:
+- id (UUID, primary key)
+- user_id (UUID, references auth.users)
+- type (TEXT) - e.g., 'COPY_TRADE_EXECUTED', 'NEW_IDEA_PUBLISHED', 'AI_BOT_TRADE'
+- title (TEXT)
+- message (TEXT)
+- data (JSONB) - For links, IDs, metadata
+- read (BOOLEAN, default false)
+- created_at (TIMESTAMPTZ, default now())
+
+RLS Policies:
+- Users can SELECT own notifications
+- Users can UPDATE own notifications (mark as read)
+- Service role can INSERT (for edge functions)
+```
+
+### Implementation Files
+
+#### 3.1 Notification Service (`src/services/notificationService.ts`)
+```text
+Functions:
+- createNotification(userId, type, title, message, data)
+- markAsRead(notificationId)
+- markAllAsRead(userId)
+```
+
+#### 3.2 Notification Hook (`src/hooks/useNotifications.ts`)
+```text
+Hook that:
+- Fetches recent notifications on mount
+- Subscribes to Supabase Realtime for new notifications
+- Returns notifications, unreadCount, markAsRead(), markAllAsRead()
+```
+
+#### 3.3 Update TopHeader.tsx
+```text
+Replace static notification popover with:
+- Real-time unread count from useNotifications hook
+- Dropdown showing recent notifications
+- Click to navigate based on notification.data
+- "Mark all as read" button
+- "View All" link to /notifications page
+```
+
+#### 3.4 New Notifications Page (`src/pages/Notifications.tsx`)
+```text
+Full-page notification history:
+- Filter by type (Copy Trading, Ideas, AI Bot, System)
+- Mark individual/all as read
+- Pagination for history
+```
+
+#### 3.5 Trigger Notifications from Edge Functions
+
+**`auto-execute-signal/index.ts`:**
+After successful AI bot execution, insert notification:
+```text
+Type: AI_BOT_TRADE
+Title: "AI Bot Trade Executed"
+Message: "Khumo AI executed BUY EURUSD on {account}"
+```
+
+**`Admin.tsx` (client-side):**
+After publishing trading idea:
+```text
+Type: NEW_IDEA_PUBLISHED
+Title: "New Trading Idea"
+Message: "{symbol} {direction} signal published"
+(Broadcast to all subscribed users)
+```
+
+**`copy-trade-listener/index.ts` or subscription handler:**
+```text
+Type: COPY_TRADE_EXECUTED
+Title: "Trade Copied"
+Message: "Master {name} opened {direction} {symbol}. Copied to {account}."
+```
+
+### Route Addition
+Add to `src/App.tsx`:
 ```typescript
-.select('id, name, balance, provider, deriv_token, is_virtual')
+<Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 ```
 
-This is **missing critical fields**:
-- `connection_type`
-- `metaapi_account_id`
-- `connection_status`
+---
 
-Meanwhile, `DerivQuickTrade.tsx` (lines 71-76) correctly fetches all fields including `connection_type` and `connection_status='connected'`.
+## Phase 4: API Documentation Page
 
-**The Fix:**
-Update `src/pages/Charts.tsx` line 143-146:
+### New Page: `src/pages/ApiDocs.tsx`
 
+**Structure:**
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ HuMi Partner Integration Hub                                │
+│ "Integrate Your Brokerage or Enterprise with HuMi"         │
+├─────────────────────────────────────────────────────────────┤
+│ [Overview] [For Brokers] [For Enterprise] [API Reference]   │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Integration Pathways                                        │
+│ ┌─────────────────────┐ ┌─────────────────────┐            │
+│ │ MetaAPI Bridge      │ │ Direct API          │            │
+│ │ Quick MT4/MT5       │ │ Custom Enterprise   │            │
+│ │ integration via     │ │ integration with    │            │
+│ │ provisioning        │ │ full API access     │            │
+│ └─────────────────────┘ └─────────────────────┘            │
+│                                                             │
+│ Required Endpoints for Direct Integration:                  │
+│ • Authentication: OAuth 2.0 flow                            │
+│ • Trading: POST /trade, GET /open-positions                 │
+│ • Funding: POST /deposit-url, POST /withdraw-request        │
+│ • Data: GET /account-info, GET /trade-history               │
+│ • Webhooks: trade-update, balance-update                    │
+│                                                             │
+│ ┌─────────────────────────────────────────────────┐        │
+│ │ Contact Our Partnerships Team                   │        │
+│ │ partnerships@humi.app                           │        │
+│ └─────────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Tabs Content:**
+
+**Overview:**
+- What is HuMi Platform
+- Integration benefits for brokers
+- Client volume & market reach
+
+**For Brokers:**
+- MetaAPI provisioning profile setup
+- Required broker server configuration
+- Sample cURL for account connection test
+
+**For Enterprise:**
+- White-label options
+- Custom branding
+- Dedicated infrastructure
+- SLA guarantees
+
+**API Reference:**
+- OAuth2 authorization flow
+- Trading endpoints specification
+- Funding endpoints specification
+- Webhook payload examples
+
+### Route Addition
+Add to `src/App.tsx`:
 ```typescript
-// FROM:
-.select('id, name, balance, provider, deriv_token, is_virtual')
-
-// TO:
-.select('id, name, balance, provider, deriv_token, is_virtual, metaapi_account_id, connection_type, connection_status, broker_name, platform')
-.eq('connection_status', 'connected')
+<Route path="/api-docs" element={<ApiDocs />} />
 ```
 
-Also update the `TradingAccount` interface (line 32-39) to include the missing fields.
-
----
-
-### 1.2 Add "Install App" Button to Quick Actions
-
-**Current State:** PWA install prompt exists as `PWAInstallPrompt.tsx` - a floating banner at bottom.
-
-**Enhancement:** Add an explicit "Install App" button in Quick Actions section for better visibility.
-
-**File:** `src/pages/Index.tsx`
-
-Add a new state hook and button:
-```typescript
-// Add state for PWA install
-const [canInstall, setCanInstall] = useState(false);
-const [installPrompt, setInstallPrompt] = useState<any>(null);
-
-useEffect(() => {
-  const handler = (e: Event) => {
-    e.preventDefault();
-    setInstallPrompt(e);
-    setCanInstall(true);
-  };
-  window.addEventListener('beforeinstallprompt', handler);
-  return () => window.removeEventListener('beforeinstallprompt', handler);
-}, []);
-
-const handleInstallApp = async () => {
-  if (!installPrompt) return;
-  installPrompt.prompt();
-  const { outcome } = await installPrompt.userChoice;
-  if (outcome === 'accepted') {
-    setCanInstall(false);
-    setInstallPrompt(null);
-  }
-};
-```
-
-Add button to Quick Actions section (around line 394-425):
-```tsx
-{canInstall && (
-  <Button onClick={handleInstallApp} variant="outline" className="flex items-center gap-2">
-    <Download className="w-4 h-4" />
-    Install App
-  </Button>
-)}
+### Settings Menu Integration
+Add to `src/pages/Settings.tsx`:
+```text
+New Card "Developer & API" section with:
+- "API Documentation" button linking to /api-docs
+- Brief description: "For brokers and enterprise clients"
 ```
 
 ---
 
-### 1.3 Add "Trading Accounts" Button to Quick Actions
+## Phase 5: Platform Documentation
 
-**File:** `src/pages/Index.tsx`
+### New File: `HUMI_PLATFORM_OVERVIEW.md`
 
-In the Quick Actions section (line ~394-425), add:
-```tsx
-<Button onClick={() => navigate('/accounts')} variant="outline" className="flex items-center gap-2">
-  <CreditCard className="w-4 h-4" />
-  Trading Accounts
-</Button>
-```
+**Document Structure:**
 
-Import `CreditCard` from lucide-react (already imported on line 3).
+```text
+# HuMi: Africa's Capital Management Operating System
 
----
+## I. Executive Summary (For Investors)
+- Core value proposition
+- Market opportunity in South African/African market
+- Revenue model (tiered subscriptions + transfer fees)
+- Competitive moats
 
-## Phase 2: API Branding Cleanup
+## II. Technical Architecture (For Developers)
+- Tech stack: React, Supabase, MetaAPI, Deriv, Bankii
+- Core modules:
+  - Multi-Broker Orchestration
+  - Social & Copy Trading
+  - Khumo AI Suite
+  - Capital Mobility Engine
+  - Unified Wallet
 
-### 2.1 Replace "MetaAPI" with User-Friendly Terms
+## III. Market Analysis (For Investors)
+- The African Problem: fragmented brokers, slow transfers, low trust
+- HuMi's Solution: unification, speed (crypto settlement), community
+- Competitive Moats:
+  - Integration complexity
+  - Local trust & community
+  - Data network effects
+- Future Roadmap:
+  - Short-term: Stokvel pools, local payment rails
+  - Long-term: RegTech, expansion to Nigeria/Kenya
 
-**Goal:** Users should not see internal API names. Replace with broker-centric terminology.
+## IV. For Users
+- Advantages:
+  - One dashboard for all trading
+  - Move money between brokers in hours
+  - Copy top traders
+  - AI market analysis
+- Honest Limitations:
+  - Not a broker (need broker accounts)
+  - Learning curve for advanced features
+  - AI signals are not financial advice
 
-| Current Text | Replacement |
-|-------------|-------------|
-| "MetaAPI" | "MT4/MT5 Broker" or "Trading Bridge" |
-| "Deriv API" | "Deriv" or "Direct Connection" |
-| "metaapi" | "mt4_mt5" (internal) |
-| "via MetaAPI" | "via Trading Bridge" |
-| "deriv_api" | Show as "Deriv Direct" |
-
-**Files to Update:**
-
-1. **`src/components/ConnectAccountModal.tsx`** (lines 160-200):
-   - Line 195: "connected successfully via MetaAPI" → "connected successfully"
-   - Line 265-268: "Connect your MT4 or MT5 account" → keep (good)
-
-2. **`src/components/deriv/DerivQuickTrade.tsx`**:
-   - Line 314: "Execute CFD trades on ${selectedAccountData?.broker_name || 'MT5'}" → keep (shows broker name)
-   - Line 326: "No Deriv accounts connected" → "No trading accounts connected"
-   - Line 333: "Connect Deriv Account" → "Connect Trading Account"
-
-3. **`src/pages/TradingAccounts.tsx`**:
-   - Line 198-200: Provider badge shows "MT4/MT5" → keep (good)
-   - Line 223: "Deriv, MetaTrader, etc." → "your broker accounts (Deriv, MT4, MT5)"
-
-4. **`src/pages/Charts.tsx`**:
-   - Line 48: `source: 'deriv' | 'metaapi'` → `source: 'deriv' | 'broker'`
-   - Line 254: `source: 'metaapi'` → `source: 'broker'`
-
-5. **`src/pages/Index.tsx`**:
-   - Line 43: `source: 'deriv' | 'metaapi' | 'local'` → `source: 'deriv' | 'broker' | 'local'`
-   - Line 547: Badge showing `{trade.source}` - map to friendly names
-
----
-
-## Phase 3: Synthetic Indexes Trading Integration
-
-### 3.1 Update Watchlist with Proper Deriv Symbol Mapping
-
-**Current State:** `src/config/watchlist.ts` has synthetic symbols like "VOLATILITY_25" but these need proper mapping.
-
-**Fix:** Update watchlist to use Deriv-compatible display names:
-
-```typescript
-"SYNTHETIC INDEXES (25)": [
-  "Volatility 10 (1s)", "Volatility 25 (1s)", "Volatility 50 (1s)", "Volatility 75 (1s)", "Volatility 100 (1s)",
-  "Volatility 10", "Volatility 25", "Volatility 50", "Volatility 75", "Volatility 100",
-  "Boom 300", "Boom 500", "Boom 1000",
-  "Crash 300", "Crash 500", "Crash 1000",
-  "Step Index",
-  "Jump 10", "Jump 25", "Jump 50", "Jump 75", "Jump 100",
-  "Range Break 100", "Range Break 200"
-],
-```
-
-The symbol mapping in `src/services/derivWebSocket.ts` (lines 294-316) already handles these correctly.
-
----
-
-### 3.2 Add Dynamic Instrument Discovery via Deriv API
-
-**New Service Function:** `src/services/derivMarketData.ts`
-
-Add function to fetch and categorize active symbols:
-
-```typescript
-export interface InstrumentCategory {
-  name: string;
-  symbols: ActiveSymbol[];
-}
-
-export async function getInstrumentsByCategory(
-  ws?: DerivWS
-): Promise<Record<string, ActiveSymbol[]>> {
-  const symbols = await getActiveSymbols(ws, 'full');
-  
-  const categories: Record<string, ActiveSymbol[]> = {
-    'forex': [],
-    'synthetic': [],
-    'crypto': [],
-    'commodities': [],
-    'indices': [],
-    'stocks': []
-  };
-  
-  for (const sym of symbols) {
-    if (sym.market === 'synthetic_index') {
-      categories.synthetic.push(sym);
-    } else if (sym.market === 'forex') {
-      categories.forex.push(sym);
-    } else if (sym.market === 'cryptocurrency') {
-      categories.crypto.push(sym);
-    } else if (sym.market === 'commodities') {
-      categories.commodities.push(sym);
-    } else if (sym.market === 'indices') {
-      categories.indices.push(sym);
-    }
-  }
-  
-  return categories;
-}
+## V. Feature Matrix
+| Feature | Basic | Professional | Enterprise |
+|---------|-------|--------------|------------|
+| Auto-trades/month | 10 | 30 | Unlimited |
+| Trading accounts | 2 | 5 | 10 |
+| Copy connections | 1 | 3 | 5 |
+| AI Bots | No | Yes | Yes |
+| Priority support | No | Yes | 24/7 |
 ```
 
 ---
 
-### 3.3 Update WatchlistDropdown for Dynamic Synthetics
+## Implementation Summary
 
-**File:** `src/components/WatchlistDropdown.tsx`
+### New Files to Create
+| File | Purpose |
+|------|---------|
+| `src/services/creditService.ts` | Credit deduction logic |
+| `src/services/notificationService.ts` | Notification creation |
+| `src/hooks/useNotifications.ts` | Real-time notification hook |
+| `src/hooks/useSubscriptionPlans.ts` | Database-sourced plans hook |
+| `src/pages/Notifications.tsx` | Full notification history page |
+| `src/pages/ApiDocs.tsx` | Partner API documentation |
+| `HUMI_PLATFORM_OVERVIEW.md` | Platform documentation |
 
-Add dynamic fetching of available synthetics from Deriv:
-
-```typescript
-const [derivSymbols, setDerivSymbols] = useState<Record<string, string[]>>({});
-
-useEffect(() => {
-  const loadDerivSymbols = async () => {
-    try {
-      const ws = getSharedDerivWS();
-      await ws.connect();
-      const response = await ws.send({ active_symbols: 'brief', product_type: 'basic' });
-      
-      // Filter synthetic indices
-      const synthetics = (response.active_symbols || [])
-        .filter((s: any) => s.market === 'synthetic_index' && !s.is_trading_suspended)
-        .map((s: any) => s.display_name);
-      
-      if (synthetics.length > 0) {
-        setDerivSymbols(prev => ({
-          ...prev,
-          'SYNTHETICS (Live)': synthetics
-        }));
-      }
-    } catch (err) {
-      console.warn('Could not fetch Deriv synthetics:', err);
-    }
-  };
-  
-  loadDerivSymbols();
-}, []);
-
-// Merge with static watchlist
-const mergedWatchlist = useMemo(() => ({
-  ...COMPREHENSIVE_WATCHLIST,
-  ...derivSymbols
-}), [derivSymbols]);
-```
-
----
-
-### 3.4 Add Synthetic-Specific Risk Warning
-
-**File:** `src/components/deriv/DerivQuickTrade.tsx`
-
-Add risk warning when synthetic is selected:
-
-```typescript
-const isSyntheticSymbol = (symbol: string): boolean => {
-  const syntheticPatterns = ['Volatility', 'Boom', 'Crash', 'Step', 'Jump', 'Range Break'];
-  return syntheticPatterns.some(p => symbol.includes(p));
-};
-
-// In the JSX, after direction tabs:
-{isSyntheticSymbol(symbol) && (
-  <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-    <div className="flex items-start gap-2">
-      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5" />
-      <div className="text-sm">
-        <p className="font-medium text-amber-600">Synthetic Index</p>
-        <p className="text-muted-foreground text-xs">
-          24/7 simulated market. High volatility. Not tied to real-world assets.
-        </p>
-      </div>
-    </div>
-  </div>
-)}
-```
-
----
-
-### 3.5 Validate Account Supports Synthetic Trading
-
-**File:** `src/components/deriv/DerivQuickTrade.tsx`
-
-Add validation before trade execution:
-
-```typescript
-// MetaAPI accounts cannot trade Deriv synthetics
-if (isMetaApiAccount && isSyntheticSymbol(symbol)) {
-  toast({
-    title: 'Unsupported Instrument',
-    description: 'Synthetic indices can only be traded on Deriv accounts, not MT4/MT5.',
-    variant: 'destructive'
-  });
-  return;
-}
-```
-
----
-
-## Phase 4: Mobile UX Enhancements
-
-### 4.1 Touch Target Sizing
-
-**File:** `src/index.css`
-
-Add global mobile-friendly touch targets:
-
-```css
-@media (max-width: 768px) {
-  button, 
-  [role="button"],
-  input,
-  select,
-  textarea,
-  .touch-target {
-    min-height: 48px;
-    min-width: 48px;
-  }
-  
-  /* Ensure lot size buttons are easily tappable */
-  .lot-size-button {
-    min-width: 48px;
-    min-height: 48px;
-  }
-}
-```
-
-### 4.2 Trade Ticket as Bottom Sheet on Mobile
-
-**Enhancement for `DerivQuickTrade.tsx`:**
-
-Use `vaul` (already installed) for bottom sheet on mobile:
-
-```typescript
-import { useIsMobile } from '@/hooks/use-mobile';
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
-
-// In component:
-const isMobile = useIsMobile();
-
-// In render:
-if (isMobile) {
-  return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent>
-        <DrawerHeader>
-          <DrawerTitle>Quick Trade - {symbol}</DrawerTitle>
-        </DrawerHeader>
-        {/* Same content as Dialog */}
-      </DrawerContent>
-    </Drawer>
-  );
-}
-
-return (
-  <Dialog open={open} onOpenChange={onOpenChange}>
-    {/* Existing Dialog content */}
-  </Dialog>
-);
-```
-
----
-
-## Phase 5: Performance Optimizations
-
-### 5.1 Debounce Lot Size Input
-
-**File:** `src/components/ui/lot-size-input.tsx`
-
-Add debounce to prevent rapid state updates:
-
-```typescript
-import { useCallback, useState, useEffect, useRef } from 'react';
-
-// Debounced onChange
-const debouncedOnChange = useRef(
-  debounce((value: number) => onChange(value), 150)
-).current;
-
-const handleChange = (newValue: number) => {
-  setInternalValue(newValue);
-  debouncedOnChange(newValue);
-};
-```
-
-### 5.2 Stale-While-Revalidate for Account List
-
-**File:** `src/pages/Charts.tsx` and `src/pages/Index.tsx`
-
-Cache account list in localStorage:
-
-```typescript
-const CACHE_KEY = 'humi_accounts_cache';
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-const getCachedAccounts = () => {
-  const cached = localStorage.getItem(CACHE_KEY);
-  if (!cached) return null;
-  const { data, timestamp } = JSON.parse(cached);
-  if (Date.now() - timestamp < CACHE_TTL) return data;
-  return null;
-};
-
-const setCachedAccounts = (data: TradingAccount[]) => {
-  localStorage.setItem(CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
-};
-
-// In loadAccounts:
-const cached = getCachedAccounts();
-if (cached) {
-  setAccounts(cached); // Show immediately
-}
-// Then fetch fresh data in background
-```
-
----
-
-## Implementation Files Summary
-
+### Files to Modify
 | File | Changes |
 |------|---------|
-| `src/pages/Charts.tsx` | Fix account query, add missing fields, rename 'metaapi' source |
-| `src/pages/Index.tsx` | Add Install App + Trading Accounts buttons, PWA state, source label mapping |
-| `src/config/watchlist.ts` | Update synthetic symbol names to match Deriv format |
-| `src/components/WatchlistDropdown.tsx` | Add dynamic Deriv synthetics fetching |
-| `src/components/deriv/DerivQuickTrade.tsx` | Add synthetic validation, risk warning, mobile drawer |
-| `src/components/ConnectAccountModal.tsx` | Remove "MetaAPI" from user-facing text |
-| `src/pages/TradingAccounts.tsx` | Update empty state text |
-| `src/services/derivMarketData.ts` | Add getInstrumentsByCategory function |
-| `src/index.css` | Add mobile touch target styles |
-| `src/components/ui/lot-size-input.tsx` | Add debounce |
+| `src/pages/Pricing.tsx` | Replace hardcoded plans with database query |
+| `src/pages/Subscription.tsx` | Replace hardcoded plans with database query |
+| `src/components/admin/UserManagementTab.tsx` | Fetch plans from DB, improve UI |
+| `src/components/TopHeader.tsx` | Real-time notification dropdown |
+| `src/pages/Settings.tsx` | Add API docs link in new "Developer" section |
+| `src/App.tsx` | Add routes for /notifications, /api-docs |
+| `supabase/functions/auto-execute-signal/index.ts` | Add notification + credit logging |
+| `supabase/functions/metaapi-execute-trade/index.ts` | Add credit logging |
+| `supabase/functions/voice-ai-assistant/index.ts` | Add credit logging |
 
----
-
-## Testing Checklist
-
-1. **Charts Page Bug:**
-   - [ ] Navigate to /charts → All connected accounts appear in dropdown
-   - [ ] Both Deriv and MT4/MT5 accounts show correctly
-   - [ ] Account switching works
-
-2. **PWA Install:**
-   - [ ] On mobile browser, "Install App" button appears in Quick Actions
-   - [ ] Clicking triggers browser install prompt
-   - [ ] Button hides after installation
-
-3. **Trading Accounts Button:**
-   - [ ] "Trading Accounts" button appears in Quick Actions
-   - [ ] Clicking navigates to /accounts
-
-4. **Branding Cleanup:**
-   - [ ] No "MetaAPI" text visible to users
-   - [ ] No "Deriv API" text visible (except official Deriv references)
-   - [ ] Trade sources show "Deriv" or "Broker" not "metaapi"
-
-5. **Synthetic Trading:**
-   - [ ] Volatility indices appear in symbol search
-   - [ ] Risk warning shows for synthetics
-   - [ ] MT4/MT5 accounts blocked from trading synthetics
-   - [ ] Deriv accounts can successfully trade R_100
-
-6. **Mobile UX:**
-   - [ ] Trade ticket opens as bottom sheet on mobile
-   - [ ] All buttons have 48px touch targets
-   - [ ] Lot size +/- buttons easily tappable
-
----
-
-## Technical Notes
-
-### Synthetic Symbol Detection Logic
-```typescript
-const SYNTHETIC_PREFIXES = ['R_', '1HZ', 'BOOM', 'CRASH', 'JD', 'stpRNG', 'RDBEAR', 'RDBULL'];
-
-function isSyntheticDerivSymbol(derivSymbol: string): boolean {
-  return SYNTHETIC_PREFIXES.some(p => derivSymbol.startsWith(p));
-}
-```
-
-### Account Capability Matrix
-| Account Type | Forex | Crypto | Synthetics | CFD |
-|-------------|-------|--------|------------|-----|
-| Deriv (CR/VRTC) | ✅ | ✅ | ✅ | ❌ |
-| Deriv MT5 | ✅ | ✅ | ❌ | ✅ |
-| Other MT4/MT5 | ✅ | ✅* | ❌ | ✅ |
-
-*Depends on broker
+### Database Migrations
+1. Create `notifications` table with RLS policies
+2. Add INSERT policy to `credit_usage` for authenticated users
+3. Update `subscription_plans` pricing to match intended values (R99/R299/R399)
 
 ---
 
 ## Priority Order
 
-1. **CRITICAL**: Fix /charts account selection bug (Phase 1.1)
-2. **HIGH**: Branding cleanup - remove MetaAPI references (Phase 2)
-3. **HIGH**: Add Trading Accounts + Install App buttons (Phase 1.2, 1.3)
-4. **MEDIUM**: Synthetic trading validation & warnings (Phase 3.4, 3.5)
-5. **MEDIUM**: Dynamic synthetic symbol fetching (Phase 3.2, 3.3)
-6. **LOW**: Mobile UX enhancements (Phase 4)
-7. **LOW**: Performance optimizations (Phase 5)
+1. **Week 1**: 
+   - Fix subscription pricing sync (database migration + hooks)
+   - Implement credit monitoring (service + edge function instrumentation)
+   
+2. **Week 2**: 
+   - Build notification center (table, service, hook, UI components)
+   - Update TopHeader with real-time notifications
+   
+3. **Week 3**: 
+   - Create API documentation page
+   - Add to Settings menu
+   
+4. **Week 4**: 
+   - Finalize platform documentation
+   - Polish and testing
 
-Let's make sure that we also Integrate the CopyFactory to the App, we want to be sure that our users can access and use the Copy Trading from the HuMi App efficiently. This should be easy to use and easy on the eyes of our users.
+---
+
+## Success Criteria
+
+- [ ] Credits page shows actual usage data after AI/trade actions
+- [ ] All pricing pages display consistent values from database (R99/R299/R399)
+- [ ] Admins can assign any user to any subscription plan
+- [ ] Users receive real-time notifications for copy trades, ideas, AI trades
+- [ ] Bell icon shows accurate unread count
+- [ ] Brokers can visit /api-docs and understand integration requirements
+- [ ] Platform documentation ready for investor presentations
