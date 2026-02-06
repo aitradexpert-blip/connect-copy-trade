@@ -124,12 +124,12 @@ export function BrokerActionModal({ open, onOpenChange, action }: BrokerActionMo
     }
   };
 
-  const getProviderBadge = (provider: string) => {
+   const getProviderBadge = (provider: string) => {
     switch (provider) {
       case 'deriv':
         return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">Deriv</Badge>;
       case 'metaapi':
-        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">MetaAPI</Badge>;
+        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">MT4/MT5</Badge>;
       default:
         return <Badge variant="outline">{provider}</Badge>;
     }

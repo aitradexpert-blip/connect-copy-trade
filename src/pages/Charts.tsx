@@ -262,6 +262,31 @@ export default function Charts() {
         } catch (err) {
           console.warn('Error fetching broker positions:', err);
         }
+
+        // Fetch broker trade history via Trading Bridge
+        try {
+          const { data: historyData } = await supabase.functions.invoke(
+            'metaapi-get-history',
+            { body: { accountId: account.metaapi_account_id, limit: 20 } }
+          );
+          
+          if (historyData?.history) {
+            historyData.history.forEach((deal: any) => {
+              // Filter out balance/credit deals
+              if (deal.type === 'DEAL_TYPE_BALANCE' || deal.type === 'DEAL_TYPE_CREDIT') return;
+              history.push({
+                id: `broker-${deal.id || deal.positionId}`,
+                symbol: deal.symbol || 'Unknown',
+                direction: deal.type?.includes('BUY') ? 'BUY' : 'SELL',
+                profit_loss: deal.profit ?? null,
+                executed_at: deal.time || new Date().toISOString(),
+                source: 'broker'
+              });
+            });
+          }
+        } catch (err) {
+          console.warn('Error fetching broker history:', err);
+        }
       }
       
       // Also get local trade history
@@ -551,7 +576,7 @@ export default function Charts() {
                       <span className={`font-medium ${pos.profit_loss >= 0 ? 'text-profit' : 'text-loss'}`}>
                         {pos.profit_loss >= 0 ? '+' : ''}{pos.profit_loss.toFixed(2)}
                       </span>
-                      <Badge variant="outline" className="text-xs">{pos.source}</Badge>
+                      <Badge variant="outline" className="text-xs">{pos.source === 'broker' ? 'MT4/5' : pos.source === 'deriv' ? 'Deriv' : pos.source}</Badge>
                     </div>
                   </div>
                 ))}
@@ -600,7 +625,7 @@ export default function Charts() {
                           {trade.profit_loss >= 0 ? '+' : ''}{trade.profit_loss.toFixed(2)}
                         </span>
                       )}
-                      <Badge variant="outline" className="text-xs">{trade.source}</Badge>
+                      <Badge variant="outline" className="text-xs">{trade.source === 'broker' ? 'MT4/5' : trade.source === 'deriv' ? 'Deriv' : 'History'}</Badge>
                     </div>
                   </div>
                 ))}

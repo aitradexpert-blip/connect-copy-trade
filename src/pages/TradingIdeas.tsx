@@ -5,9 +5,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import AppLayout from "@/components/AppLayout";
 import { LotSizeInput } from "@/components/ui/lot-size-input";
-import { TrendingUp, TrendingDown, Play, Zap, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Play, Zap, AlertTriangle, Gauge } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,18 +43,59 @@ export default function TradingIdeas() {
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
   const [manualLotSize, setManualLotSize] = useState<number>(0.01);
+  const [riskPercent, setRiskPercent] = useState<number>(2);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
-  // Calculate estimated risk percentage
-  const calculateRiskPercent = (): number => {
+  // Calculate lot size from risk percentage
+  const calculateLotFromRisk = (riskPct: number): number => {
+    const account = accounts.find(a => a.id === selectedAccount);
+    if (!account || !account.balance || account.balance === 0) return 0.01;
+    // Risk amount in account currency
+    const riskAmount = account.balance * (riskPct / 100);
+    // Estimate: $10 per pip per standard lot, ~50 pip average stop
+    const estimatedRiskPerLot = 500; // $500 risk per 1.0 lot (50 pips * $10/pip)
+    const calculatedLot = riskAmount / estimatedRiskPerLot;
+    return Math.max(0.01, Math.min(10, Math.round(calculatedLot * 100) / 100));
+  };
+
+  // Calculate risk percentage from lot size
+  const calculateRiskFromLot = (lotSize: number): number => {
     const account = accounts.find(a => a.id === selectedAccount);
     if (!account || !account.balance || account.balance === 0) return 0;
-    // Rough estimate: $10 per pip per lot for major pairs
-    const estimatedRiskPerLot = 100; // $100 risk per lot as baseline
-    return (manualLotSize * estimatedRiskPerLot / account.balance) * 100;
+    const estimatedRiskPerLot = 500;
+    return Math.min(100, Math.round((lotSize * estimatedRiskPerLot / account.balance) * 100 * 10) / 10);
+  };
+
+  // Handle risk slider change → update lot size
+  const handleRiskChange = (value: number[]) => {
+    const newRisk = value[0];
+    setRiskPercent(newRisk);
+    const newLot = calculateLotFromRisk(newRisk);
+    setManualLotSize(newLot);
+  };
+
+  // Handle lot size manual change → update risk gauge
+  const handleLotSizeChange = (newLot: number) => {
+    setManualLotSize(newLot);
+    setRiskPercent(calculateRiskFromLot(newLot));
+  };
+
+  // Get risk color based on percentage
+  const getRiskColor = (pct: number): string => {
+    if (pct <= 2) return 'text-profit';
+    if (pct <= 5) return 'text-amber-500';
+    return 'text-loss';
+  };
+
+  const getRiskLabel = (pct: number): string => {
+    if (pct <= 1) return 'Very Low';
+    if (pct <= 2) return 'Low';
+    if (pct <= 5) return 'Moderate';
+    if (pct <= 10) return 'High';
+    return 'Very High';
   };
 
   useEffect(() => {
@@ -162,7 +204,7 @@ export default function TradingIdeas() {
     }
   };
 
-  // Get provider badge for account
+  // Get provider badge for account (no MetaAPI branding)
   const getProviderBadge = (account: TradingAccount) => {
     if (account.provider === 'deriv') {
       return (
@@ -175,7 +217,7 @@ export default function TradingIdeas() {
     if (account.metaapi_account_id) {
       return (
         <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
-          MetaAPI
+          MT4/MT5
         </Badge>
       );
     }
@@ -257,8 +299,11 @@ export default function TradingIdeas() {
                   if (!open) {
                     setSelectedSignal(null);
                     setManualLotSize(signal.lot_size || 0.01);
+                    setRiskPercent(2);
                   } else {
-                    setManualLotSize(signal.lot_size || 0.01);
+                    const lot = signal.lot_size || 0.01;
+                    setManualLotSize(lot);
+                    setRiskPercent(calculateRiskFromLot(lot));
                   }
                 }}>
                   <DialogTrigger asChild>
@@ -298,19 +343,45 @@ export default function TradingIdeas() {
                         </Select>
                       </div>
 
+                      {/* Risk Percentage Gauge */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="flex items-center gap-2">
+                            <Gauge className="w-4 h-4" />
+                            Risk Level
+                          </Label>
+                          <span className={`text-sm font-semibold ${getRiskColor(riskPercent)}`}>
+                            {riskPercent.toFixed(1)}% — {getRiskLabel(riskPercent)}
+                          </span>
+                        </div>
+                        <Slider
+                          value={[riskPercent]}
+                          onValueChange={handleRiskChange}
+                          min={1}
+                          max={100}
+                          step={0.5}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>1% (Safe)</span>
+                          <span>50%</span>
+                          <span>100% (Max)</span>
+                        </div>
+                      </div>
+
                       {/* Editable Lot Size */}
                       <div className="space-y-2">
-                        <Label>Lot Size</Label>
+                        <Label>Lot Size (editable)</Label>
                         <LotSizeInput
                           value={manualLotSize}
-                          onChange={setManualLotSize}
+                          onChange={handleLotSizeChange}
                           min={0.01}
                           max={10}
                           step={0.01}
                         />
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
-                          Estimated Risk: ~{calculateRiskPercent().toFixed(1)}% of account balance
+                          Risking ~${((accounts.find(a => a.id === selectedAccount)?.balance || 0) * riskPercent / 100).toFixed(2)} of account balance
                         </p>
                       </div>
 

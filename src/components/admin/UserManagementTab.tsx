@@ -45,21 +45,21 @@ export function UserManagementTab() {
   const [processing, setProcessing] = useState(false);
   const [modalTab, setModalTab] = useState<'account' | 'subscription'>('account');
 
-   // Transform database plans to dropdown format
-   const SUBSCRIPTION_PLANS = useMemo(() => {
-     if (dbPlans.length === 0) {
-       return [
-         { value: 'basic', label: 'Basic', price: 'R99/mo' },
-         { value: 'professional', label: 'Professional', price: 'R299/mo' },
-         { value: 'enterprise', label: 'Enterprise', price: 'R399/mo' },
-       ];
-     }
-     return dbPlans.map(plan => ({
-       value: plan.name.toLowerCase(),
-       label: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
-       price: `R${plan.price_zar}/mo`,
-     }));
-   }, [dbPlans]);
+    // Transform database plans to dropdown format
+    const SUBSCRIPTION_PLANS = useMemo(() => {
+      if (dbPlans.length === 0) {
+        return [
+          { value: 'basic', label: 'Basic', price: 'R178.20/mo' },
+          { value: 'professional', label: 'Professional', price: 'R538.20/mo' },
+          { value: 'enterprise', label: 'Enterprise', price: 'R719.82/mo' },
+        ];
+      }
+      return dbPlans.map(plan => ({
+        value: plan.name.toLowerCase(),
+        label: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
+        price: `R${plan.price_zar.toFixed(2)}/mo`,
+      }));
+    }, [dbPlans]);
  
   useEffect(() => {
     loadUsers();
@@ -402,10 +402,10 @@ export function UserManagementTab() {
       {/* Approval Modal */}
       <Dialog open={showApprovalModal} onOpenChange={setShowApprovalModal}>
         <DialogContent className="bg-gradient-card border-border">
-          <DialogHeader>
+           <DialogHeader>
             <DialogTitle>Approve User & Configure Account</DialogTitle>
             <DialogDescription>
-              Configure MetaAPI integration and subscription plan for {selectedUser?.email}
+              Configure trading account and subscription plan for {selectedUser?.email}
             </DialogDescription>
           </DialogHeader>
 
@@ -432,9 +432,9 @@ export function UserManagementTab() {
                           acc.connection_status === 'connected' ? 'text-green-400' :
                           acc.connection_status === 'provisioning' ? 'text-amber-400' : 'text-muted-foreground'
                         }>{acc.connection_status}</span>
-                        {acc.metaapi_account_id && (
-                          <span className="ml-2">• MetaAPI: ✓ Connected</span>
-                        )}
+                         {acc.metaapi_account_id && (
+                           <span className="ml-2">• Bridge: ✓ Connected</span>
+                         )}
                       </p>
                     </div>
                   ))}
@@ -462,8 +462,8 @@ export function UserManagementTab() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Trading accounts are now auto-provisioned via MetaAPI when users connect.
+               <p className="text-xs text-muted-foreground">
+                Trading accounts are auto-provisioned when users connect.
               </p>
             </div>
 
