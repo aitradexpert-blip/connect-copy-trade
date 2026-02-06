@@ -231,11 +231,11 @@ export function ConnectAccountModal({
         <DialogHeader>
           <DialogTitle>Connect Trading Account</DialogTitle>
           <DialogDescription>
-            {!provider 
+           {!provider 
               ? "Choose your broker type to get started"
               : provider === 'deriv' 
                 ? "Connect your Deriv account via secure OAuth"
-                : "Submit your MT4/MT5 account details for admin approval"
+                : "Connect your MT4/MT5 account via Trading Bridge"
             }
           </DialogDescription>
         </DialogHeader>
@@ -261,7 +261,7 @@ export function ConnectAccountModal({
               </div>
             </button>
             
-            <button
+             <button
               onClick={() => setProvider('metaapi')}
               className="w-full p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-muted/50 text-left transition-all"
             >
@@ -270,9 +270,9 @@ export function ConnectAccountModal({
                   <Wallet className="w-6 h-6 text-blue-500" />
                 </div>
                 <div className="flex-1">
-                  <div className="font-semibold">MT4 / MT5 (via MetaAPI)</div>
+                  <div className="font-semibold">MT4 / MT5 Broker</div>
                   <div className="text-sm text-muted-foreground">
-                    Any MT4/MT5 broker • Requires admin approval
+                    Any MT4/MT5 broker • Connect via Trading Bridge
                   </div>
                 </div>
               </div>
@@ -421,11 +421,11 @@ export function ConnectAccountModal({
           </div>
         ) : (
           // MetaAPI Form - Now with automatic provisioning
-          <form onSubmit={handleMetaApiSubmit} className="space-y-4">
+           <form onSubmit={handleMetaApiSubmit} className="space-y-4">
             <div className="bg-muted/50 rounded-lg p-3 text-sm">
               <p className="font-medium mb-1">Connect any MT4/MT5 broker</p>
               <p className="text-muted-foreground text-xs">
-                Your credentials are used once to connect via MetaAPI and are never stored.
+                Your credentials are used once to connect via our Trading Bridge and are never stored.
               </p>
             </div>
 
