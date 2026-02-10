@@ -8,10 +8,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const CLIENT_API_URL = 'https://mt-client-api-v1.london.agiliumtrade.ai'
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -40,12 +39,21 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Fetch positions
-    const resp = await fetch(`${CLIENT_API_URL}/users/current/accounts/${accountId}/positions`, {
-      headers: {
-        'auth-token': token,
-        'Accept': 'application/json',
-      },
+    // Get account region from provisioning API
+    const acctResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts/${accountId}`, {
+      headers: { 'auth-token': token, 'Accept': 'application/json' },
+    })
+
+    let region = 'london'
+    if (acctResp.ok) {
+      const acctData = await acctResp.json()
+      region = acctData.region || 'london'
+    }
+
+    const clientApiUrl = `https://mt-client-api-v1.${region}.agiliumtrade.ai`
+
+    const resp = await fetch(`${clientApiUrl}/users/current/accounts/${accountId}/positions`, {
+      headers: { 'auth-token': token, 'Accept': 'application/json' },
     })
 
     if (!resp.ok) {
