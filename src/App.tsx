@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
 import TradingIdeas from "./pages/TradingIdeas";
@@ -30,15 +31,20 @@ import KhumoIntroModal from "./components/KhumoIntroModal";
 
 const queryClient = new QueryClient();
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({ children, requireSubscription = true }: { children: React.ReactNode; requireSubscription?: boolean }) => {
   const { user, loading } = useAuth();
+  const { subscription, loading: subLoading } = useSubscription();
   
-  if (loading) {
+  if (loading || subLoading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
   
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  if (requireSubscription && !subscription) {
+    return <Navigate to="/subscription" replace />;
   }
   
   return <>{children}</>;
@@ -120,7 +126,7 @@ const App = () => (
             <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
             <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
             <Route path="/accounts" element={<ProtectedRoute><TradingAccounts /></ProtectedRoute>} />
-            <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
+            <Route path="/subscription" element={<ProtectedRoute requireSubscription={false}><Subscription /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />

@@ -1,4 +1,4 @@
-import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap, Send } from "lucide-react";
+import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap, Send, Bell, User, Code } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
@@ -117,12 +117,56 @@ export function BottomNav() {
                 variant="ghost"
                 className="justify-start"
                 onClick={() => {
+                  navigate("/notifications");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                Notifications
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
+                  navigate("/profile");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <User className="mr-2 h-4 w-4" />
+                Profile
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
+                  navigate("/subscription");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <CreditCard className="mr-2 h-4 w-4" />
+                Subscription
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
                   navigate("/settings");
                   setIsMenuOpen(false);
                 }}
               >
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
+              </Button>
+              <Button
+                variant="ghost"
+                className="justify-start"
+                onClick={() => {
+                  navigate("/api-docs");
+                  setIsMenuOpen(false);
+                }}
+              >
+                <Code className="mr-2 h-4 w-4" />
+                API Docs
               </Button>
               {isAdmin && (
                 <>

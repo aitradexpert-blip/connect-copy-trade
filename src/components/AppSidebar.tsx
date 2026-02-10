@@ -7,7 +7,14 @@ import {
   CreditCard,
   Settings,
   LogOut,
-  Shield
+  Shield,
+  Bell,
+  BarChart3,
+  Wallet,
+  Zap,
+  User,
+  Code,
+  LineChart
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
@@ -28,14 +35,22 @@ import {
 
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Trading Signals", url: "/signals", icon: TrendingUp },
+  { title: "Trading Ideas", url: "/ideas", icon: TrendingUp },
   { title: "Copy Trading", url: "/copy-trading", icon: Copy },
   { title: "AI Auto-Trading", url: "/ai-trading", icon: Bot },
   { title: "Trading Accounts", url: "/accounts", icon: CreditCard },
+  { title: "Market Charts", url: "/charts", icon: LineChart },
+  { title: "Analytics", url: "/analytics", icon: BarChart3 },
+  { title: "Crypto Wallet", url: "/wallet", icon: Wallet },
+  { title: "Credit Usage", url: "/credits", icon: Zap },
+  { title: "Notifications", url: "/notifications", icon: Bell },
 ];
 
 const settingsItems = [
+  { title: "Profile", url: "/profile", icon: User },
+  { title: "Subscription", url: "/subscription", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
+  { title: "API Docs", url: "/api-docs", icon: Code },
 ];
 
 export function AppSidebar() {
