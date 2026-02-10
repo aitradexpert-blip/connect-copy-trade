@@ -8,17 +8,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const CLIENT_API_URL = 'https://mt-client-api-v1.london.agiliumtrade.ai'
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    const url = new URL(req.url)
-
     if (req.method !== 'POST') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
@@ -42,18 +39,64 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Fetch account information
-    const resp = await fetch(`${CLIENT_API_URL}/users/current/accounts/${accountId}/account-information`, {
-      headers: {
-        'auth-token': token,
-        'Accept': 'application/json',
-      },
+    // Step 1: Get account details from provisioning API to find the correct region URL
+    const acctResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts/${accountId}`, {
+      headers: { 'auth-token': token, 'Accept': 'application/json' },
+    })
+
+    if (!acctResp.ok) {
+      const text = await acctResp.text()
+      console.error('MetaAPI provisioning error', acctResp.status, text)
+      return new Response(JSON.stringify({ error: 'Failed to fetch account details', status: acctResp.status, details: text }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+
+    const acctData = await acctResp.json()
+    const region = acctData.region || 'london'
+    const state = acctData.state
+    const connectionStatus = acctData.connectionStatus
+
+    // Step 2: If account is not deployed, deploy it first
+    if (state !== 'DEPLOYED') {
+      console.log(`Account ${accountId} state is ${state}, attempting deploy...`)
+      const deployResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts/${accountId}/deploy`, {
+        method: 'POST',
+        headers: { 'auth-token': token, 'Accept': 'application/json' },
+      })
+      if (!deployResp.ok) {
+        const text = await deployResp.text()
+        console.error('Deploy error', deployResp.status, text)
+      }
+      // Return partial data - account is deploying
+      return new Response(JSON.stringify({ 
+        balance: null, equity: null, 
+        status: 'deploying',
+        message: `Account is being deployed (state: ${state}). Please retry in a few moments.`
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+
+    // Step 3: Use region-specific client API URL
+    const clientApiUrl = `https://mt-client-api-v1.${region}.agiliumtrade.ai`
+
+    const resp = await fetch(`${clientApiUrl}/users/current/accounts/${accountId}/account-information`, {
+      headers: { 'auth-token': token, 'Accept': 'application/json' },
     })
 
     if (!resp.ok) {
       const text = await resp.text()
-      console.error('MetaAPI error', resp.status, text)
-      return new Response(JSON.stringify({ error: 'Failed to fetch account information', status: resp.status, details: text }), {
+      console.error('MetaAPI client error', resp.status, text)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to fetch account information', 
+        status: resp.status, 
+        details: text,
+        region,
+        connectionStatus 
+      }), {
         status: 502,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
