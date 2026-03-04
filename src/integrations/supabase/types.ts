@@ -193,6 +193,33 @@ export type Database = {
           },
         ]
       }
+      chat_history: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       copy_trading_relationships: {
         Row: {
           created_at: string
@@ -507,6 +534,77 @@ export type Database = {
         }
         Relationships: []
       }
+      mentor_clients: {
+        Row: {
+          client_user_id: string
+          id: string
+          mentor_id: string
+          referral_slug_used: string | null
+          registered_at: string | null
+        }
+        Insert: {
+          client_user_id: string
+          id?: string
+          mentor_id: string
+          referral_slug_used?: string | null
+          registered_at?: string | null
+        }
+        Update: {
+          client_user_id?: string
+          id?: string
+          mentor_id?: string
+          referral_slug_used?: string | null
+          registered_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mentor_clients_mentor_id_fkey"
+            columns: ["mentor_id"]
+            isOneToOne: false
+            referencedRelation: "mentor_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mentor_profiles: {
+        Row: {
+          admin_notes: string | null
+          brand_name: string
+          created_at: string | null
+          feature_renames: Json | null
+          id: string
+          is_active: boolean | null
+          logo_url: string | null
+          referral_slug: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          brand_name: string
+          created_at?: string | null
+          feature_renames?: Json | null
+          id?: string
+          is_active?: boolean | null
+          logo_url?: string | null
+          referral_slug: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          admin_notes?: string | null
+          brand_name?: string
+          created_at?: string | null
+          feature_renames?: Json | null
+          id?: string
+          is_active?: boolean | null
+          logo_url?: string | null
+          referral_slug?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           created_at: string | null
@@ -738,6 +836,41 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_analysis: {
+        Row: {
+          ai_analysis: string | null
+          created_at: string | null
+          id: string
+          strategy_detected: string | null
+          trade_id: string | null
+          user_id: string
+        }
+        Insert: {
+          ai_analysis?: string | null
+          created_at?: string | null
+          id?: string
+          strategy_detected?: string | null
+          trade_id?: string | null
+          user_id: string
+        }
+        Update: {
+          ai_analysis?: string | null
+          created_at?: string | null
+          id?: string
+          strategy_detected?: string | null
+          trade_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_analysis_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trade_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trade_history: {
         Row: {
           closed_at: string | null
@@ -940,6 +1073,48 @@ export type Database = {
         }
         Relationships: []
       }
+      training_content: {
+        Row: {
+          category: string | null
+          content_text: string | null
+          created_at: string | null
+          description: string | null
+          difficulty: string
+          id: string
+          order_index: number | null
+          tags: string[] | null
+          title: string
+          type: string
+          url: string | null
+        }
+        Insert: {
+          category?: string | null
+          content_text?: string | null
+          created_at?: string | null
+          description?: string | null
+          difficulty?: string
+          id?: string
+          order_index?: number | null
+          tags?: string[] | null
+          title: string
+          type?: string
+          url?: string | null
+        }
+        Update: {
+          category?: string | null
+          content_text?: string | null
+          created_at?: string | null
+          description?: string | null
+          difficulty?: string
+          id?: string
+          order_index?: number | null
+          tags?: string[] | null
+          title?: string
+          type?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -978,6 +1153,7 @@ export type Database = {
           timezone: string | null
           updated_at: string
           user_id: string | null
+          voice_preference: Json | null
         }
         Insert: {
           appearance_theme?: string | null
@@ -989,6 +1165,7 @@ export type Database = {
           timezone?: string | null
           updated_at?: string
           user_id?: string | null
+          voice_preference?: Json | null
         }
         Update: {
           appearance_theme?: string | null
@@ -1000,6 +1177,7 @@ export type Database = {
           timezone?: string | null
           updated_at?: string
           user_id?: string | null
+          voice_preference?: Json | null
         }
         Relationships: []
       }
@@ -1047,6 +1225,44 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "subscription_plans"
             referencedColumns: ["name"]
+          },
+        ]
+      }
+      user_training_progress: {
+        Row: {
+          completed: boolean | null
+          completed_at: string | null
+          content_id: string | null
+          created_at: string | null
+          id: string
+          notes: string | null
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean | null
+          completed_at?: string | null
+          content_id?: string | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          user_id: string
+        }
+        Update: {
+          completed?: boolean | null
+          completed_at?: string | null
+          content_id?: string | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_training_progress_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "training_content"
+            referencedColumns: ["id"]
           },
         ]
       }

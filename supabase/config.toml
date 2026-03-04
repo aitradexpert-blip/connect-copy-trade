@@ -53,3 +53,12 @@ verify_jwt = false
 
 [functions.copyfactory-list-strategies]
 verify_jwt = false
+
+[functions.elevenlabs-tts]
+verify_jwt = false
+
+[functions.khumo-chat]
+verify_jwt = false
+
+[functions.journal-analyze-trade]
+verify_jwt = false

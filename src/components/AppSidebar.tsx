@@ -14,11 +14,15 @@ import {
   Zap,
   User,
   Code,
-  LineChart
+  LineChart,
+  BookOpen,
+  GraduationCap,
+  Crown
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 
 import {
   Sidebar,
@@ -40,6 +44,8 @@ const mainItems = [
   { title: "AI Auto-Trading", url: "/ai-trading", icon: Bot },
   { title: "Trading Accounts", url: "/accounts", icon: CreditCard },
   { title: "Market Charts", url: "/charts", icon: LineChart },
+  { title: "Journal", url: "/journal", icon: BookOpen },
+  { title: "Training Center", url: "/training", icon: GraduationCap },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Crypto Wallet", url: "/wallet", icon: Wallet },
   { title: "Credit Usage", url: "/credits", icon: Zap },
@@ -57,9 +63,11 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const { signOut } = useAuth();
   const { isAdmin } = useAdminCheck();
+  const { subscription } = useSubscription();
   const location = useLocation();
   const currentPath = location.pathname;
   const collapsed = state === "collapsed";
+  const isMentor = subscription?.plan_name === 'mentor';
 
   const isActive = (path: string) => currentPath === path;
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
@@ -135,6 +143,16 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </>
+              )}
+              {isMentor && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink to="/mentor-center" className={getNavCls}>
+                      <Crown className="w-4 h-4" />
+                      {!collapsed && <span>Mentor Center</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               )}
             </SidebarMenu>
           </SidebarGroupContent>

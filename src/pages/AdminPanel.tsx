@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp } from "lucide-react";
+import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp, Crown } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { UserManagementTab } from "@/components/admin/UserManagementTab";
 import { TransferMonitoringTab } from "@/components/admin/TransferMonitoringTab";
+import { MentorManagementTab } from "@/components/admin/MentorManagementTab";
 
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -276,6 +277,10 @@ export default function AdminPanel() {
                 <Badge variant="secondary" className="ml-1">{counts.pendingTransfers}</Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="mentors" className="flex items-center gap-2">
+              <Crown className="w-4 h-4" />
+              Mentors
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users">
@@ -428,6 +433,10 @@ export default function AdminPanel() {
 
           <TabsContent value="transfers">
             <TransferMonitoringTab />
+          </TabsContent>
+
+          <TabsContent value="mentors">
+            <MentorManagementTab />
           </TabsContent>
         </Tabs>
       </div>
