@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
 import { ThemeProvider } from "next-themes";
+import { MentorProvider } from "@/contexts/MentorContext";
 import Index from "./pages/Index";
 import TradingIdeas from "./pages/TradingIdeas";
 import CopyTrading from "./pages/CopyTradingNew";
@@ -26,8 +27,12 @@ import Analytics from "./pages/Analytics";
 import CryptoWallet from "./pages/CryptoWallet";
 import CreditUsage from "./pages/CreditUsage";
 import KhumoIntroModal from "./components/KhumoIntroModal";
- import Notifications from "./pages/Notifications";
- import ApiDocs from "./pages/ApiDocs";
+import Notifications from "./pages/Notifications";
+import ApiDocs from "./pages/ApiDocs";
+import Journal from "./pages/Journal";
+import TrainingCenter from "./pages/TrainingCenter";
+import MentorCenter from "./pages/MentorCenter";
+import MentorReferral from "./pages/MentorReferral";
 
 const queryClient = new QueryClient();
 
@@ -35,76 +40,34 @@ const ProtectedRoute = ({ children, requireSubscription = true }: { children: Re
   const { user, loading } = useAuth();
   const { subscription, loading: subLoading } = useSubscription();
   
-  if (loading || subLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-  
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-
-  if (requireSubscription && !subscription) {
-    return <Navigate to="/subscription" replace />;
-  }
-  
+  if (loading || subLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (requireSubscription && !subscription) return <Navigate to="/subscription" replace />;
   return <>{children}</>;
 };
 
-// Special route for OAuth callbacks - allows tokens to be processed before auth check
 const DerivCallbackRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const location = window.location;
-  
-  // Check if this is an OAuth callback with tokens in URL
-  const hasTokens = location.search.includes('token1') || 
-                    location.search.includes('acct1') ||
-                    location.hash.includes('token1') ||
-                    location.hash.includes('acct1');
-  
-  // If we have tokens in URL, always show the callback page (even if auth is loading)
-  // This ensures tokens can be processed before any redirect happens
-  if (hasTokens) {
-    return <>{children}</>;
-  }
-  
-  // No tokens - require normal auth check
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-  
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-  
+  const hasTokens = location.search.includes('token1') || location.search.includes('acct1') || location.hash.includes('token1') || location.hash.includes('acct1');
+  if (hasTokens) return <>{children}</>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
   return <>{children}</>;
 };
 
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { isAdmin, loading: adminLoading } = useAdminCheck();
-  
-  if (loading || adminLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-  
-  if (!user || !isAdmin) {
-    return <Navigate to="/" replace />;
-  }
-  
+  if (loading || adminLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user || !isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-  
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-  
-  if (user) {
-    return <Navigate to="/" replace />;
-  }
-  
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (user) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
@@ -112,37 +75,42 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <KhumoIntroModal />
-          <BrowserRouter>
-          <Routes>
-            {/* Public routes - no auth required */}
-            <Route path="/pricing" element={<Pricing />} />
-            <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
-            <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
-            <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
-            <Route path="/accounts" element={<ProtectedRoute><TradingAccounts /></ProtectedRoute>} />
-            <Route path="/subscription" element={<ProtectedRoute requireSubscription={false}><Subscription /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-            <Route path="/wallet" element={<ProtectedRoute><CryptoWallet /></ProtectedRoute>} />
-            <Route path="/credits" element={<ProtectedRoute><CreditUsage /></ProtectedRoute>} />
-            <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
-           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-           <Route path="/api-docs" element={<ApiDocs />} />
-            <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
-            <Route path="/admin-panel" element={<AdminRoute><AdminPanel /></AdminRoute>} />
-            <Route path="/deriv-callback" element={<DerivCallbackRoute><DerivCallback /></DerivCallbackRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
+        <MentorProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <KhumoIntroModal />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/pricing" element={<Pricing />} />
+                <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
+                <Route path="/ref/:slug" element={<MentorReferral />} />
+                <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
+                <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
+                <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
+                <Route path="/accounts" element={<ProtectedRoute><TradingAccounts /></ProtectedRoute>} />
+                <Route path="/subscription" element={<ProtectedRoute requireSubscription={false}><Subscription /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+                <Route path="/wallet" element={<ProtectedRoute><CryptoWallet /></ProtectedRoute>} />
+                <Route path="/credits" element={<ProtectedRoute><CreditUsage /></ProtectedRoute>} />
+                <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
+                <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
+                <Route path="/training" element={<ProtectedRoute><TrainingCenter /></ProtectedRoute>} />
+                <Route path="/mentor-center" element={<ProtectedRoute><MentorCenter /></ProtectedRoute>} />
+                <Route path="/api-docs" element={<ApiDocs />} />
+                <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+                <Route path="/admin-panel" element={<AdminRoute><AdminPanel /></AdminRoute>} />
+                <Route path="/deriv-callback" element={<DerivCallbackRoute><DerivCallback /></DerivCallbackRoute>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </MentorProvider>
+      </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );
