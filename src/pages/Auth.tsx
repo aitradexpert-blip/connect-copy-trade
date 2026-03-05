@@ -153,14 +153,53 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-gradient-card border-border shadow-card">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted flex flex-col lg:flex-row">
+      {/* Left Panel - Marketing */}
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-center p-12 bg-gradient-to-br from-primary/10 via-background to-background">
+        <div className="max-w-md mx-auto space-y-6">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <h1 className="text-3xl font-black text-foreground">HuMi</h1>
+          </div>
+          <h2 className="text-2xl font-bold text-foreground leading-tight">
+            Institutional-grade trading tools in your pocket.
+          </h2>
+          <p className="text-muted-foreground">
+            Connect MT4, MT5, Deriv & crypto wallets in one mobile-first dashboard.
+            AI signals, copy trading, and instant cross-broker transfers.
+          </p>
+          <div className="space-y-3 text-sm">
+            {[
+              "Unified dashboard for all your broker accounts",
+              "Khumo AI – your voice-activated trading assistant",
+              "Copy verified master traders with transparent performance",
+              "Move funds between brokers in hours, not days",
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-2 text-foreground">
+                <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3 pt-2">
+            <a href="/pitch" className="text-xs text-primary hover:underline">Investor Deck →</a>
+            <a href="/pricing" className="text-xs text-primary hover:underline">Pricing →</a>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Panel - Auth Form */}
+      <div className="flex-1 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md bg-card border-border shadow-sm">
         <CardHeader className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
+          <div className="flex items-center justify-center gap-2 mb-2 lg:hidden">
             <Sparkles className="w-6 h-6 text-primary" />
             <CardTitle className="text-2xl font-bold text-foreground">HuMi</CardTitle>
           </div>
-          <CardDescription>AI-Powered Trading Platform</CardDescription>
+          <CardDescription className="lg:hidden">Your gateway to professional trading tools on mobile</CardDescription>
+          <CardDescription className="hidden lg:block">Sign in to your trading dashboard</CardDescription>
           {refSlug && (
             <Badge variant="secondary" className="mt-2">Referred by mentor</Badge>
           )}
@@ -255,6 +294,7 @@ const Auth = () => {
           </Tabs>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 };

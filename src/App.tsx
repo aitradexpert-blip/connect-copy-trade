@@ -33,6 +33,8 @@ import Journal from "./pages/Journal";
 import TrainingCenter from "./pages/TrainingCenter";
 import MentorCenter from "./pages/MentorCenter";
 import MentorReferral from "./pages/MentorReferral";
+import InvestorPitch from "./pages/InvestorPitch";
+import About from "./pages/About";
 
 const queryClient = new QueryClient();
 
@@ -83,8 +85,10 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 <Route path="/pricing" element={<Pricing />} />
+                <Route path="/pitch" element={<InvestorPitch />} />
                 <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
                 <Route path="/ref/:slug" element={<MentorReferral />} />
+                <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
                 <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
                 <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
