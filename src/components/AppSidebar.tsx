@@ -17,7 +17,8 @@ import {
   LineChart,
   BookOpen,
   GraduationCap,
-  Crown
+  Crown,
+  Info
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
@@ -57,6 +58,7 @@ const settingsItems = [
   { title: "Subscription", url: "/subscription", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "API Docs", url: "/api-docs", icon: Code },
+  { title: "About HuMi", url: "/about", icon: Info },
 ];
 
 export function AppSidebar() {
