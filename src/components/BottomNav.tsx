@@ -1,4 +1,4 @@
-import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap, Send, Bell, User, Code, BookOpen, GraduationCap, Crown } from "lucide-react";
+import { Home, TrendingUp, Copy, Bot, MoreHorizontal, Settings, Shield, LogOut, CreditCard, BarChart, Wallet, Zap, Send, Bell, User, Code, BookOpen, GraduationCap, Crown, Info } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
@@ -160,6 +160,9 @@ export function BottomNav() {
               </Button>
               <Button variant="ghost" className="justify-start" onClick={() => { navigate("/api-docs"); setIsMenuOpen(false); }}>
                 <Code className="mr-2 h-4 w-4" /> API Docs
+              </Button>
+              <Button variant="ghost" className="justify-start" onClick={() => { navigate("/about"); setIsMenuOpen(false); }}>
+                <Info className="mr-2 h-4 w-4" /> About HuMi
               </Button>
               {isAdmin && (
                 <>

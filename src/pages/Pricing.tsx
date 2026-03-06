@@ -111,9 +111,14 @@ export default function Pricing() {
             <Sparkles className="w-6 h-6 text-primary" />
             <span className="text-xl font-bold text-foreground">HuMi</span>
           </div>
-          <Button variant="outline" onClick={() => navigate('/auth')}>
-            Sign In
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => navigate('/about')}>
+              About
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/auth')}>
+              Sign In
+            </Button>
+          </div>
         </div>
       </div>
 

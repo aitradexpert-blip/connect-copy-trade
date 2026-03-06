@@ -88,7 +88,7 @@ const App = () => (
                 <Route path="/pitch" element={<InvestorPitch />} />
                 <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
                 <Route path="/ref/:slug" element={<MentorReferral />} />
-                <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
+                <Route path="/about" element={<About />} />
                 <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
                 <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
