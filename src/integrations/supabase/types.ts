@@ -766,6 +766,8 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          khumo_queries_reset_at: string
+          khumo_queries_used: number
           subscription_plan: string | null
           subscription_status: string | null
           updated_at: string
@@ -775,6 +777,8 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          khumo_queries_reset_at?: string
+          khumo_queries_used?: number
           subscription_plan?: string | null
           subscription_status?: string | null
           updated_at?: string
@@ -784,6 +788,8 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          khumo_queries_reset_at?: string
+          khumo_queries_used?: number
           subscription_plan?: string | null
           subscription_status?: string | null
           updated_at?: string
