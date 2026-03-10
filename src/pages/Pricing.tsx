@@ -1,15 +1,16 @@
- import { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Loader2, CreditCard, Sparkles } from "lucide-react";
+import { Check, X, Loader2, CreditCard, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
- import { useSubscriptionPlans, getFeatureList } from "@/hooks/useSubscriptionPlans";
+import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Plan {
   name: string;
@@ -20,6 +21,33 @@ interface Plan {
   popular?: boolean;
 }
 
+// Feature comparison rows
+const comparisonFeatures = [
+  { label: "WhatsApp Community", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Daily Signals (WhatsApp)", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Free EA (w/ OctaFx)", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Free Mentorship", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Training Center", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Live Market Charts", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Mobile Dashboard", free: "Demo", basic: true, pro: true, enterprise: true },
+  { label: "Khumo AI Questions", free: "5/month", basic: "50/month", pro: "Unlimited", enterprise: "Unlimited" },
+  { label: "Trade Journal", free: "Manual", basic: "Auto + Basic AI", pro: "Auto + Advanced AI", enterprise: "Full Suite" },
+  { label: "Multi-Broker Dashboard", free: false, basic: "2 accounts", pro: "5 accounts", enterprise: "10 accounts" },
+  { label: "One-Click Signal Execution", free: false, basic: "10/mo", pro: "30/mo", enterprise: "Unlimited" },
+  { label: "Khumo AI Voice Trading", free: false, basic: "Limited", pro: "Full", enterprise: "Full" },
+  { label: "AI Auto-Trading Bot", free: false, basic: false, pro: true, enterprise: true },
+  { label: "Copy Trading", free: false, basic: "1 conn", pro: "3 conn", enterprise: "5 conn" },
+  { label: "Real-Time Notifications", free: "Limited", basic: true, pro: true, enterprise: true },
+  { label: "Custom Risk Settings", free: false, basic: false, pro: false, enterprise: true },
+  { label: "Dedicated Manager", free: false, basic: false, pro: false, enterprise: true },
+];
+
+function FeatureValue({ value }: { value: boolean | string }) {
+  if (value === true) return <Check className="w-5 h-5 text-profit mx-auto" />;
+  if (value === false) return <X className="w-4 h-4 text-muted-foreground/40 mx-auto" />;
+  return <span className="text-xs text-foreground">{value}</span>;
+}
+
 export default function Pricing() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -27,19 +55,19 @@ export default function Pricing() {
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [email, setEmail] = useState("");
-   const { plans: dbPlans, loading: plansLoading } = useSubscriptionPlans();
- 
-   const plans: Plan[] = useMemo(() => {
-     if (dbPlans.length === 0) return [];
-     return dbPlans.map(plan => ({
-       name: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
-       priceUsd: plan.price_usd,
-       priceZar: plan.price_zar,
-       tier: plan.name.toLowerCase(),
-       features: getFeatureList(plan),
-       popular: plan.name.toLowerCase() === 'professional',
-     }));
-   }, [dbPlans]);
+  const { plans: dbPlans, loading: plansLoading } = useSubscriptionPlans();
+
+  const plans: Plan[] = useMemo(() => {
+    if (dbPlans.length === 0) return [];
+    return dbPlans.map(plan => ({
+      name: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
+      priceUsd: plan.price_usd,
+      priceZar: plan.price_zar,
+      tier: plan.name.toLowerCase(),
+      features: [],
+      popular: plan.name.toLowerCase() === 'professional',
+    }));
+  }, [dbPlans]);
 
   const handleSubscribe = (plan: Plan) => {
     setSelectedPlan(plan);
@@ -51,52 +79,28 @@ export default function Pricing() {
       toast({ title: "Please enter your email", variant: "destructive" });
       return;
     }
-
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       toast({ title: "Please enter a valid email", variant: "destructive" });
       return;
     }
-
     setLoading(selectedPlan.tier);
     setShowEmailDialog(false);
-
     try {
-      // Store the selected plan in sessionStorage for after registration
-      sessionStorage.setItem('pending_subscription', JSON.stringify({
-        plan: selectedPlan.tier,
-        email: email,
-        timestamp: Date.now()
-      }));
-
-      // Create guest checkout
+      sessionStorage.setItem('pending_subscription', JSON.stringify({ plan: selectedPlan.tier, email, timestamp: Date.now() }));
       const { data, error } = await supabase.functions.invoke('create-guest-checkout', {
         body: {
-          tier: selectedPlan.tier,
-          email: email,
+          tier: selectedPlan.tier, email,
           successUrl: `${window.location.origin}/auth?plan=${selectedPlan.tier}&payment_success=true&email=${encodeURIComponent(email)}`,
           cancelUrl: `${window.location.origin}/pricing?cancelled=true`,
         }
       });
-
       if (error) throw error;
-
-      if (data?.redirectUrl) {
-        window.location.href = data.redirectUrl;
-      } else {
-        throw new Error('No redirect URL received');
-      }
+      if (data?.redirectUrl) window.location.href = data.redirectUrl;
+      else throw new Error('No redirect URL received');
     } catch (error: any) {
-      console.error('[Pricing] Checkout error:', error);
-      toast({
-        title: "Payment Error",
-        description: error.message || "Failed to create checkout session. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(null);
-    }
+      toast({ title: "Payment Error", description: error.message || "Failed to create checkout session.", variant: "destructive" });
+    } finally { setLoading(null); }
   };
 
   const urlParams = new URLSearchParams(window.location.search);
@@ -106,38 +110,28 @@ export default function Pricing() {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">
       {/* Header */}
       <div className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-primary" />
             <span className="text-xl font-bold text-foreground">HuMi</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => navigate('/about')}>
-              About
-            </Button>
-            <Button variant="outline" onClick={() => navigate('/auth')}>
-              Sign In
-            </Button>
+            <Button variant="ghost" onClick={() => navigate('/about')}>About</Button>
+            <Button variant="outline" onClick={() => navigate('/auth')}>Sign In</Button>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-12 space-y-12">
+      <div className="max-w-7xl mx-auto px-4 py-12 space-y-12">
         {/* Hero */}
         <div className="text-center space-y-4">
-          <Badge variant="secondary" className="mb-4">
-            AI-Powered Trading Platform
-          </Badge>
-          <h1 className="text-4xl md:text-5xl font-bold text-foreground">
-            Choose Your Trading Plan
-          </h1>
+          <Badge variant="secondary" className="mb-4">AI-Powered Trading Platform</Badge>
+          <h1 className="text-4xl md:text-5xl font-bold text-foreground">Start Free. Upgrade Anytime.</h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Subscribe first, then create your account. Your subscription will be automatically activated.
+            Get instant access to trading tools, community, and AI — completely free. Upgrade when you're ready for more.
           </p>
         </div>
 
-        {/* Status Messages */}
         {paymentCancelled && (
           <div className="bg-amber-500/10 border border-amber-500 rounded-lg p-4 text-center max-w-md mx-auto">
             <h3 className="text-amber-500 font-semibold">Payment Cancelled</h3>
@@ -145,81 +139,79 @@ export default function Pricing() {
           </div>
         )}
 
-        {/* Pricing Cards */}
+        {/* Free Tier CTA */}
+        <div className="text-center">
+          <Button size="lg" variant="outline" onClick={() => navigate('/auth')} className="text-lg px-8 py-6">
+            Get Started Free — R0/month
+          </Button>
+        </div>
+
+        {/* Comparison Table */}
         {plansLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
+          <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {plans.map((plan) => (
-            <Card 
-              key={plan.name} 
-              className={`relative bg-gradient-card border-border shadow-card transition-all hover:shadow-lg ${
-                plan.popular ? 'ring-2 ring-primary scale-105 md:scale-110' : ''
-              }`}
-            >
-              {plan.popular && (
-                <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-primary">
-                  Most Popular
-                </Badge>
-              )}
-              <CardHeader className="text-center pb-2">
-                <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                <CardDescription className="space-y-1">
-                  <span className="text-4xl font-bold text-foreground">
-                    R{plan.priceZar.toFixed(2)}
-                  </span>
-                  <span className="text-muted-foreground">/month</span>
-                  <div className="text-sm text-muted-foreground">
-                    (${plan.priceUsd.toFixed(2)} USD)
-                  </div>
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <ul className="space-y-3">
-                  {plan.features.map((feature, idx) => (
-                    <li key={idx} className="flex items-center gap-3 text-sm">
-                      <Check className="w-5 h-5 text-profit flex-shrink-0" />
-                      <span>{feature}</span>
-                    </li>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[200px]">Feature</TableHead>
+                  <TableHead className="text-center min-w-[120px]">
+                    <div className="space-y-1">
+                      <div className="font-bold">Free</div>
+                      <div className="text-xs text-muted-foreground">R0/mo</div>
+                    </div>
+                  </TableHead>
+                  {plans.map(plan => (
+                    <TableHead key={plan.tier} className={`text-center min-w-[120px] ${plan.popular ? 'bg-primary/5' : ''}`}>
+                      <div className="space-y-1">
+                        {plan.popular && <Badge className="mb-1">Popular</Badge>}
+                        <div className="font-bold">{plan.name}</div>
+                        <div className="text-xs text-muted-foreground">R{plan.priceZar.toFixed(0)}/mo</div>
+                      </div>
+                    </TableHead>
                   ))}
-                </ul>
-                
-                <Button 
-                  className="w-full" 
-                  size="lg"
-                  variant={plan.popular ? "default" : "outline"}
-                  onClick={() => handleSubscribe(plan)}
-                  disabled={loading !== null}
-                >
-                  {loading === plan.tier ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="w-4 h-4 mr-2" />
-                      Subscribe Now
-                    </>
-                  )}
-                </Button>
-              </CardContent>
-             </Card>
-            ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {comparisonFeatures.map((feature) => (
+                  <TableRow key={feature.label}>
+                    <TableCell className="font-medium text-sm">{feature.label}</TableCell>
+                    <TableCell className="text-center"><FeatureValue value={feature.free} /></TableCell>
+                    <TableCell className="text-center"><FeatureValue value={feature.basic} /></TableCell>
+                    <TableCell className={`text-center ${plans.find(p => p.tier === 'professional')?.popular ? 'bg-primary/5' : ''}`}><FeatureValue value={feature.pro} /></TableCell>
+                    <TableCell className="text-center"><FeatureValue value={feature.enterprise} /></TableCell>
+                  </TableRow>
+                ))}
+                {/* Action row */}
+                <TableRow>
+                  <TableCell />
+                  <TableCell className="text-center py-4">
+                    <Button variant="outline" size="sm" onClick={() => navigate('/auth')}>Start Free</Button>
+                  </TableCell>
+                  {plans.map(plan => (
+                    <TableCell key={plan.tier} className={`text-center py-4 ${plan.popular ? 'bg-primary/5' : ''}`}>
+                      <Button
+                        size="sm"
+                        variant={plan.popular ? "default" : "outline"}
+                        onClick={() => handleSubscribe(plan)}
+                        disabled={loading !== null}
+                      >
+                        {loading === plan.tier ? <Loader2 className="w-4 h-4 animate-spin" /> : "Subscribe"}
+                      </Button>
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         )}
 
-        {/* Footer Info */}
+        {/* Footer */}
         <div className="text-center text-sm text-muted-foreground space-y-2">
-          <p>All payments are processed securely via Yoco.</p>
-          <p>Subscriptions are billed monthly. Cancel anytime.</p>
-          <p className="pt-4">
+          <p>All payments are processed securely via Yoco. Subscriptions are billed monthly. Cancel anytime.</p>
+          <p>
             Already have an account?{" "}
-            <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/auth')}>
-              Sign in here
-            </Button>
+            <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/auth')}>Sign in here</Button>
           </p>
         </div>
       </div>
@@ -229,55 +221,22 @@ export default function Pricing() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Enter Your Email</DialogTitle>
-            <DialogDescription>
-              We'll use this email for your receipt and to activate your subscription after you register.
-            </DialogDescription>
+            <DialogDescription>We'll use this to activate your subscription after you register.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label>Selected Plan</Label>
-              <p className="text-lg font-medium">
-                {selectedPlan?.name} - R{selectedPlan?.priceZar.toFixed(2)}/month
-              </p>
+              <p className="text-lg font-medium">{selectedPlan?.name} - R{selectedPlan?.priceZar.toFixed(2)}/month</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
-              <Input 
-                id="email"
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handlePayment()}
-              />
-              <p className="text-xs text-muted-foreground">
-                Use the same email when you register to automatically activate your subscription.
-              </p>
+              <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handlePayment()} />
+              <p className="text-xs text-muted-foreground">Use the same email when you register to automatically activate your subscription.</p>
             </div>
             <div className="flex gap-2 pt-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowEmailDialog(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handlePayment}
-                disabled={!email || loading !== null}
-                className="flex-1"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Continue to Payment
-                  </>
-                )}
+              <Button variant="outline" onClick={() => setShowEmailDialog(false)} className="flex-1">Cancel</Button>
+              <Button onClick={handlePayment} disabled={!email || loading !== null} className="flex-1">
+                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : <><CreditCard className="w-4 h-4 mr-2" />Continue to Payment</>}
               </Button>
             </div>
           </div>

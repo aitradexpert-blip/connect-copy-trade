@@ -23,6 +23,59 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
+    // --- Query limiting based on tier ---
+    // Determine user's tier
+    const { data: subData } = await supabase
+      .from('user_subscriptions')
+      .select('plan_name, status')
+      .eq('user_id', user_id)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    const tierName = subData?.plan_name?.toLowerCase() || 'free';
+    
+    // Determine query limit based on tier
+    let queryLimit = 5; // free
+    if (tierName === 'basic') queryLimit = 50;
+    else if (['professional', 'enterprise', 'mentor'].includes(tierName)) queryLimit = 999999; // unlimited
+
+    // Fetch profile for query tracking
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('khumo_queries_used, khumo_queries_reset_at')
+      .eq('user_id', user_id)
+      .single();
+
+    let queriesUsed = profile?.khumo_queries_used || 0;
+    const resetAt = profile?.khumo_queries_reset_at ? new Date(profile.khumo_queries_reset_at) : new Date(0);
+    const now = new Date();
+    const daysSinceReset = (now.getTime() - resetAt.getTime()) / (1000 * 60 * 60 * 24);
+
+    // Reset if older than 30 days
+    if (daysSinceReset >= 30) {
+      queriesUsed = 0;
+      await supabase
+        .from('profiles')
+        .update({ khumo_queries_used: 0, khumo_queries_reset_at: now.toISOString() })
+        .eq('user_id', user_id);
+    }
+
+    // Check limit
+    if (queriesUsed >= queryLimit) {
+      const upgradeText = tierName === 'free'
+        ? "Eish, you've used all 5 of your free Khumo questions this month! 💡 Upgrade to Basic (R178/mo) for 50 questions, or Professional for unlimited access. Head to the Subscription page to level up!"
+        : "You've reached your monthly Khumo question limit. Upgrade your plan for more access!";
+
+      return new Response(JSON.stringify({
+        text: upgradeText,
+        limitReached: true,
+        queriesUsed,
+        queryLimit,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     // Fetch recent chat history for context
     const { data: chatHistory } = await supabase
       .from('chat_history')
@@ -97,6 +150,7 @@ You have deep knowledge of:
 - Most Traded Pairs: ${topPairs.join(', ') || 'None yet'}
 - Connected Accounts: ${(accounts || []).length}
 - Total Balance: $${totalBalance.toFixed(2)}
+- User Tier: ${tierName} (${queriesUsed}/${queryLimit} queries used this month)
 ${context ? `\n[ADDITIONAL CONTEXT]\n${context}` : ''}
 
 [CAPABILITIES]
@@ -154,9 +208,17 @@ ${context ? `\n[ADDITIONAL CONTEXT]\n${context}` : ''}
       { user_id, role: 'assistant', content: responseText }
     ]);
 
+    // Increment query counter
+    await supabase
+      .from('profiles')
+      .update({ khumo_queries_used: queriesUsed + 1 })
+      .eq('user_id', user_id);
+
     return new Response(JSON.stringify({
       text: responseText,
-      stats: { winRate, riskReward, totalPnL, topPairs, closedTradesCount: closedTrades.length }
+      stats: { winRate, riskReward, totalPnL, topPairs, closedTradesCount: closedTrades.length },
+      queriesUsed: queriesUsed + 1,
+      queryLimit,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

@@ -27,10 +27,13 @@ interface UserSubscription {
   subscription_plans: SubscriptionPlan;
 }
 
+export type TierName = 'free' | 'basic' | 'professional' | 'enterprise' | 'mentor';
+
 export const useSubscription = () => {
   const { user } = useAuth();
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
+  const [khumoQueriesUsed, setKhumoQueriesUsed] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -55,14 +58,37 @@ export const useSubscription = () => {
         }
       } catch (err) {
         console.error('Error fetching subscription:', err);
-      } finally {
-        setLoading(false);
       }
+      
+      // Fetch khumo query usage from profiles
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('khumo_queries_used, khumo_queries_reset_at')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (profile) {
+          // Check if reset is needed (older than 30 days)
+          const resetAt = new Date(profile.khumo_queries_reset_at);
+          const now = new Date();
+          const daysSinceReset = (now.getTime() - resetAt.getTime()) / (1000 * 60 * 60 * 24);
+          
+          if (daysSinceReset >= 30) {
+            setKhumoQueriesUsed(0);
+          } else {
+            setKhumoQueriesUsed(profile.khumo_queries_used || 0);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching khumo queries:', err);
+      }
+      
+      setLoading(false);
     };
     
     fetchSubscription();
     
-    // Subscribe to realtime updates
     const channel = supabase
       .channel('subscription-changes')
       .on('postgres_changes', {
@@ -78,7 +104,28 @@ export const useSubscription = () => {
     };
   }, [user]);
 
+  const tierName: TierName = subscription 
+    ? (subscription.plan_name?.toLowerCase() as TierName) || 'basic'
+    : 'free';
+
+  const isFree = tierName === 'free';
+
+  const khumoQueryLimit = (() => {
+    switch (tierName) {
+      case 'free': return 5;
+      case 'basic': return 50;
+      default: return Infinity;
+    }
+  })();
+
+  const khumoQueriesRemaining = Math.max(0, khumoQueryLimit - khumoQueriesUsed);
+
   const canAccessFeature = (feature: string): boolean => {
+    if (isFree) {
+      // Free tier features
+      const freeFeatures = ['training', 'charts', 'journal_manual', 'notifications_basic', 'whatsapp_tools'];
+      return freeFeatures.includes(feature);
+    }
     if (!subscription) return false;
     const plan = subscription.subscription_plans;
     
@@ -89,6 +136,12 @@ export const useSubscription = () => {
         return plan.priority_support;
       case 'custom_risk':
         return plan.custom_risk_enabled;
+      case 'training':
+      case 'charts':
+      case 'journal_manual':
+      case 'notifications_basic':
+      case 'whatsapp_tools':
+        return true;
       default:
         return true;
     }
@@ -97,7 +150,7 @@ export const useSubscription = () => {
   const hasCreditsRemaining = (): boolean => {
     if (!subscription) return false;
     const limit = subscription.subscription_plans.auto_trades_limit;
-    if (limit === -1) return true; // Unlimited
+    if (limit === -1) return true;
     return subscription.auto_trades_used < limit;
   };
 
@@ -113,6 +166,11 @@ export const useSubscription = () => {
     loading, 
     canAccessFeature, 
     hasCreditsRemaining,
-    getRemainingTrades
+    getRemainingTrades,
+    tierName,
+    isFree,
+    khumoQueriesUsed,
+    khumoQueriesRemaining,
+    khumoQueryLimit,
   };
 };

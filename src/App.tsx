@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import { useSubscription } from "@/hooks/useSubscription";
 import { ThemeProvider } from "next-themes";
 import { MentorProvider } from "@/contexts/MentorContext";
 import Index from "./pages/Index";
@@ -35,16 +34,25 @@ import MentorCenter from "./pages/MentorCenter";
 import MentorReferral from "./pages/MentorReferral";
 import InvestorPitch from "./pages/InvestorPitch";
 import About from "./pages/About";
+import { useSubscription } from "@/hooks/useSubscription";
 
 const queryClient = new QueryClient();
 
-const ProtectedRoute = ({ children, requireSubscription = true }: { children: React.ReactNode; requireSubscription?: boolean }) => {
+// Authenticated route — all logged-in users (including free tier)
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  return <>{children}</>;
+};
+
+// Paid-only route — requires active subscription
+const PaidRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { subscription, loading: subLoading } = useSubscription();
-  
   if (loading || subLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  if (requireSubscription && !subscription) return <Navigate to="/subscription" replace />;
+  if (!subscription) return <Navigate to="/subscription" replace />;
   return <>{children}</>;
 };
 
@@ -84,30 +92,39 @@ const App = () => (
             <KhumoIntroModal />
             <BrowserRouter>
               <Routes>
+                {/* Public routes */}
                 <Route path="/pricing" element={<Pricing />} />
                 <Route path="/pitch" element={<InvestorPitch />} />
                 <Route path="/auth" element={<PublicRoute><Auth /></PublicRoute>} />
                 <Route path="/ref/:slug" element={<MentorReferral />} />
                 <Route path="/about" element={<About />} />
+                <Route path="/api-docs" element={<ApiDocs />} />
+
+                {/* Free tier accessible routes (all authenticated users) */}
                 <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-                <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
-                <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
-                <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
-                <Route path="/accounts" element={<ProtectedRoute><TradingAccounts /></ProtectedRoute>} />
-                <Route path="/subscription" element={<ProtectedRoute requireSubscription={false}><Subscription /></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-                <Route path="/wallet" element={<ProtectedRoute><CryptoWallet /></ProtectedRoute>} />
-                <Route path="/credits" element={<ProtectedRoute><CreditUsage /></ProtectedRoute>} />
-                <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
-                <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
                 <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
                 <Route path="/training" element={<ProtectedRoute><TrainingCenter /></ProtectedRoute>} />
-                <Route path="/mentor-center" element={<ProtectedRoute><MentorCenter /></ProtectedRoute>} />
-                <Route path="/api-docs" element={<ApiDocs />} />
+                <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
+                <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+
+                {/* Paid tier routes */}
+                <Route path="/ideas" element={<PaidRoute><TradingIdeas /></PaidRoute>} />
+                <Route path="/copy-trading" element={<PaidRoute><CopyTrading /></PaidRoute>} />
+                <Route path="/ai-trading" element={<PaidRoute><AIAutoTrading /></PaidRoute>} />
+                <Route path="/accounts" element={<PaidRoute><TradingAccounts /></PaidRoute>} />
+                <Route path="/analytics" element={<PaidRoute><Analytics /></PaidRoute>} />
+                <Route path="/wallet" element={<PaidRoute><CryptoWallet /></PaidRoute>} />
+                <Route path="/credits" element={<PaidRoute><CreditUsage /></PaidRoute>} />
+                <Route path="/mentor-center" element={<PaidRoute><MentorCenter /></PaidRoute>} />
+
+                {/* Admin routes */}
                 <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
                 <Route path="/admin-panel" element={<AdminRoute><AdminPanel /></AdminRoute>} />
+
+                {/* Special routes */}
                 <Route path="/deriv-callback" element={<DerivCallbackRoute><DerivCallback /></DerivCallbackRoute>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
