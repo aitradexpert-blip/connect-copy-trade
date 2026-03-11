@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { 
   DollarSign, TrendingUp, Activity, Users, Plus, Eye, Play, RefreshCw,
   Building, ExternalLink, Wallet, Send, ArrowDownUp, LineChart,
-  ArrowDown, ArrowUp, Clock, Download, CreditCard, BookOpen,
+  ArrowDown, ArrowUp, Clock, CreditCard, BookOpen,
   GraduationCap, MessageCircle, Sparkles, Lock
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
@@ -46,21 +46,7 @@ const Index = () => {
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
   const [displayName, setDisplayName] = useState('Trader');
   
-  const [canInstall, setCanInstall] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-
-  useEffect(() => {
-    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); setCanInstall(true); };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstallApp = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') { setCanInstall(false); setInstallPrompt(null); }
-  };
+  // PWA install is now handled globally via usePWAInstall hook in TopHeader and PWAInstallPrompt
 
   // Load display name
   useEffect(() => {
@@ -203,12 +189,6 @@ const Index = () => {
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
-            {canInstall && (
-              <Button onClick={handleInstallApp} variant="outline" className="flex items-center gap-2">
-                <Download className="w-4 h-4" />
-                Install App
-              </Button>
-            )}
           </div>
         </div>
 
