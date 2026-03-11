@@ -46,21 +46,7 @@ const Index = () => {
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
   const [displayName, setDisplayName] = useState('Trader');
   
-  const [canInstall, setCanInstall] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-
-  useEffect(() => {
-    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); setCanInstall(true); };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstallApp = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') { setCanInstall(false); setInstallPrompt(null); }
-  };
+  // PWA install is now handled globally via usePWAInstall hook in TopHeader and PWAInstallPrompt
 
   // Load display name
   useEffect(() => {
