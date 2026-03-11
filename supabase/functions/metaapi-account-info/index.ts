@@ -68,12 +68,21 @@ Deno.serve(async (req) => {
       if (!deployResp.ok) {
         const text = await deployResp.text()
         console.error('Deploy error', deployResp.status, text)
+        // If deploy fails due to billing, return cached data from DB instead of failing
+        return new Response(JSON.stringify({ 
+          balance: null, equity: null, 
+          status: 'deploy_failed',
+          message: `Account deployment failed (state: ${state}). The account may need manual reactivation. Error: ${text}`
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
       }
-      // Return partial data - account is deploying
+      // Deploy initiated successfully - return deploying status
       return new Response(JSON.stringify({ 
         balance: null, equity: null, 
         status: 'deploying',
-        message: `Account is being deployed (state: ${state}). Please retry in a few moments.`
+        message: `Account is being deployed (state: ${state}). Please retry in 30-60 seconds.`
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
