@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Loader2, CreditCard, Upload, Sparkles } from "lucide-react";
+import { Check, Loader2, CreditCard, Upload, Sparkles, X, MessageCircle, BookOpen, GraduationCap, LineChart, Bot, Users, Shield, Headphones } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -22,6 +22,19 @@ interface Plan {
   features: string[];
   popular?: boolean;
 }
+
+const freeFeatures = [
+  "WhatsApp Trading Community",
+  "Daily Trading Signals (WhatsApp)",
+  "Free Expert Advisor (w/ OctaFx)",
+  "Free Mentorship Program",
+  "Training Center (full access)",
+  "Live Market Charts (170+ instruments)",
+  "Manual Trade Journal with stats",
+  "Khumo AI – 5 questions/month",
+  "Mobile Dashboard (demo mode)",
+  "Real-Time Notifications (limited)",
+];
 
 export default function Subscription() {
   const { user } = useAuth();
@@ -96,16 +109,6 @@ export default function Subscription() {
           </p>
         </div>
 
-        {/* Current plan badge */}
-        {isFree && (
-          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 text-center max-w-md mx-auto">
-            <Badge variant="secondary" className="mb-2">Current Plan: Free</Badge>
-            <p className="text-sm text-muted-foreground">
-              You have access to WhatsApp tools, Training Center, Charts, Journal (manual), and 5 Khumo AI questions/month.
-            </p>
-          </div>
-        )}
-
         {paymentSuccess && (
           <div className="bg-profit/10 border border-profit rounded-lg p-4 text-center">
             <h3 className="text-profit font-semibold">Payment Successful!</h3>
@@ -122,7 +125,34 @@ export default function Subscription() {
         {plansLoading ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Free Tier Card */}
+            <Card className={`relative bg-gradient-card border-border shadow-card ${isFree ? 'ring-2 ring-profit' : ''}`}>
+              {isFree && <Badge className="absolute -top-3 right-4 bg-profit">Current</Badge>}
+              <CardHeader className="text-center">
+                <CardTitle className="text-xl">Free</CardTitle>
+                <CardDescription>
+                  <span className="text-3xl font-bold text-foreground">R0</span>
+                  <span className="text-muted-foreground">/month</span>
+                  <br /><span className="text-sm text-muted-foreground">Forever free</span>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-2">
+                  {freeFeatures.map((feature, idx) => (
+                    <li key={idx} className="flex items-center gap-2 text-sm">
+                      <Check className="w-4 h-4 text-profit flex-shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button className="w-full" variant="outline" disabled={isFree}>
+                  {isFree ? 'Current Plan' : 'Downgrade'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Paid Plans */}
             {plans.map((plan) => (
               <Card key={plan.name} className={`relative bg-gradient-card border-border shadow-card ${plan.popular ? 'ring-2 ring-primary' : ''} ${plan.tier === tierName ? 'ring-2 ring-profit' : ''}`}>
                 {plan.popular && <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-primary">Most Popular</Badge>}
@@ -153,8 +183,11 @@ export default function Subscription() {
           </div>
         )}
 
-        <div className="text-center text-sm text-muted-foreground">
+        <div className="text-center text-sm text-muted-foreground space-y-1">
           <p>All payments processed via Yoco. Cancel anytime.</p>
+          <Button variant="link" className="p-0 h-auto text-sm" onClick={() => navigate('/pricing')}>
+            View full feature comparison →
+          </Button>
         </div>
       </div>
 

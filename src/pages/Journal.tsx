@@ -8,11 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { BookOpen, TrendingUp, TrendingDown, Loader2, BarChart3, Target, Clock, Sparkles, Lock } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { BookOpen, TrendingUp, TrendingDown, Loader2, BarChart3, Target, Clock, Sparkles, Lock, Plus, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface Trade {
   id: string; symbol: string; direction: string; volume: number;
@@ -29,6 +32,7 @@ const FREE_AI_LIMIT = 3;
 export default function Journal() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { isFree, tierName } = useSubscription();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [analyses, setAnalyses] = useState<Record<string, TradeAnalysis>>({});
@@ -37,6 +41,20 @@ export default function Journal() {
   const [generatingPlan, setGeneratingPlan] = useState(false);
   const [tradingPlan, setTradingPlan] = useState<string | null>(null);
   const [aiUsesThisSession, setAiUsesThisSession] = useState(0);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [savingTrade, setSavingTrade] = useState(false);
+
+  // Manual entry form
+  const [manualSymbol, setManualSymbol] = useState("");
+  const [manualDirection, setManualDirection] = useState("BUY");
+  const [manualVolume, setManualVolume] = useState("0.01");
+  const [manualEntry, setManualEntry] = useState("");
+  const [manualExit, setManualExit] = useState("");
+  const [manualSL, setManualSL] = useState("");
+  const [manualTP, setManualTP] = useState("");
+  const [manualComment, setManualComment] = useState("");
+  const [manualStatus, setManualStatus] = useState("closed");
 
   const [instruments, setInstruments] = useState("");
   const [riskTolerance, setRiskTolerance] = useState("medium");
@@ -60,9 +78,95 @@ export default function Journal() {
 
   const canUseAI = !isFree || aiUsesThisSession < FREE_AI_LIMIT;
 
+  const handleManualSave = async () => {
+    if (!user || !manualSymbol) {
+      toast({ title: "Please fill in symbol", variant: "destructive" });
+      return;
+    }
+    setSavingTrade(true);
+    try {
+      // We need a trading_account_id — use a placeholder "manual" account or find existing
+      let accountId: string;
+      const { data: existingAccounts } = await supabase
+        .from('trading_accounts')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (existingAccounts && existingAccounts.length > 0) {
+        accountId = existingAccounts[0].id;
+      } else {
+        // Create a manual journal account
+        const { data: newAccount, error: accErr } = await supabase
+          .from('trading_accounts')
+          .insert({
+            user_id: user.id,
+            name: 'Manual Journal',
+            login: 'manual',
+            server: 'manual',
+            platform: 'manual',
+            provider: 'manual',
+            connection_type: 'manual',
+            connection_status: 'connected',
+          })
+          .select('id')
+          .single();
+        if (accErr) throw accErr;
+        accountId = newAccount.id;
+      }
+
+      const entryPrice = manualEntry ? parseFloat(manualEntry) : null;
+      const exitPrice = manualExit ? parseFloat(manualExit) : null;
+      const volume = parseFloat(manualVolume) || 0.01;
+      let profitLoss: number | null = null;
+
+      if (entryPrice && exitPrice) {
+        const pipDiff = manualDirection === 'BUY'
+          ? exitPrice - entryPrice
+          : entryPrice - exitPrice;
+        profitLoss = parseFloat((pipDiff * volume * 100000).toFixed(2));
+        // For symbols like Gold, indices — this is an approximation
+        if (manualSymbol.toUpperCase().includes('XAU') || manualSymbol.toUpperCase().includes('GOLD')) {
+          profitLoss = parseFloat((pipDiff * volume * 100).toFixed(2));
+        }
+      }
+
+      const { error } = await supabase.from('trade_history').insert({
+        user_id: user.id,
+        trading_account_id: accountId,
+        symbol: manualSymbol.toUpperCase(),
+        direction: manualDirection,
+        volume,
+        entry_price: entryPrice,
+        exit_price: exitPrice,
+        stop_loss: manualSL ? parseFloat(manualSL) : null,
+        take_profit: manualTP ? parseFloat(manualTP) : null,
+        profit_loss: profitLoss,
+        status: manualStatus,
+        comment: manualComment || null,
+        closed_at: manualStatus === 'closed' ? new Date().toISOString() : null,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Trade logged!", description: `${manualDirection} ${manualSymbol} added to journal.` });
+      setShowManualEntry(false);
+      resetManualForm();
+      loadData();
+    } catch (err: any) {
+      toast({ title: "Failed to save trade", description: err.message, variant: "destructive" });
+    } finally { setSavingTrade(false); }
+  };
+
+  const resetManualForm = () => {
+    setManualSymbol(""); setManualDirection("BUY"); setManualVolume("0.01");
+    setManualEntry(""); setManualExit(""); setManualSL(""); setManualTP("");
+    setManualComment(""); setManualStatus("closed");
+  };
+
   const analyseTrade = async (trade: Trade) => {
     if (!canUseAI) {
-      toast({ title: "Upgrade Required", description: `Free users get ${FREE_AI_LIMIT} AI analyses per session. Upgrade for unlimited access.`, variant: "destructive" });
+      setShowUpgradeDialog(true);
       return;
     }
     setAnalysing(trade.id);
@@ -79,7 +183,7 @@ export default function Journal() {
 
   const generateTradingPlan = async () => {
     if (!canUseAI) {
-      toast({ title: "Upgrade Required", description: `Free users get ${FREE_AI_LIMIT} AI uses per session. Upgrade for unlimited access.`, variant: "destructive" });
+      setShowUpgradeDialog(true);
       return;
     }
     setGeneratingPlan(true);
@@ -112,11 +216,17 @@ export default function Journal() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><BookOpen className="h-8 w-8" />Trading Journal</h1>
-          <p className="text-muted-foreground mt-1">
-            {isFree ? `Manual trade logging • ${FREE_AI_LIMIT - aiUsesThisSession} AI analyses remaining` : 'AI-powered trade analysis and strategy building'}
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2"><BookOpen className="h-8 w-8" />Trading Journal</h1>
+            <p className="text-muted-foreground mt-1">
+              {isFree ? `Manual trade logging • ${FREE_AI_LIMIT - aiUsesThisSession} AI analyses remaining` : 'AI-powered trade analysis and strategy building'}
+            </p>
+          </div>
+          <Button onClick={() => setShowManualEntry(true)} className="flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Log Trade
+          </Button>
         </div>
 
         {/* Stats */}
@@ -131,10 +241,17 @@ export default function Journal() {
         {isFree && trades.length === 0 && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-6 text-center">
-              <Lock className="w-8 h-8 mx-auto text-primary mb-2" />
-              <p className="font-medium">Connect a broker to auto-log trades</p>
-              <p className="text-sm text-muted-foreground mt-1 mb-3">Free users can manually log trades here. Upgrade to auto-sync from your connected accounts.</p>
-              <Button variant="outline" size="sm" onClick={() => window.open('/subscription', '_self')}>View Plans</Button>
+              <BookOpen className="w-8 h-8 mx-auto text-primary mb-2" />
+              <p className="font-medium">Start logging your trades</p>
+              <p className="text-sm text-muted-foreground mt-1 mb-3">
+                Tap "Log Trade" above to manually record your first trade. Upgrade to auto-sync from connected broker accounts.
+              </p>
+              <div className="flex gap-2 justify-center">
+                <Button size="sm" onClick={() => setShowManualEntry(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Log First Trade
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate('/subscription')}>View Plans</Button>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -144,7 +261,7 @@ export default function Journal() {
 
           <TabsContent value="journal" className="space-y-4">
             {trades.length === 0 ? (
-              <Card className="bg-gradient-card border-border"><CardContent className="p-8 text-center"><BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-3" /><p className="text-lg font-medium">No trades yet</p><p className="text-muted-foreground">Connect your trading account to see your journal here.</p></CardContent></Card>
+              <Card className="bg-gradient-card border-border"><CardContent className="p-8 text-center"><BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-3" /><p className="text-lg font-medium">No trades yet</p><p className="text-muted-foreground">Use the "Log Trade" button to start recording your trades manually.</p></CardContent></Card>
             ) : (
               <ScrollArea className="h-[600px]">
                 <div className="space-y-3">
@@ -166,6 +283,7 @@ export default function Journal() {
                             <span>Entry: {trade.entry_price || 'N/A'}</span><span>Exit: {trade.exit_price || 'N/A'}</span>
                             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(trade.executed_at).toLocaleDateString()}</span>
                           </div>
+                          {trade.comment && <p className="text-xs text-muted-foreground italic mb-2">"{trade.comment}"</p>}
                           {analysis ? (
                             <div className="mt-2 p-3 bg-muted/50 rounded-lg">
                               <div className="flex items-center gap-1 mb-1">
@@ -212,6 +330,101 @@ export default function Journal() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Manual Trade Entry Dialog */}
+      <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Plus className="h-5 w-5" /> Log Trade</DialogTitle>
+            <DialogDescription>Manually record a trade in your journal.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Symbol *</Label>
+                <Input value={manualSymbol} onChange={e => setManualSymbol(e.target.value)} placeholder="e.g. EUR/USD" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Direction</Label>
+                <Select value={manualDirection} onValueChange={setManualDirection}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BUY">BUY</SelectItem>
+                    <SelectItem value="SELL">SELL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Lot Size</Label>
+                <Input type="number" step="0.01" value={manualVolume} onChange={e => setManualVolume(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Entry Price</Label>
+                <Input type="number" step="any" value={manualEntry} onChange={e => setManualEntry(e.target.value)} placeholder="1.0850" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Exit Price</Label>
+                <Input type="number" step="any" value={manualExit} onChange={e => setManualExit(e.target.value)} placeholder="1.0900" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Stop Loss</Label>
+                <Input type="number" step="any" value={manualSL} onChange={e => setManualSL(e.target.value)} placeholder="Optional" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Take Profit</Label>
+                <Input type="number" step="any" value={manualTP} onChange={e => setManualTP(e.target.value)} placeholder="Optional" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={manualStatus} onValueChange={setManualStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="closed">Closed</SelectItem>
+                  <SelectItem value="open">Open</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea value={manualComment} onChange={e => setManualComment(e.target.value)} placeholder="Why did you take this trade? What was your setup?" rows={2} />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowManualEntry(false)} className="flex-1">Cancel</Button>
+              <Button onClick={handleManualSave} disabled={savingTrade || !manualSymbol} className="flex-1">
+                {savingTrade ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : 'Save Trade'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upgrade Required Dialog */}
+      <Dialog open={showUpgradeDialog} onOpenChange={setShowUpgradeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Zap className="h-5 w-5 text-primary" /> Upgrade Required</DialogTitle>
+            <DialogDescription>
+              You've used all {FREE_AI_LIMIT} free AI analyses for this session.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Upgrade your plan to unlock unlimited AI trade analysis, strategy building, and auto-synced journal from connected brokers.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowUpgradeDialog(false)} className="flex-1">Maybe Later</Button>
+              <Button onClick={() => { setShowUpgradeDialog(false); navigate('/subscription'); }} className="flex-1">
+                <Zap className="w-4 h-4 mr-2" /> View Plans
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
