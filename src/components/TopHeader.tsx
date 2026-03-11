@@ -1,4 +1,4 @@
- import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Check } from "lucide-react";
+import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Check, Download } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,15 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
- import { useNotifications } from "@/hooks/useNotifications";
- import { formatDistanceToNow } from "date-fns";
- import { ScrollArea } from "@/components/ui/scroll-area";
+import { useNotifications } from "@/hooks/useNotifications";
+import { formatDistanceToNow } from "date-fns";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 
 export function TopHeader() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
-   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(10);
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(10);
+  const { canInstall, install } = usePWAInstall();
 
   const handleLogout = async () => {
     await signOut();
