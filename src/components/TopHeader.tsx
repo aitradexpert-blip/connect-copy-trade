@@ -43,6 +43,17 @@ export function TopHeader() {
       </div>
 
       <div className="flex items-center gap-4">
+        {canInstall && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={install}
+            aria-label="Install App"
+            title="Install HuMi App"
+          >
+            <Download className="h-5 w-5" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"

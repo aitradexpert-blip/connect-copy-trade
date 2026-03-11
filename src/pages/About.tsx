@@ -17,17 +17,17 @@ const coreFeatures = [
   {
     icon: Globe,
     title: "Multi-Broker Orchestration",
-    desc: "Connect your MT4, MT5, and Deriv accounts into a single unified dashboard. See all your balances, open positions, trade history, and equity across every broker in one place. No more switching between five different apps. HuMi uses MetaAPI to bridge MT4/MT5 and Deriv's WebSocket API for synthetic indices.",
+    desc: "Connect your MT4, MT5, and Deriv accounts into a single unified dashboard. See all your balances, open positions, trade history, and equity across every broker in one place. No more switching between five different apps. HuMi uses secure cloud bridges to connect MT4/MT5 and Deriv's WebSocket API for synthetic indices.",
   },
   {
     icon: Bot,
     title: "Khumo AI Assistant",
-    desc: "Khumo is your personal AI trading assistant with a South African personality. Ask Khumo about market conditions, get trade recommendations, or execute trades using your voice. Powered by GPT-5 for intelligence and ElevenLabs for natural-sounding South African voice responses. Khumo analyses market data, your trade history, and current positions to give you personalised advice.",
+    desc: "Khumo is your personal AI trading assistant with a South African personality. Ask Khumo about market conditions, get trade recommendations, or execute trades using your voice. Powered by advanced AI for intelligence and natural-sounding South African voice responses. Khumo analyses market data, your trade history, and current positions to give you personalised advice.",
   },
   {
     icon: Copy,
     title: "Copy Trading System",
-    desc: "Follow and automatically copy verified master traders in real time. HuMi integrates MetaAPI CopyFactory for MT4/MT5 accounts and Deriv's native copy trading for synthetic indices. View transparent performance stats — win rate, total P&L, drawdown, and number of followers — before you decide to copy. Trades are mirrored within milliseconds via Supabase Edge Functions.",
+    desc: "Follow and automatically copy verified master traders in real time. HuMi integrates cloud-based copy trading for MT4/MT5 accounts and Deriv's native copy trading for synthetic indices. View transparent performance stats — win rate, total P&L, drawdown, and number of followers — before you decide to copy. Trades are mirrored within milliseconds via secure Edge Functions.",
   },
   {
     icon: Zap,
@@ -37,7 +37,7 @@ const coreFeatures = [
   {
     icon: Wallet,
     title: "Cross-Broker Capital Mobility",
-    desc: "Move funds between brokers in hours instead of days. Traditional bank wires take 3–5 days and cost 5–10% in fees. HuMi's Capital Mobility Engine uses crypto settlement via Bankii wallet integration to transfer funds at under 2% fees. The multi-step orchestration handles withdrawal → crypto conversion → deposit automatically, with real-time status tracking.",
+    desc: "Move funds between brokers in hours instead of days. Traditional bank wires take 3–5 days and cost 5–10% in fees. HuMi's Capital Mobility Engine uses crypto settlement to transfer funds at under 2% fees. The multi-step orchestration handles withdrawal → crypto conversion → deposit automatically, with real-time status tracking.",
   },
   {
     icon: BarChart3,
@@ -87,7 +87,7 @@ const userJourneySteps = [
   {
     step: 3,
     title: "Connect Your Broker Accounts",
-    desc: "Go to Trading Accounts and connect your existing broker accounts. For Deriv: one-click OAuth login. For MT4/MT5: enter your login credentials, server name, and platform type — MetaAPI provisions and bridges your account automatically. You can connect multiple accounts.",
+    desc: "Go to Trading Accounts and connect your existing broker accounts. For Deriv: one-click OAuth login. For MT4/MT5: enter your login credentials, server name, and platform type — your account is provisioned and bridged automatically. You can connect multiple accounts.",
     icon: Layers,
   },
   {
@@ -113,7 +113,7 @@ const userJourneySteps = [
 const howItWorks = [
   {
     title: "Broker Integration Layer",
-    desc: "HuMi connects to your brokers through secure APIs. For MT4/MT5 brokers, we use MetaAPI — a cloud bridge that provisions a connection to your trading server. For Deriv, we use their official WebSocket API with OAuth authentication. HuMi never stores your broker passwords; all authentication is handled through the broker's own secure systems.",
+    desc: "HuMi connects to your brokers through secure APIs. For MT4/MT5 brokers, we use a cloud bridge that provisions a connection to your trading server. For Deriv, we use their official WebSocket API with OAuth authentication. HuMi never stores your broker passwords; all authentication is handled through the broker's own secure systems.",
   },
   {
     title: "AI Signal Pipeline",
@@ -121,19 +121,19 @@ const howItWorks = [
   },
   {
     title: "Trade Execution Flow",
-    desc: "When you tap 'Execute' on a signal, HuMi sends the trade parameters to a Supabase Edge Function. The Edge Function authenticates with your broker (via MetaAPI or Deriv API), places the trade, and returns confirmation with the trade ID, execution price, and timestamp. The entire process takes 1–3 seconds.",
+    desc: "When you tap 'Execute' on a signal, HuMi sends the trade parameters to a secure Edge Function. The Edge Function authenticates with your broker, places the trade, and returns confirmation with the trade ID, execution price, and timestamp. The entire process takes 1–3 seconds.",
   },
   {
     title: "Copy Trading Engine",
-    desc: "Master traders create strategies via MetaAPI CopyFactory. When a master places a trade, it's instantly replicated to all follower accounts. The copy engine handles lot size scaling (proportional to follower balance), risk management (max position size), and synchronisation. For Deriv, the platform uses native copy trading tokens.",
+    desc: "Master traders create strategies via our copy trading engine. When a master places a trade, it's instantly replicated to all follower accounts. The copy engine handles lot size scaling (proportional to follower balance), risk management (max position size), and synchronisation. For Deriv, the platform uses native copy trading tokens.",
   },
   {
     title: "Capital Transfer Orchestrator",
-    desc: "Cross-broker transfers follow a multi-step state machine: (1) Initiate withdrawal from source broker, (2) Convert to crypto via Bankii wallet, (3) Send crypto to destination broker's deposit address, (4) Confirm deposit. Each step has real-time status tracking, estimated completion times, and error handling with automatic retries.",
+    desc: "Cross-broker transfers follow a multi-step state machine: (1) Initiate withdrawal from source broker, (2) Convert to crypto via integrated wallet, (3) Send crypto to destination broker's deposit address, (4) Confirm deposit. Each step has real-time status tracking, estimated completion times, and error handling with automatic retries.",
   },
   {
     title: "Real-Time Data Sync",
-    desc: "Account balances, positions, and trade history are synced in real-time using Supabase Realtime subscriptions and WebSocket connections. Deriv data streams live via their WebSocket API. MT4/MT5 data is polled via MetaAPI at regular intervals. All data is stored in a PostgreSQL database with Row-Level Security ensuring users only see their own data.",
+    desc: "Account balances, positions, and trade history are synced in real-time using Supabase Realtime subscriptions and WebSocket connections. Deriv data streams live via their WebSocket API. MT4/MT5 data is polled via cloud bridges at regular intervals. All data is stored in a PostgreSQL database with Row-Level Security ensuring users only see their own data.",
   },
 ];
 
@@ -185,10 +185,10 @@ const subscriptionTiers = [
 const techStack = [
   { label: "Frontend", value: "React 18, TypeScript, Tailwind CSS, Vite (PWA)" },
   { label: "Backend", value: "Supabase — PostgreSQL, Auth, Edge Functions, Realtime" },
-  { label: "Broker APIs", value: "MetaAPI (MT4/MT5 bridge), Deriv WebSocket API" },
-  { label: "AI Engine", value: "OpenAI GPT-5 (Khumo intelligence), ElevenLabs (SA voice)" },
-  { label: "Payments", value: "Yoco (ZAR), Bankii (crypto wallet & transfers)" },
-  { label: "Copy Trading", value: "MetaAPI CopyFactory, Deriv native copy trading" },
+  { label: "Broker APIs", value: "Secure cloud bridges for MT4/MT5, Deriv WebSocket API" },
+  { label: "AI Engine", value: "Advanced AI (Khumo intelligence), Natural voice synthesis (SA accent)" },
+  { label: "Payments", value: "Yoco (ZAR), Crypto wallet integration for transfers" },
+  { label: "Copy Trading", value: "Cloud-based CopyFactory engine, Deriv native copy trading" },
   { label: "Database", value: "20+ tables with Row-Level Security, real-time subscriptions" },
   { label: "Edge Functions", value: "18+ serverless functions for trade execution, AI, payments" },
 ];
@@ -473,7 +473,7 @@ export default function About() {
               <p><strong className="text-foreground">AI signals are analysis tools, not guarantees.</strong> Khumo AI provides market analysis based on technical indicators and historical data. It does not guarantee profits. Always do your own research before executing any trade.</p>
               <p><strong className="text-foreground">Cross-broker transfers via crypto carry market volatility risk</strong> during the transfer window. The value of cryptocurrency can fluctuate between the time funds are withdrawn and deposited.</p>
               <p><strong className="text-foreground">We are not FSCA-licensed.</strong> HuMi operates as a technology connector between users and FSCA-compliant broker partners. Your broker holds the regulatory licence and manages your funds. We do not hold, manage, or have access to your trading capital.</p>
-              <p><strong className="text-foreground">Broker dependency.</strong> Our features depend on broker API availability. If MetaAPI, Deriv, or any broker API experiences downtime, the affected features will be temporarily unavailable.</p>
+              <p><strong className="text-foreground">Broker dependency.</strong> Our features depend on broker API availability. If any broker API experiences downtime, the affected features will be temporarily unavailable.</p>
             </CardContent>
           </Card>
         </section>
