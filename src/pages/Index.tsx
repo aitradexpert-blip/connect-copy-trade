@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { 
   DollarSign, TrendingUp, Activity, Users, Plus, Eye, Play, RefreshCw,
   Building, ExternalLink, Wallet, Send, ArrowDownUp, LineChart,
-  ArrowDown, ArrowUp, Clock, Download, CreditCard, BookOpen,
+  ArrowDown, ArrowUp, Clock, CreditCard, BookOpen,
   GraduationCap, MessageCircle, Sparkles, Lock
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
