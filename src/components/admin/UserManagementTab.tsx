@@ -1,4 +1,4 @@
- import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -6,17 +6,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Trash2, CheckCircle, Crown } from "lucide-react";
+import { Users, Trash2, CheckCircle, Crown, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
- import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
+import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
 
 interface User {
   id: string;
   email: string;
   created_at: string;
+  display_name?: string;
   subscription?: {
     plan_name: string;
     status: string;
@@ -34,33 +34,36 @@ interface User {
 export function UserManagementTab() {
   const { user: adminUser } = useAuth();
   const { toast } = useToast();
-   const { plans: dbPlans } = useSubscriptionPlans();
+  const { plans: dbPlans } = useSubscriptionPlans();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const [metaapiId, setMetaapiId] = useState("");
   const [selectedPlan, setSelectedPlan] = useState("basic");
   const [processing, setProcessing] = useState(false);
-  const [modalTab, setModalTab] = useState<'account' | 'subscription'>('account');
+  const [searchQuery, setSearchQuery] = useState("");
 
-    // Transform database plans to dropdown format
-    const SUBSCRIPTION_PLANS = useMemo(() => {
-      if (dbPlans.length === 0) {
-        return [
-          { value: 'basic', label: 'Basic', price: 'R178.20/mo' },
-          { value: 'professional', label: 'Professional', price: 'R538.20/mo' },
-          { value: 'enterprise', label: 'Enterprise', price: 'R719.82/mo' },
-        ];
-      }
-      return dbPlans.map(plan => ({
+  const SUBSCRIPTION_PLANS = useMemo(() => {
+    const freePlan = { value: 'free', label: 'Free', price: 'R0/mo' };
+    if (dbPlans.length === 0) {
+      return [
+        freePlan,
+        { value: 'basic', label: 'Basic', price: 'R178.20/mo' },
+        { value: 'professional', label: 'Professional', price: 'R538.20/mo' },
+        { value: 'enterprise', label: 'Enterprise', price: 'R719.82/mo' },
+      ];
+    }
+    return [
+      freePlan,
+      ...dbPlans.map(plan => ({
         value: plan.name.toLowerCase(),
         label: plan.name.charAt(0).toUpperCase() + plan.name.slice(1),
         price: `R${plan.price_zar.toFixed(2)}/mo`,
-      }));
-    }, [dbPlans]);
- 
+      })),
+    ];
+  }, [dbPlans]);
+
   useEffect(() => {
     loadUsers();
   }, []);
@@ -68,45 +71,45 @@ export function UserManagementTab() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      // Get all users from auth.users via profiles
+      // Fetch emails from admin edge function
+      let emailMap: Record<string, string> = {};
+      try {
+        const { data: authData, error: authError } = await supabase.functions.invoke('admin-list-users');
+        if (!authError && authData?.users) {
+          for (const u of authData.users) {
+            emailMap[u.id] = u.email;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch auth users, falling back to display_name:', e);
+      }
+
+      // Get all profiles (admin RLS policy now allows this)
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select(`
-          user_id,
-          display_name,
-          created_at
-        `);
+        .select('user_id, display_name, created_at');
 
       if (profilesError) throw profilesError;
 
-      // Get user emails from auth metadata
       const usersWithData = await Promise.all(
         (profiles || []).map(async (profile) => {
-          // Get subscription
           const { data: subscription } = await supabase
             .from('user_subscriptions')
             .select('plan_name, status, expires_at')
             .eq('user_id', profile.user_id)
             .single();
 
-          // Get trading accounts with more details
           const { data: accounts } = await supabase
             .from('trading_accounts')
             .select('id, name, connection_status, metaapi_account_id, provider')
             .eq('user_id', profile.user_id);
 
-          // Get user email from user_roles table
-          const { data: role } = await supabase
-            .from('user_roles')
-            .select('email')
-            .eq('user_id', profile.user_id)
-            .single();
-
           return {
             id: profile.user_id,
-            email: role?.email || 'N/A',
+            email: emailMap[profile.user_id] || profile.display_name || 'N/A',
+            display_name: profile.display_name,
             created_at: profile.created_at,
-            subscription,
+            subscription: subscription || undefined,
             trading_accounts: accounts || [],
           };
         })
@@ -124,109 +127,90 @@ export function UserManagementTab() {
     }
   };
 
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery) return users;
+    const q = searchQuery.toLowerCase();
+    return users.filter(u =>
+      u.email.toLowerCase().includes(q) ||
+      u.display_name?.toLowerCase().includes(q) ||
+      u.subscription?.plan_name?.toLowerCase().includes(q)
+    );
+  }, [users, searchQuery]);
+
   const openApprovalModal = (user: User) => {
     setSelectedUser(user);
-    setSelectedPlan(user.subscription?.plan_name || "basic");
-    setMetaapiId("");
-    setModalTab('account');
+    setSelectedPlan(user.subscription?.plan_name || "free");
     setShowApprovalModal(true);
   };
 
   const openSubscriptionModal = (user: User) => {
     setSelectedUser(user);
-    setSelectedPlan(user.subscription?.plan_name || "basic");
+    setSelectedPlan(user.subscription?.plan_name || "free");
     setShowSubscriptionModal(true);
   };
 
   const approveUser = async () => {
-    if (!selectedUser) {
-      toast({
-        title: 'Missing information',
-        description: 'No user selected',
-        variant: 'destructive'
-      });
-      return;
-    }
-
+    if (!selectedUser) return;
     setProcessing(true);
 
     try {
-      // Create/activate subscription (accounts are auto-provisioned now)
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
 
-      const { error: subError } = await supabase
-        .from('user_subscriptions')
-        .upsert({
-          user_id: selectedUser.id,
-          plan_name: selectedPlan,
-          status: 'active',
-          started_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+      if (selectedPlan === 'free') {
+        // For free plan, delete any existing subscription
+        await supabase.from('user_subscriptions').delete().eq('user_id', selectedUser.id);
+      } else {
+        const { error: subError } = await supabase
+          .from('user_subscriptions')
+          .upsert({
+            user_id: selectedUser.id,
+            plan_name: selectedPlan,
+            status: 'active',
+            started_at: new Date().toISOString(),
+            expires_at: expiresAt.toISOString()
+          }, { onConflict: 'user_id' });
 
-      if (subError) throw subError;
-
-      // 3. Ensure user role exists
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .upsert({
-          user_id: selectedUser.id,
-          email: selectedUser.email,
-          role: 'user'
-        });
-
-      if (roleError) throw roleError;
+        if (subError) throw subError;
+      }
 
       toast({
-        title: 'User approved!',
-        description: `${selectedUser.email} has been activated with ${selectedPlan} plan`
+        title: 'User updated!',
+        description: `${selectedUser.email} set to ${selectedPlan} plan`
       });
 
       setShowApprovalModal(false);
       loadUsers();
     } catch (error: any) {
-      toast({
-        title: 'Error approving user',
-        description: error.message,
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } finally {
       setProcessing(false);
     }
   };
 
   const updateSubscription = async () => {
-    if (!selectedUser) {
-      toast({
-        title: 'Missing information',
-        description: 'No user selected',
-        variant: 'destructive'
-      });
-      return;
-    }
-
+    if (!selectedUser) return;
     setProcessing(true);
 
     try {
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
 
-      const { error: subError } = await supabase
-        .from('user_subscriptions')
-        .upsert({
-          user_id: selectedUser.id,
-          plan_name: selectedPlan,
-          status: 'active',
-          started_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+      if (selectedPlan === 'free') {
+        await supabase.from('user_subscriptions').delete().eq('user_id', selectedUser.id);
+      } else {
+        const { error: subError } = await supabase
+          .from('user_subscriptions')
+          .upsert({
+            user_id: selectedUser.id,
+            plan_name: selectedPlan,
+            status: 'active',
+            started_at: new Date().toISOString(),
+            expires_at: expiresAt.toISOString()
+          }, { onConflict: 'user_id' });
 
-      if (subError) throw subError;
+        if (subError) throw subError;
+      }
 
       toast({
         title: 'Subscription Updated',
@@ -236,43 +220,24 @@ export function UserManagementTab() {
       setShowSubscriptionModal(false);
       loadUsers();
     } catch (error: any) {
-      toast({
-        title: 'Error updating subscription',
-        description: error.message,
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } finally {
       setProcessing(false);
     }
   };
 
   const deleteUser = async (userId: string, email: string) => {
-    if (!confirm(`Are you sure you want to delete user ${email}? This action cannot be undone.`)) {
-      return;
-    }
+    if (!confirm(`Are you sure you want to delete user ${email}? This action cannot be undone.`)) return;
 
     try {
-      // Delete from user_roles
       await supabase.from('user_roles').delete().eq('user_id', userId);
-      
-      // Delete from user_subscriptions
       await supabase.from('user_subscriptions').delete().eq('user_id', userId);
-      
-      // Delete from profiles
       await supabase.from('profiles').delete().eq('user_id', userId);
 
-      toast({
-        title: 'User deleted',
-        description: `User ${email} has been removed from the system`
-      });
-
+      toast({ title: 'User deleted', description: `User ${email} has been removed` });
       loadUsers();
     } catch (error: any) {
-      toast({
-        title: 'Error deleting user',
-        description: error.message,
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -286,19 +251,28 @@ export function UserManagementTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Users className="w-6 h-6" />
-            User Management
+            User Management ({users.length} users)
           </h2>
           <p className="text-muted-foreground mt-1">
-            Approve users and manage subscriptions
+            View all users, manage subscriptions and accounts
           </p>
         </div>
-        <Button onClick={loadUsers} variant="outline">
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 w-[200px]"
+            />
+          </div>
+          <Button onClick={loadUsers} variant="outline">Refresh</Button>
+        </div>
       </div>
 
       <Table>
@@ -314,23 +288,19 @@ export function UserManagementTab() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {users.map((user) => (
+          {filteredUsers.map((user) => (
             <TableRow key={user.id}>
               <TableCell className="font-medium">{user.email}</TableCell>
               <TableCell>
                 <Badge variant={user.subscription ? 'default' : 'secondary'}>
-                  {user.subscription?.plan_name || 'None'}
+                  {user.subscription?.plan_name || 'Free'}
                 </Badge>
               </TableCell>
               <TableCell>
                 <Badge
-                  variant={
-                    user.subscription?.status === 'active'
-                      ? 'default'
-                      : 'secondary'
-                  }
+                  variant={user.subscription?.status === 'active' ? 'default' : 'secondary'}
                 >
-                  {user.subscription?.status || 'Inactive'}
+                  {user.subscription?.status || (user.subscription ? 'Inactive' : 'Free')}
                 </Badge>
               </TableCell>
               <TableCell className="text-sm">
@@ -343,20 +313,10 @@ export function UserManagementTab() {
                   {user.trading_accounts?.map((acc) => (
                     <Badge
                       key={acc.id}
-                      variant={
-                        acc.connection_status === 'connected'
-                          ? 'default'
-                          : acc.connection_status === 'provisioning'
-                          ? 'secondary'
-                          : 'outline'
-                      }
-                      className={`text-xs ${
-                        acc.connection_status === 'connected' ? 'bg-green-600' : 
-                        acc.connection_status === 'provisioning' ? 'bg-amber-600' : ''
-                      }`}
+                      variant={acc.connection_status === 'connected' ? 'default' : 'outline'}
+                      className={`text-xs ${acc.connection_status === 'connected' ? 'bg-green-600' : ''}`}
                     >
                       {acc.name}: {acc.connection_status}
-                      {acc.metaapi_account_id && ' ✓'}
                     </Badge>
                   ))}
                   {(!user.trading_accounts || user.trading_accounts.length === 0) && (
@@ -402,15 +362,14 @@ export function UserManagementTab() {
       {/* Approval Modal */}
       <Dialog open={showApprovalModal} onOpenChange={setShowApprovalModal}>
         <DialogContent className="bg-gradient-card border-border">
-           <DialogHeader>
-            <DialogTitle>Approve User & Configure Account</DialogTitle>
+          <DialogHeader>
+            <DialogTitle>Manage User</DialogTitle>
             <DialogDescription>
-              Configure trading account and subscription plan for {selectedUser?.email}
+              Configure subscription for {selectedUser?.email}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Show account status - accounts are now auto-provisioned */}
             {selectedUser?.trading_accounts && selectedUser.trading_accounts.length > 0 && (
               <div className="space-y-2">
                 <Label>Trading Accounts</Label>
@@ -421,30 +380,16 @@ export function UserManagementTab() {
                       className={`p-3 rounded-lg border ${
                         acc.connection_status === 'connected' 
                           ? 'bg-green-900/20 border-green-700' 
-                          : acc.connection_status === 'provisioning'
-                          ? 'bg-amber-900/20 border-amber-700'
                           : 'bg-muted border-border'
                       }`}
                     >
                       <p className="text-sm font-medium">{acc.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        Status: <span className={
-                          acc.connection_status === 'connected' ? 'text-green-400' :
-                          acc.connection_status === 'provisioning' ? 'text-amber-400' : 'text-muted-foreground'
-                        }>{acc.connection_status}</span>
-                         {acc.metaapi_account_id && (
-                           <span className="ml-2">• Bridge: ✓ Connected</span>
-                         )}
+                        Status: <span className={acc.connection_status === 'connected' ? 'text-green-400' : 'text-muted-foreground'}>{acc.connection_status}</span>
                       </p>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {(!selectedUser?.trading_accounts || selectedUser.trading_accounts.length === 0) && (
-              <div className="p-3 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">No trading accounts connected</p>
               </div>
             )}
 
@@ -462,25 +407,14 @@ export function UserManagementTab() {
                   ))}
                 </SelectContent>
               </Select>
-               <p className="text-xs text-muted-foreground">
-                Trading accounts are auto-provisioned when users connect.
-              </p>
             </div>
 
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowApprovalModal(false)}
-                className="flex-1"
-              >
+              <Button variant="outline" onClick={() => setShowApprovalModal(false)} className="flex-1">
                 Cancel
               </Button>
-              <Button
-                onClick={approveUser}
-                className="flex-1 bg-gradient-primary"
-                disabled={processing}
-              >
-                {processing ? 'Processing...' : (selectedUser?.subscription?.status === 'active' ? 'Update Subscription' : 'Activate Subscription')}
+              <Button onClick={approveUser} className="flex-1 bg-gradient-primary" disabled={processing}>
+                {processing ? 'Processing...' : 'Save Changes'}
               </Button>
             </div>
           </div>
@@ -505,13 +439,13 @@ export function UserManagementTab() {
               <p className="text-sm">
                 <strong>Current Plan:</strong>{' '}
                 <Badge variant="outline">
-                  {selectedUser?.subscription?.plan_name || 'None'}
+                  {selectedUser?.subscription?.plan_name || 'Free'}
                 </Badge>
               </p>
               <p className="text-sm mt-1">
                 <strong>Status:</strong>{' '}
                 <Badge variant={selectedUser?.subscription?.status === 'active' ? 'default' : 'secondary'}>
-                  {selectedUser?.subscription?.status || 'Inactive'}
+                  {selectedUser?.subscription?.status || 'Free'}
                 </Badge>
               </p>
             </div>
@@ -533,24 +467,13 @@ export function UserManagementTab() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                The subscription will be activated immediately and expire in 1 month
-              </p>
             </div>
 
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowSubscriptionModal(false)}
-                className="flex-1"
-              >
+              <Button variant="outline" onClick={() => setShowSubscriptionModal(false)} className="flex-1">
                 Cancel
               </Button>
-              <Button
-                onClick={updateSubscription}
-                className="flex-1 bg-gradient-primary"
-                disabled={processing}
-              >
+              <Button onClick={updateSubscription} className="flex-1 bg-gradient-primary" disabled={processing}>
                 {processing ? 'Processing...' : 'Update Subscription'}
               </Button>
             </div>
