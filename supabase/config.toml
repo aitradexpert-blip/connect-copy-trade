@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.journal-analyze-trade]
 verify_jwt = false
+
+[functions.admin-list-users]
+verify_jwt = false
