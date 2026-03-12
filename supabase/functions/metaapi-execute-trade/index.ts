@@ -1,5 +1,5 @@
 // Supabase Edge Function: metaapi-execute-trade
-// Purpose: Execute trades on MetaAPI trading accounts
+// Purpose: Execute trades on MetaAPI trading accounts with dynamic region resolution
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 
@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const CLIENT_API_URL = 'https://mt-client-api-v1.london.agiliumtrade.ai'
+const PROVISIONING_API_URL = 'https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai'
 
 interface MetaApiTradeRequest {
   actionType: 'ORDER_TYPE_BUY' | 'ORDER_TYPE_SELL'
@@ -19,24 +19,18 @@ interface MetaApiTradeRequest {
   comment?: string
 }
 
-// Normalize symbol for MetaAPI (remove slashes, handle common formats)
 function normalizeSymbol(symbol: string): string {
-  // Remove slashes and spaces
   let normalized = symbol.replace(/[\s\/]/g, '').toUpperCase();
-  
-  // Common symbol mappings for MetaAPI
   const SYMBOL_MAP: Record<string, string> = {
     'XAUUSD': 'XAUUSD',
     'GOLD': 'XAUUSD',
     'XAGUSD': 'XAGUSD',
     'SILVER': 'XAGUSD',
   };
-  
   return SYMBOL_MAP[normalized] || normalized;
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -71,6 +65,50 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Step 1: Resolve account region from Provisioning API
+    let region = 'london';
+    let accountState = 'DEPLOYED';
+    try {
+      const acctResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts/${accountId}`, {
+        headers: { 'auth-token': token, 'Accept': 'application/json' },
+      });
+
+      if (acctResp.ok) {
+        const acctData = await acctResp.json();
+        region = acctData.region || 'london';
+        accountState = acctData.state || 'DEPLOYED';
+        console.log(`Account ${accountId}: region=${region}, state=${accountState}`);
+      } else {
+        console.warn(`Could not fetch account info, using default region. Status: ${acctResp.status}`);
+      }
+    } catch (e) {
+      console.warn('Failed to resolve account region, using default:', e);
+    }
+
+    // Step 2: If account is not deployed, try to deploy it
+    if (accountState !== 'DEPLOYED') {
+      console.log(`Account ${accountId} state is ${accountState}, attempting deploy...`);
+      try {
+        await fetch(`${PROVISIONING_API_URL}/users/current/accounts/${accountId}/deploy`, {
+          method: 'POST',
+          headers: { 'auth-token': token, 'Accept': 'application/json' },
+        });
+      } catch (e) {
+        console.warn('Deploy attempt failed:', e);
+      }
+      return new Response(JSON.stringify({ 
+        text: "Your trading account is reconnecting to the broker. Please try again in 30-60 seconds.",
+        error: 'Account not deployed',
+        status: 'deploying'
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
+    // Step 3: Build region-specific Client API URL
+    const clientApiUrl = `https://mt-client-api-v1.${region}.agiliumtrade.ai`;
+
     // Map incoming payload to MetaAPI format
     const direction: 'BUY' | 'SELL' | undefined = trade.direction
     const actionType = trade.actionType
@@ -88,7 +126,6 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Normalize symbol for MetaAPI compatibility
     const normalizedSymbol = normalizeSymbol(trade.symbol);
     
     const tradeData: MetaApiTradeRequest = {
@@ -100,14 +137,13 @@ Deno.serve(async (req) => {
       comment: trade.comment || 'Executed via platform'
     }
 
-    console.log(`Executing trade for account ${accountId}:`, tradeData)
-    console.log(`Original symbol: ${trade.symbol} -> Normalized: ${normalizedSymbol}`)
+    console.log(`Executing trade on ${clientApiUrl} for account ${accountId}:`, tradeData)
 
     let resp;
     let result;
     
     try {
-      resp = await fetch(`${CLIENT_API_URL}/users/current/accounts/${accountId}/trade`, {
+      resp = await fetch(`${clientApiUrl}/users/current/accounts/${accountId}/trade`, {
         method: 'POST',
         headers: {
           'auth-token': token,
@@ -144,27 +180,26 @@ Deno.serve(async (req) => {
     }
     console.log('Trade executed successfully:', result)
 
-    // Log trade to trade_history
+    // Log trade to trade_history and credit usage
     try {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       
-       // Log credit usage for trade execution
-       await fetch(`${supabaseUrl}/rest/v1/credit_usage`, {
-         method: 'POST',
-         headers: {
-           'apikey': supabaseKey,
-           'Authorization': `Bearer ${supabaseKey}`,
-           'Content-Type': 'application/json'
-         },
-         body: JSON.stringify({
-           user_id: trade.user_id,
-           service: 'trade_execution',
-           credits_used: 2,
-           description: `Trade executed: ${trade.direction} ${trade.volume} ${trade.symbol}`
-         })
-       });
- 
+      await fetch(`${supabaseUrl}/rest/v1/credit_usage`, {
+        method: 'POST',
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: trade.user_id,
+          service: 'trade_execution',
+          credits_used: 2,
+          description: `Trade executed: ${trade.direction} ${trade.volume} ${trade.symbol}`
+        })
+      });
+
       await fetch(`${supabaseUrl}/rest/v1/trade_history`, {
         method: 'POST',
         headers: {
