@@ -1,265 +1,108 @@
+Goal: fix Headway trade execution failures, stabilize MetaAPI account linkage (including HFM), and enforce subscription-cycle usage limits (especially account additions) in a server-enforced way.
 
+1. Findings from current code/data (root causes)
 
-# Mega Feature Implementation Plan
+- Headway account (`02b58a87-89bf-4785-ac75-a0a48ad491b9`) currently returns `connectionStatus: DISCONNECTED` and 504 timeout from MetaAPI client API, even though region resolves to `london`.
+- `metaapi-execute-trade` does region resolution, but does not handle the disconnected+timeout path robustly (no redeploy retry flow).
+- `metaapi-account-info` and `metaapi-get-positions` also do not use `/redeploy` fallback.
+- HFM account row stores `metaapi_account_id = 136373`; MetaAPI returns `NotFoundError` for this ID. This indicates a bad stored provider ID (not the live MetaAPI account ID).
+- One account has `provider='metaapi'` but `connection_type='deriv_api'`, which can misroute execution.
+- No backend-enforced monthly/cycle quota exists for trading account additions; users can delete/re-add without usage accounting.
 
-This is a large-scale upgrade spanning 7 major feature areas. Due to scope, this plan is split into **4 implementation batches** to keep each deployment stable and testable.
+2. Trade execution + connection recovery (Headway fix)
 
----
+- Update `supabase/functions/metaapi-execute-trade/index.ts`:
+  - Add resilient flow: `get account details -> if DISCONNECTED or timeout -> POST /redeploy -> short wait -> retry trade once`.
+  - If trade still times out, return structured `status: reconnecting` (not generic fail), with clear UI-safe message.
+  - Add timeout reconciliation: if timeout occurs, query recent deals/orders and return success when trade actually landed.
+  - Stop silently defaulting to london when account lookup fails; return explicit upstream auth/region diagnostics.
+- Update `supabase/functions/metaapi-account-info/index.ts` and `metaapi-get-positions/index.ts`:
+  - Same DISCONNECTED handling: `/redeploy` + retry pattern.
+  - Return `state`, `connectionStatus`, `region`, and human-readable next action in response payload.
 
-## Batch 1: Auth Enhancements + ElevenLabs Voice + Password Management
+3. Fix bad MetaAPI IDs and routing inconsistencies (HFM + data integrity)
 
-### 1A. Google OAuth Login
-- Add "Continue with Google" button to `Auth.tsx` using `supabase.auth.signInWithOAuth({ provider: 'google' })`
-- **User action required**: You must configure Google OAuth in your Supabase dashboard (Authentication > Providers > Google) with your Google Cloud Console credentials
-- The `handle_new_user` trigger already creates a profile on signup, so Google users will get profiles automatically
+- Add a migration to correct/guard account linkage:
+  - Data cleanup update for known misrouted rows (`provider='metaapi'` should have `connection_type='metaapi'`).
+  - Add guard trigger for `trading_accounts` inserts/updates:
+    - if `provider='metaapi'`, require non-empty `metaapi_account_id`.
+    - if `provider='deriv'`, enforce `metaapi_account_id IS NULL`.
+- Improve `metaapi-provision-account`:
+  - Validate returned account id format.
+  - If returned id looks invalid, immediately resolve account via `/users/current/accounts` lookup by login/server and persist canonical `_id`.
+  - Add explicit `E_RESOURCE_SLOTS` handling and user-facing message for HFM-like cases.
+- In client save path (`ConnectAccountModal.tsx`), include fallback validation call after provision success before insert.
 
-### 1B. Password Visibility Toggle
-- Add eye/eye-off icon toggle to all 3 password fields in `Auth.tsx` (sign-in password, sign-up password)
-- Toggle `type` between `"password"` and `"text"`
+4. Add explicit “Reconnect Account” action
 
-### 1C. Change Password (Settings > Security)
-- Add form to `Settings.tsx` Security card with: Current Password (not needed by Supabase -- uses session), New Password, Confirm New Password
-- Use `supabase.auth.updateUser({ password: newPassword })` to update
-- Show success/error toast
+- Add new edge function `metaapi-redeploy-account` (or extend existing account-info function with action mode):
+  - Input: `accountId`
+  - Calls `/users/current/accounts/{id}/redeploy`
+  - Returns operation state for UI.
+- Add reconnect button on `TradingAccounts.tsx` for MetaAPI rows in `disconnected/provisioning/failed` states.
+- On Ideas execution failure due reconnecting status, show actionable toast (“Account reconnecting, retry in 30–60s”).
 
-### 1D. ElevenLabs TTS Integration
-- Store API key `sk_0ae11f56b9da14b396275d6b24bf9a2d607f3a17fe59fed0` as Supabase secret `ELEVENLABS_API_KEY`
-- Create Edge Function `elevenlabs-tts` that accepts `{ text, voiceId }` and returns audio stream
-- Voice IDs for South African-sounding voices:
-  - Female: "EXAVITQu4vr4xnSDxMaL" (Sarah - warm, clear)
-  - Male: "JBFqnCBsd6RMkjVDRZzb" (George - deep, confident)
-- Update `EnhancedVoiceAssistant.tsx`: replace browser `SpeechSynthesis` with ElevenLabs TTS via the edge function
-- Update `Settings.tsx` voice section: replace browser voice list with Male/Female ElevenLabs selection with preview button
-- Store voice preference in `user_settings` table (add `voice_preference` JSONB column)
+5. Enforce account-add limits per subscription cycle (server-side, non-bypassable)
 
-### 1E. Speech-to-Text Transcription
-- The existing browser `SpeechRecognition` API is already being used for STT -- it works well
-- Enhance: when user taps mic, transcribed text fills the chat input box (instead of auto-sending), user can edit before sending
-- Add visual feedback: pulsing mic icon with live transcript preview
+- Add new table (migration): `subscription_usage_events`
+  - `id, user_id, feature_key, quantity, cycle_start, cycle_end, source, created_at`
+  - immutable event log; deletions of trading accounts do not reduce usage.
+- Add SECURITY DEFINER function:
+  - `consume_subscription_quota(_user_id, _feature_key, _qty)`:
+    - resolves tier (free if no active subscription),
+    - resolves cycle window,
+    - resolves limit from plan,
+    - checks used+qty <= limit,
+    - inserts usage event atomically or throws.
+- Add DB trigger on `trading_accounts` BEFORE INSERT:
+  - Calls `consume_subscription_quota(user_id, 'trading_account_additions', 1)`.
+  - This enforces “add/remove/add still counts”.
+- Extend same mechanism for other capped features (auto-trades, copy connections, etc.) by calling the same function from relevant edge functions and flows.
 
-**Files to create:**
-- `supabase/functions/elevenlabs-tts/index.ts`
+6. Admin reliability (users/plans/manual operations)
 
-**Files to modify:**
-- `src/pages/Auth.tsx` - Google button + password toggle
-- `src/pages/Settings.tsx` - Change password + ElevenLabs voice selector
-- `src/components/EnhancedVoiceAssistant.tsx` - ElevenLabs playback + STT to input box
-- `supabase/config.toml` - Add elevenlabs-tts function
+- Harden `admin-list-users` edge function:
+  - avoid manual JWT decode (`atob`) and verify caller using Supabase auth endpoint.
+  - keep strict admin role check via `has_role`.
+- Update `UserManagementTab.tsx`:
+  - Display auth users + profiles consistently,
+  - Ensure free/paid plan updates are visible for newly registered users,
+  - Add lightweight “Create User” admin action (new edge function using Auth Admin API) if manual add is required operationally.
 
-**Database migration:**
-- Add `voice_preference` JSONB column to `user_settings`
+7. Technical implementation map
 
----
+- Edge functions:
+  - `supabase/functions/metaapi-execute-trade/index.ts` (redeploy/retry/reconcile)
+  - `supabase/functions/metaapi-account-info/index.ts` (redeploy-aware account status)
+  - `supabase/functions/metaapi-get-positions/index.ts` (redeploy-aware)
+  - `supabase/functions/metaapi-provision-account/index.ts` (canonical ID + resource slots handling)
+  - `supabase/functions/admin-list-users/index.ts` (auth verification hardening)
+  - new: `supabase/functions/metaapi-redeploy-account/index.ts`
+- Frontend:
+  - `src/pages/TradingAccounts.tsx` (Reconnect action + status UX)
+  - `src/pages/TradingIdeas.tsx` + `src/services/brokerExecution.ts` (surface reconnecting/pending states cleanly)
+  - `src/components/ConnectAccountModal.tsx` (post-provision ID validation)
+  - `src/components/admin/UserManagementTab.tsx` (admin visibility/manual add flow)
+- DB migration:
+  - `subscription_usage_events` table + indexes
+  - `consume_subscription_quota` function
+  - `trading_accounts` insert trigger for quota consumption
+  - data cleanup for invalid `connection_type` and provider/id consistency policies
 
-## Batch 2: Mentor Center (White-Label Tier)
+8. Rollout order (safe)
 
-### 2A. Database Schema
+- Phase A: Headway execution stabilization (redeploy+retry) + reconnect UI.
+- Phase B: HFM canonical ID/resource slots fixes + data cleanup migration.
+- Phase C: Subscription-cycle quota backend enforcement + trigger.
+- Phase D: Admin hardening + manual add capability.
+- Phase E: Regression testing across Ideas, Accounts, Admin, and connect flows.
 
-New tables:
+9. Expected outcomes
 
-**`mentor_profiles`**
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid (PK) | |
-| user_id | uuid (unique) | References auth.users |
-| brand_name | text (unique) | Mentor's brand |
-| referral_slug | text (unique) | Auto-generated URL slug |
-| feature_renames | jsonb | `{ ai_bot_name, copy_trading_name, trading_ideas_name }` |
-| logo_url | text | Optional brand logo |
-| is_active | boolean | Default true |
-| created_at / updated_at | timestamptz | |
-
-**`mentor_clients`**
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid (PK) | |
-| mentor_id | uuid | FK to mentor_profiles |
-| client_user_id | uuid | FK to auth.users |
-| registered_at | timestamptz | |
-| referral_slug_used | text | Which link was used |
-
-RLS Policies:
-- Mentors can SELECT/UPDATE their own profile
-- Mentors can SELECT their own clients
-- Clients can SELECT their mentor's profile (for branding)
-- Admins can SELECT all mentor data (read-only)
-
-### 2B. Mentor Subscription Tier
-- Add "Mentor" plan to `subscription_plans` table: R999/month
-- Features: Everything in Enterprise + White-label branding, Referral system, Client management, Custom feature naming
-- Update `Pricing.tsx` and `Subscription.tsx` to show Mentor tier
-
-### 2C. Mentor Registration Flow
-- New page: `src/pages/MentorCenter.tsx` - Setup wizard + dashboard
-- When user with Mentor subscription visits Mentor Center:
-  - If no profile: Setup wizard (brand name, feature renames, auto-generate referral link)
-  - If profile exists: Dashboard showing client count, referral link with copy button, feature rename editor
-- Referral link format: `https://connect-copy-trade.lovable.app/ref/{slug}`
-
-### 2D. Referral Registration
-- New route: `/ref/:slug` - Landing page showing mentor's brand, then redirects to `/auth?ref={slug}`
-- On signup, if `ref` param exists, create `mentor_clients` record linking the new user to the mentor
-- Client's UI reads mentor's `feature_renames` and applies them via React Context
-
-### 2E. Admin Mentor Oversight
-- New tab in `AdminPanel.tsx`: "Mentor Management"
-- Shows all mentors, their client counts, feature renames, activity
-- Read-only view with ability to deactivate mentors
-
-### 2F. Navigation
-- Add "Mentor Center" to sidebar and bottom nav (visible only to users with Mentor subscription)
-- Add route `/mentor-center` to `App.tsx`
-
-**Files to create:**
-- `src/pages/MentorCenter.tsx`
-- `src/pages/MentorReferral.tsx` (the `/ref/:slug` landing)
-- `src/contexts/MentorContext.tsx` (provides feature renames to client UI)
-- `src/components/admin/MentorManagementTab.tsx`
-
-**Files to modify:**
-- `src/App.tsx` - New routes
-- `src/components/AppSidebar.tsx` - Mentor Center link
-- `src/components/BottomNav.tsx` - Mentor Center link
-- `src/pages/Pricing.tsx` - Mentor tier
-- `src/pages/Subscription.tsx` - Mentor tier
-- `src/pages/AdminPanel.tsx` - Mentor tab
-- `src/pages/Auth.tsx` - Handle referral param
-
----
-
-## Batch 3: GPT-5 Powered Khumo + AI Journaling
-
-### 3A. Enhanced Khumo with Lovable GPT-5
-- The voice assistant already uses Lovable AI Gateway (`google/gemini-2.5-flash`)
-- Upgrade to `google/gemini-3-flash-preview` (the default recommended model)
-- Enhance the system prompt with the Khumo persona: South African-infused language, Root System methodology, grit and confidence
-- Add trade history context: fetch user's recent trades and feed them into the prompt for personalised analysis
-- Add trading style detection: analyse win rate, preferred instruments, session times
-
-### 3B. Chat History Persistence
-- New table: `chat_history`
-  - id, user_id, role (user/assistant), content, metadata (jsonb), created_at
-- Store all Khumo conversations for context continuity
-- Load last 30 messages as conversation context when user opens assistant
-
-### 3C. Journaling Page
-- New page: `src/pages/Journal.tsx`
-- **Auto-Generated Journal tab**: Timeline of all trades from `trade_history` table, with AI analysis per trade
-- **Strategy Builder tab**: Interactive form for user inputs (instruments, risk tolerance, time availability, goals) that generates a personalised trading plan via GPT-5
-- Edge function `journal-analyze-trade` that takes trade data and returns AI analysis
-
-### 3D. Trade Analysis
-- New table: `trade_analysis`
-  - id, user_id, trade_id (FK to trade_history), ai_analysis (text), strategy_detected (text), created_at
-- When user opens Journal, auto-analyse recent un-analysed trades
-- Show statistics: win rate, average RR, max drawdown, most traded pairs, best session
-
-**Files to create:**
-- `src/pages/Journal.tsx`
-- `supabase/functions/journal-analyze-trade/index.ts`
-- `supabase/functions/khumo-chat/index.ts` (enhanced GPT-5 chat with history)
-
-**Files to modify:**
-- `supabase/functions/voice-ai-assistant/index.ts` - Upgrade model + enhanced prompt
-- `src/components/EnhancedVoiceAssistant.tsx` - Persist chat history
-- `src/App.tsx` - Journal route
-- `src/components/AppSidebar.tsx` - Journal link
-- `src/components/BottomNav.tsx` - Journal link
-- `supabase/config.toml` - New functions
-
----
-
-## Batch 4: Training Center
-
-### 4A. Database Schema
-- New table: `training_content`
-  - id, title, description, type (lesson/video/book/pdf/tool), url, content_text, difficulty (beginner/intermediate/advanced), tags (text[]), category, order_index, created_at
-
-- New table: `user_training_progress`
-  - id, user_id, content_id, completed (boolean), completed_at, notes
-
-### 4B. Training Center Page
-- New page: `src/pages/TrainingCenter.tsx`
-- **Learning Paths**: Beginner / Intermediate / Advanced tabs
-- Pre-populated content:
-  - Beginner: BabyPips fundamentals, candlestick patterns, support/resistance basics
-  - Intermediate: Fibonacci, supply & demand, ICT concepts, risk management
-  - Advanced: Beat the Market Maker (Steve Mauro), FVG/SMC, algorithmic concepts
-- Each lesson card shows: title, difficulty badge, type icon, completion status
-- Embedded YouTube videos (curated), book recommendations, PDF downloads
-- Khumo AI chat widget available on the page for Q&A about lesson content
-
-### 4C. Personalised Recommendations
-- Based on Journal analysis (trading style, weaknesses), Khumo recommends specific lessons
-- E.g., "You cut winners short -- here's a lesson on trailing stops"
-
-### 4D. Content Seeding
-- Pre-populate `training_content` with 20-30 curated entries covering major trading strategies
-- Include YouTube video links, book titles, and lesson summaries
-
-**Files to create:**
-- `src/pages/TrainingCenter.tsx`
-
-**Files to modify:**
-- `src/App.tsx` - Training Center route
-- `src/components/AppSidebar.tsx` - Training Center link
-- `src/components/BottomNav.tsx` - Training Center link
-- `supabase/config.toml` - Any new functions
-
----
-
-## Database Migrations Summary
-
-```text
-Migration 1 (Batch 1):
-  - ALTER TABLE user_settings ADD COLUMN voice_preference JSONB
-
-Migration 2 (Batch 2):
-  - CREATE TABLE mentor_profiles (...)
-  - CREATE TABLE mentor_clients (...)
-  - INSERT INTO subscription_plans (Mentor tier at R999)
-  - RLS policies for mentor tables
-
-Migration 3 (Batch 3):
-  - CREATE TABLE chat_history (...)
-  - CREATE TABLE trade_analysis (...)
-  - RLS policies
-
-Migration 4 (Batch 4):
-  - CREATE TABLE training_content (...)
-  - CREATE TABLE user_training_progress (...)
-  - INSERT training content seed data
-  - RLS policies
-```
-
----
-
-## Edge Functions Summary
-
-| Function | Purpose |
-|----------|---------|
-| `elevenlabs-tts` | Text-to-speech via ElevenLabs API |
-| `khumo-chat` | Enhanced GPT-5 chat with history + trade context |
-| `journal-analyze-trade` | AI analysis of individual trades |
-
----
-
-## Secrets Required
-- `ELEVENLABS_API_KEY` - Will be stored securely (provided by user)
-
----
-
-## User Actions Required
-1. **Google OAuth**: Configure Google provider in Supabase Dashboard (Authentication > Providers > Google) with Google Cloud Console OAuth credentials
-2. **Site URL**: Ensure Supabase Auth redirect URLs include `https://connect-copy-trade.lovable.app`
-
----
-
-## Implementation Order
-
-1. **Batch 1** (Auth + Voice) -- Foundation improvements, immediate user impact
-2. **Batch 2** (Mentor Center) -- New revenue tier + community features
-3. **Batch 3** (AI Journaling) -- Intelligence layer
-4. **Batch 4** (Training Center) -- Educational content hub
-
-Each batch will be fully functional and testable after we are complete. All these should be built parallel simultaneously concurrently.
+- Headway trades from Ideas no longer fail with false negatives during temporary disconnect states.
+- HFM account linkage uses correct MetaAPI IDs and clear remediation for resource-slot issues.
+- Users cannot bypass account-add limits by deleting and re-adding accounts.
+- Admin page consistently shows all signups and supports subscription updates/manual user operations.  
+  
+On our subscription page, the box for the Enterprise has -1 auto trades we need to fix it to 1000   
+Pricing page does not show other teir names, only the free on, that needs to be fixed
