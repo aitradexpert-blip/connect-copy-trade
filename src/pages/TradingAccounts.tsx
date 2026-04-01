@@ -322,6 +322,35 @@ const TradingAccounts = () => {
                               </Button>
                             </>
                           )}
+                          {/* Reconnect button for disconnected MetaAPI accounts */}
+                          {account.provider !== 'deriv' && account.metaapi_account_id && 
+                           (account.connection_status === 'disconnected' || account.connection_status === 'provisioning') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                setRefreshingId(account.id);
+                                try {
+                                  const { data, error } = await supabase.functions.invoke('metaapi-redeploy-account', {
+                                    body: { accountId: account.metaapi_account_id }
+                                  });
+                                  if (error) throw error;
+                                  toast({ title: 'Reconnecting...', description: data?.message || 'Account reconnection initiated. Please wait 30-60 seconds.' });
+                                  await supabase.from('trading_accounts').update({ connection_status: 'provisioning' }).eq('id', account.id);
+                                  setAccounts(prev => prev.map(a => a.id === account.id ? { ...a, connection_status: 'provisioning' } : a));
+                                } catch (err: any) {
+                                  toast({ title: 'Reconnect failed', description: err.message, variant: 'destructive' });
+                                } finally {
+                                  setRefreshingId(null);
+                                }
+                              }}
+                              disabled={refreshingId === account.id}
+                              title="Reconnect Account"
+                              className="text-amber-500 hover:text-amber-600"
+                            >
+                              <WifiOff className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button 
                             variant="ghost" 
                             size="sm" 
