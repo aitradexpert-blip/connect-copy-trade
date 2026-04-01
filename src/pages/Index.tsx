@@ -15,7 +15,7 @@ import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
-import OctaFxBanner from "@/components/OctaFxBanner";
+
 
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
