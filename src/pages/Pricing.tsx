@@ -25,7 +25,7 @@ interface Plan {
 const comparisonFeatures = [
   { label: "WhatsApp Community", free: true, basic: true, pro: true, enterprise: true },
   { label: "Daily Signals (WhatsApp)", free: true, basic: true, pro: true, enterprise: true },
-  { label: "Free EA (w/ OctaFx)", free: true, basic: true, pro: true, enterprise: true },
+  { label: "Free Expert Advisor", free: true, basic: true, pro: true, enterprise: true },
   { label: "Free Mentorship", free: true, basic: true, pro: true, enterprise: true },
   { label: "Training Center", free: true, basic: true, pro: true, enterprise: true },
   { label: "Live Market Charts", free: true, basic: true, pro: true, enterprise: true },

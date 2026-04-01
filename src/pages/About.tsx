@@ -389,7 +389,7 @@ export default function About() {
           <div className="space-y-3">
             {[
               { period: "Now", title: "Foundation", desc: "Live platform with paying users. Multi-broker dashboard, Khumo AI assistant, copy trading, AI auto-trading bot, Training Center, and Mentor Center with white-label apps." },
-              { period: "6 Months", title: "Growth", desc: "100 users via lead magnets and content marketing. Mentor onboarding. OctaFx partnership activation. WhatsApp-based lead nurturing. Stokvel (collective investment) pools. Local payment rails (Instant EFT, Ozow, SnapScan)." },
+              { period: "6 Months", title: "Growth", desc: "100 users via lead magnets and content marketing. Mentor onboarding. Broker partnership activations. WhatsApp-based lead nurturing. Stokvel (collective investment) pools. Local payment rails (Instant EFT, Ozow, SnapScan)." },
               { period: "1 Year", title: "Scale", desc: "B2B API connector for brokers and institutions. School partnerships for financial education programs. Multiple broker partnerships. Advanced portfolio optimization and risk scoring." },
               { period: "3 Years", title: "Pan-African Expansion", desc: "Expand to Nigeria, Kenya, Ghana. Bank integrations for direct funding. White-label licensing to prop firms and investment groups. RegTech module for automated FSCA compliance reporting. Multi-million rand platform." },
             ].map((t, i) => (

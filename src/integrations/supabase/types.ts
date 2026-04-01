@@ -574,8 +574,12 @@ export type Database = {
           feature_renames: Json | null
           id: string
           is_active: boolean | null
+          landing_page_media_type: string | null
+          landing_page_media_url: string | null
+          landing_page_slug: string | null
           logo_url: string | null
           referral_slug: string
+          ui_config: Json | null
           updated_at: string | null
           user_id: string
         }
@@ -586,8 +590,12 @@ export type Database = {
           feature_renames?: Json | null
           id?: string
           is_active?: boolean | null
+          landing_page_media_type?: string | null
+          landing_page_media_url?: string | null
+          landing_page_slug?: string | null
           logo_url?: string | null
           referral_slug: string
+          ui_config?: Json | null
           updated_at?: string | null
           user_id: string
         }
@@ -598,8 +606,12 @@ export type Database = {
           feature_renames?: Json | null
           id?: string
           is_active?: boolean | null
+          landing_page_media_type?: string | null
+          landing_page_media_url?: string | null
+          landing_page_slug?: string | null
           logo_url?: string | null
           referral_slug?: string
+          ui_config?: Json | null
           updated_at?: string | null
           user_id?: string
         }
@@ -839,6 +851,39 @@ export type Database = {
           price_zar?: number
           priority_support?: boolean | null
           trading_accounts_limit?: number | null
+        }
+        Relationships: []
+      }
+      subscription_usage_events: {
+        Row: {
+          created_at: string | null
+          cycle_end: string
+          cycle_start: string
+          feature_key: string
+          id: string
+          quantity: number
+          source: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          cycle_end: string
+          cycle_start: string
+          feature_key: string
+          id?: string
+          quantity?: number
+          source?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          cycle_end?: string
+          cycle_start?: string
+          feature_key?: string
+          id?: string
+          quantity?: number
+          source?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1315,6 +1360,10 @@ export type Database = {
       }
     }
     Functions: {
+      consume_subscription_quota: {
+        Args: { p_feature_key: string; p_quantity?: number; p_user_id: string }
+        Returns: undefined
+      }
       delete_expired_pending_trades: { Args: never; Returns: undefined }
       has_role: { Args: { _role: string; _user_id: string }; Returns: boolean }
       has_subscription_access: {

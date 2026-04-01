@@ -15,7 +15,7 @@ import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
-import OctaFxBanner from "@/components/OctaFxBanner";
+
 
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -192,8 +192,6 @@ const Index = () => {
           </div>
         </div>
 
-        {/* OctaFx Banner — for all users */}
-        <OctaFxBanner />
 
         {/* WhatsApp Tools — for all users */}
         <Card className="bg-gradient-card border-border shadow-card">
@@ -221,7 +219,7 @@ const Index = () => {
               <WhatsAppButton
                 keyword="EA"
                 label="Claim Free Expert Advisor"
-                description="R6,000 EA free with OctaFx account + deposit"
+                description="R6,000 EA free with broker account + deposit"
               />
               <WhatsAppButton
                 keyword="MENTOR"
