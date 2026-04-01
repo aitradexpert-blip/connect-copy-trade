@@ -26,7 +26,7 @@ interface Plan {
 const freeFeatures = [
   "WhatsApp Trading Community",
   "Daily Trading Signals (WhatsApp)",
-  "Free Expert Advisor (w/ OctaFx)",
+  "Free Expert Advisor",
   "Free Mentorship Program",
   "Training Center (full access)",
   "Live Market Charts (170+ instruments)",
