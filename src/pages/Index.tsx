@@ -219,7 +219,7 @@ const Index = () => {
               <WhatsAppButton
                 keyword="EA"
                 label="Claim Free Expert Advisor"
-                description="R6,000 EA free with OctaFx account + deposit"
+                description="R6,000 EA free with broker account + deposit"
               />
               <WhatsAppButton
                 keyword="MENTOR"
