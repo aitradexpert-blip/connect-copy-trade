@@ -192,8 +192,6 @@ const Index = () => {
           </div>
         </div>
 
-        {/* OctaFx Banner — for all users */}
-        <OctaFxBanner />
 
         {/* WhatsApp Tools — for all users */}
         <Card className="bg-gradient-card border-border shadow-card">
