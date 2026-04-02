@@ -68,3 +68,15 @@ verify_jwt = false
 
 [functions.metaapi-redeploy-account]
 verify_jwt = false
+
+[functions.close-all-trades]
+verify_jwt = false
+
+[functions.render-mentor-landing]
+verify_jwt = false
+
+[functions.admin-create-user]
+verify_jwt = false
+
+[functions.admin-update-subscription]
+verify_jwt = false

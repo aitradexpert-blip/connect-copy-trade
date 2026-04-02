@@ -1,4 +1,4 @@
-import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Check, Download } from "lucide-react";
+import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Download } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,6 +157,12 @@ export function TopHeader() {
               <CreditCard className="mr-2 h-4 w-4" />
               Subscription
             </DropdownMenuItem>
+            {canInstall && (
+              <DropdownMenuItem onClick={install}>
+                <Download className="mr-2 h-4 w-4" />
+                Install App
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => navigate("/settings")}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
