@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Trash2, CheckCircle, Crown, Search } from "lucide-react";
+import { Users, Trash2, CheckCircle, Crown, Search, UserPlus, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
 
