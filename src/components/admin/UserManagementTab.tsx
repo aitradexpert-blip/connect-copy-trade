@@ -43,6 +43,12 @@ export function UserManagementTab() {
   const [selectedPlan, setSelectedPlan] = useState("basic");
   const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newPlan, setNewPlan] = useState("free");
+  const [creating, setCreating] = useState(false);
 
   const SUBSCRIPTION_PLANS = useMemo(() => {
     const freePlan = { value: 'free', label: 'Free', price: 'R0/mo' };
