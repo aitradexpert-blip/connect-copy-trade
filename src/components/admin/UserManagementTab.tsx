@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Trash2, CheckCircle, Crown, Search } from "lucide-react";
+import { Users, Trash2, CheckCircle, Crown, Search, UserPlus, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
 
@@ -43,6 +43,12 @@ export function UserManagementTab() {
   const [selectedPlan, setSelectedPlan] = useState("basic");
   const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newPlan, setNewPlan] = useState("free");
+  const [creating, setCreating] = useState(false);
 
   const SUBSCRIPTION_PLANS = useMemo(() => {
     const freePlan = { value: 'free', label: 'Free', price: 'R0/mo' };
@@ -271,6 +277,9 @@ export function UserManagementTab() {
               className="pl-9 w-[200px]"
             />
           </div>
+          <Button onClick={() => setShowCreateModal(true)} className="bg-gradient-primary">
+            <UserPlus className="w-4 h-4 mr-2" /> Create User
+          </Button>
           <Button onClick={loadUsers} variant="outline">Refresh</Button>
         </div>
       </div>
@@ -477,6 +486,64 @@ export function UserManagementTab() {
                 {processing ? 'Processing...' : 'Update Subscription'}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create User Modal */}
+      <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <DialogContent className="bg-gradient-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5" /> Create New User
+            </DialogTitle>
+            <DialogDescription>Manually create a user account</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Email *</Label>
+              <Input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="user@example.com" type="email" />
+            </div>
+            <div className="space-y-2">
+              <Label>Password *</Label>
+              <Input value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min 6 characters" type="password" />
+            </div>
+            <div className="space-y-2">
+              <Label>Display Name</Label>
+              <Input value={newDisplayName} onChange={e => setNewDisplayName(e.target.value)} placeholder="Optional" />
+            </div>
+            <div className="space-y-2">
+              <Label>Subscription Plan</Label>
+              <Select value={newPlan} onValueChange={setNewPlan}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SUBSCRIPTION_PLANS.map(p => (
+                    <SelectItem key={p.value} value={p.value}>{p.label} ({p.price})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button className="w-full bg-gradient-primary" disabled={creating || !newEmail || !newPassword} onClick={async () => {
+              setCreating(true);
+              try {
+                const { data, error } = await supabase.functions.invoke('admin-create-user', {
+                  body: { email: newEmail, password: newPassword, display_name: newDisplayName, plan_name: newPlan }
+                });
+                if (error) throw error;
+                if (data?.error) throw new Error(data.error);
+                toast({ title: 'User created!', description: `${newEmail} added successfully` });
+                setShowCreateModal(false);
+                setNewEmail(''); setNewPassword(''); setNewDisplayName(''); setNewPlan('free');
+                loadUsers();
+              } catch (err: any) {
+                toast({ title: 'Error', description: err.message, variant: 'destructive' });
+              } finally {
+                setCreating(false);
+              }
+            }}>
+              {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+              Create User
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

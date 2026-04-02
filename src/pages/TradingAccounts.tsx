@@ -335,9 +335,13 @@ const TradingAccounts = () => {
                                     body: { accountId: account.metaapi_account_id }
                                   });
                                   if (error) throw error;
-                                  toast({ title: 'Reconnecting...', description: data?.message || 'Account reconnection initiated. Please wait 30-60 seconds.' });
-                                  await supabase.from('trading_accounts').update({ connection_status: 'provisioning' }).eq('id', account.id);
-                                  setAccounts(prev => prev.map(a => a.id === account.id ? { ...a, connection_status: 'provisioning' } : a));
+                                  if (data && !data.success) {
+                                    toast({ title: 'Reconnect Issue', description: data.error || 'Could not reconnect. Please contact support.', variant: 'destructive' });
+                                  } else {
+                                    toast({ title: 'Reconnecting...', description: data?.message || 'Account reconnection initiated. Please wait 30-60 seconds.' });
+                                    await supabase.from('trading_accounts').update({ connection_status: 'provisioning' }).eq('id', account.id);
+                                    setAccounts(prev => prev.map(a => a.id === account.id ? { ...a, connection_status: 'provisioning' } : a));
+                                  }
                                 } catch (err: any) {
                                   toast({ title: 'Reconnect failed', description: err.message, variant: 'destructive' });
                                 } finally {
