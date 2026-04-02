@@ -277,6 +277,9 @@ export function UserManagementTab() {
               className="pl-9 w-[200px]"
             />
           </div>
+          <Button onClick={() => setShowCreateModal(true)} className="bg-gradient-primary">
+            <UserPlus className="w-4 h-4 mr-2" /> Create User
+          </Button>
           <Button onClick={loadUsers} variant="outline">Refresh</Button>
         </div>
       </div>
