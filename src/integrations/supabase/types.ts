@@ -780,6 +780,7 @@ export type Database = {
           id: string
           khumo_queries_reset_at: string
           khumo_queries_used: number
+          referred_by: string | null
           subscription_plan: string | null
           subscription_status: string | null
           updated_at: string
@@ -791,6 +792,7 @@ export type Database = {
           id?: string
           khumo_queries_reset_at?: string
           khumo_queries_used?: number
+          referred_by?: string | null
           subscription_plan?: string | null
           subscription_status?: string | null
           updated_at?: string
@@ -802,6 +804,7 @@ export type Database = {
           id?: string
           khumo_queries_reset_at?: string
           khumo_queries_used?: number
+          referred_by?: string | null
           subscription_plan?: string | null
           subscription_status?: string | null
           updated_at?: string
@@ -1084,6 +1087,7 @@ export type Database = {
           expires_at: string | null
           id: string
           lot_size: number
+          mentor_id: string | null
           open_price: number | null
           order_type: string | null
           scheduled_at: string | null
@@ -1099,6 +1103,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           lot_size: number
+          mentor_id?: string | null
           open_price?: number | null
           order_type?: string | null
           scheduled_at?: string | null
@@ -1114,6 +1119,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           lot_size?: number
+          mentor_id?: string | null
           open_price?: number | null
           order_type?: string | null
           scheduled_at?: string | null
