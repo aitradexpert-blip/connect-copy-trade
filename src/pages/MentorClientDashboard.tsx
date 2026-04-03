@@ -118,10 +118,11 @@ export default function MentorClientDashboard() {
 
     setExecutingSignal(selectedSignal.id);
     try {
-      const brokerAccount: Partial<TradingAccount> & { id: string; metaapi_account_id: string | null; provider: string; deriv_token: string | null; deriv_currency: string | null; is_virtual: boolean | null; login: string } = {
+      const brokerAccount: TradingAccount = {
         id: account.id,
+        name: account.name,
         metaapi_account_id: account.metaapi_account_id,
-        provider: account.provider as any,
+        provider: account.provider,
         deriv_token: account.deriv_token,
         deriv_currency: account.deriv_currency,
         is_virtual: account.is_virtual,
