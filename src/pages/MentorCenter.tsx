@@ -9,10 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Users, Link, Edit3, Copy, CheckCircle, Loader2, Crown, Bot, TrendingUp, Upload, Image, Video, Lightbulb, XCircle, ExternalLink, Palette, TrendingDown, Play } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Users, Link, Edit3, Copy, CheckCircle, Loader2, Crown, Bot, TrendingUp, Upload, Image, Video, Lightbulb, XCircle, ExternalLink, Palette, TrendingDown, Play, Sparkles, StopCircle, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface MentorProfile {
   id: string;
@@ -50,12 +52,31 @@ interface MentorSignal {
   status: string;
 }
 
+interface TradingAccount {
+  id: string;
+  name: string;
+  login: string;
+  is_master: boolean | null;
+  balance: number | null;
+  metaapi_account_id: string | null;
+}
+
+interface CopyRelationship {
+  id: string;
+  follower_user_id: string | null;
+  status: string | null;
+  follower_display_name?: string;
+}
+
 export default function MentorCenter() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<MentorProfile | null>(null);
   const [clients, setClients] = useState<MentorClient[]>([]);
   const [signals, setSignals] = useState<MentorSignal[]>([]);
+  const [accounts, setAccounts] = useState<TradingAccount[]>([]);
+  const [copyRelationships, setCopyRelationships] = useState<CopyRelationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -82,6 +103,16 @@ export default function MentorCenter() {
   const [newComment, setNewComment] = useState("");
   const [publishingSignal, setPublishingSignal] = useState(false);
   const [showSignalDialog, setShowSignalDialog] = useState(false);
+
+  // Khumo AI suggestion
+  const [aiSuggestion, setAiSuggestion] = useState("");
+  const [loadingAiSuggestion, setLoadingAiSuggestion] = useState(false);
+
+  // Copy Trading Quick Trade
+  const [quickSymbol, setQuickSymbol] = useState("");
+  const [quickDirection, setQuickDirection] = useState("BUY");
+  const [quickLotSize, setQuickLotSize] = useState("0.01");
+  const [executingQuickTrade, setExecutingQuickTrade] = useState(false);
 
   useEffect(() => {
     if (user) loadProfile();
@@ -151,6 +182,34 @@ export default function MentorCenter() {
           .order('created_at', { ascending: false })
           .limit(20);
         setSignals((sigData || []) as MentorSignal[]);
+
+        // Load trading accounts
+        const { data: accData } = await supabase
+          .from('trading_accounts')
+          .select('id, name, login, is_master, balance, metaapi_account_id')
+          .eq('user_id', user!.id);
+        setAccounts((accData || []) as TradingAccount[]);
+
+        // Load copy relationships (followers)
+        const { data: copyData } = await supabase
+          .from('copy_trading_relationships')
+          .select('id, follower_user_id, status')
+          .eq('master_user_id', user!.id);
+        
+        if (copyData && copyData.length > 0) {
+          const followerIds = copyData.map(c => c.follower_user_id).filter(Boolean) as string[];
+          const { data: followerProfiles } = await supabase
+            .from('profiles')
+            .select('user_id, display_name')
+            .in('user_id', followerIds);
+          const nameMap2: Record<string, string> = {};
+          (followerProfiles || []).forEach(p => { nameMap2[p.user_id] = p.display_name || 'User'; });
+          
+          setCopyRelationships(copyData.map(c => ({
+            ...c,
+            follower_display_name: c.follower_user_id ? nameMap2[c.follower_user_id] || c.follower_user_id.slice(0, 8) : 'Unknown',
+          })));
+        }
       }
     } catch (err: any) {
       console.error("Error loading mentor profile:", err);
@@ -279,6 +338,73 @@ export default function MentorCenter() {
     }
   };
 
+  const getAiSuggestion = async () => {
+    setLoadingAiSuggestion(true);
+    setAiSuggestion("");
+    try {
+      const { data, error } = await supabase.functions.invoke('khumo-chat', {
+        body: {
+          message: "Suggest one trading signal for a popular forex pair (like EURUSD, GBPUSD, USDJPY, XAUUSD). Include: symbol, direction (BUY or SELL), entry price, stop loss, take profit, and a brief 2-sentence analysis. Format it clearly.",
+          user_id: user!.id,
+          context: "mentor_signal_suggestion",
+        }
+      });
+      if (error) throw error;
+      setAiSuggestion(data?.text || "No suggestion available.");
+    } catch (err: any) {
+      toast({ title: "AI suggestion failed", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingAiSuggestion(false);
+    }
+  };
+
+  const toggleMasterAccount = async (accountId: string, currentlyMaster: boolean) => {
+    try {
+      await supabase
+        .from('trading_accounts')
+        .update({ is_master: !currentlyMaster })
+        .eq('id', accountId)
+        .eq('user_id', user!.id);
+      toast({ title: currentlyMaster ? "Master status removed" : "Account set as master" });
+      loadProfile();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const executeQuickTrade = async () => {
+    if (!profile || !quickSymbol.trim()) return;
+    setExecutingQuickTrade(true);
+    try {
+      // Publish signal
+      const { data: sig, error: sigErr } = await supabase.from('trading_signals').insert({
+        symbol: quickSymbol.toUpperCase().trim(),
+        direction: quickDirection,
+        lot_size: parseFloat(quickLotSize) || 0.01,
+        mentor_id: profile.id,
+        status: 'active',
+        comment: 'Quick trade from Mentor Center',
+      }).select('id').single();
+      if (sigErr) throw sigErr;
+
+      // Trigger copy trade listener
+      const masterAcc = accounts.find(a => a.is_master);
+      if (masterAcc && sig) {
+        await supabase.functions.invoke('copy-trade-listener', {
+          body: { signal_id: sig.id, master_user_id: user!.id }
+        });
+      }
+
+      toast({ title: "Quick trade published & copied to followers!" });
+      setQuickSymbol("");
+      loadProfile();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setExecutingQuickTrade(false);
+    }
+  };
+
   const copyReferralLink = () => {
     if (!profile) return;
     const link = `${window.location.origin}/ref/${profile.referral_slug}`;
@@ -355,13 +481,18 @@ export default function MentorCenter() {
             </h1>
             <p className="text-muted-foreground mt-1">Mentor Center Dashboard</p>
           </div>
-          <Badge variant={profile.is_active ? "default" : "destructive"}>
-            {profile.is_active ? "Active" : "Inactive"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+              <LayoutDashboard className="w-4 h-4 mr-1" /> HuMi Dashboard
+            </Button>
+            <Badge variant={profile.is_active ? "default" : "destructive"}>
+              {profile.is_active ? "Active" : "Inactive"}
+            </Badge>
+          </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="bg-gradient-card border-border shadow-card">
             <CardContent className="p-4 text-center">
               <Users className="h-8 w-8 mx-auto text-primary mb-2" />
@@ -386,12 +517,20 @@ export default function MentorCenter() {
               <div className="text-sm text-muted-foreground">Published Ideas</div>
             </CardContent>
           </Card>
+          <Card className="bg-gradient-card border-border shadow-card">
+            <CardContent className="p-4 text-center">
+              <Copy className="h-8 w-8 mx-auto text-primary mb-2" />
+              <div className="text-2xl font-bold">{copyRelationships.filter(r => r.status === 'active').length}</div>
+              <div className="text-sm text-muted-foreground">Active Copiers</div>
+            </CardContent>
+          </Card>
         </div>
 
         <Tabs defaultValue="clients">
           <TabsList className="flex-wrap">
             <TabsTrigger value="clients">Clients</TabsTrigger>
             <TabsTrigger value="ideas">Ideas</TabsTrigger>
+            <TabsTrigger value="copy-trading">Copy Trading</TabsTrigger>
             <TabsTrigger value="branding">Branding</TabsTrigger>
             <TabsTrigger value="media">Media & Landing</TabsTrigger>
           </TabsList>
@@ -430,6 +569,31 @@ export default function MentorCenter() {
 
           {/* Ideas Tab */}
           <TabsContent value="ideas" className="space-y-4">
+            {/* Khumo AI Suggestion */}
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    Khumo AI Suggestion
+                  </CardTitle>
+                  <CardDescription>Get AI-powered signal ideas for your community</CardDescription>
+                </div>
+                <Button variant="outline" onClick={getAiSuggestion} disabled={loadingAiSuggestion}>
+                  {loadingAiSuggestion ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  Get Suggestion
+                </Button>
+              </CardHeader>
+              {aiSuggestion && (
+                <CardContent>
+                  <div className="bg-muted/50 rounded-lg p-4 text-sm whitespace-pre-wrap">{aiSuggestion}</div>
+                  <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowSignalDialog(true)}>
+                    <Play className="w-3 h-3 mr-1" /> Publish as Signal
+                  </Button>
+                </CardContent>
+              )}
+            </Card>
+
             <Card className="bg-gradient-card border-border shadow-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -514,6 +678,89 @@ export default function MentorCenter() {
                           {sig.comment && <p className="italic">{sig.comment}</p>}
                         </div>
                         <div className="text-xs text-muted-foreground mt-2">{new Date(sig.created_at).toLocaleString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Copy Trading Tab */}
+          <TabsContent value="copy-trading" className="space-y-4">
+            {/* Master Account */}
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader>
+                <CardTitle>Master Trading Account</CardTitle>
+                <CardDescription>Set which account your clients will copy trades from</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {accounts.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <p>No trading accounts connected. <Button variant="link" onClick={() => navigate("/accounts")}>Add one →</Button></p>
+                  </div>
+                ) : (
+                  accounts.map(acc => (
+                    <div key={acc.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <p className="font-medium">{acc.name}</p>
+                        <p className="text-xs text-muted-foreground">Login: {acc.login} • Balance: ${(acc.balance || 0).toLocaleString()}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {acc.is_master && <Badge className="bg-primary text-primary-foreground">Master</Badge>}
+                        <Switch
+                          checked={!!acc.is_master}
+                          onCheckedChange={() => toggleMasterAccount(acc.id, !!acc.is_master)}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Quick Trade */}
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader>
+                <CardTitle>Quick Trade (Copy to Followers)</CardTitle>
+                <CardDescription>Publish a signal and automatically copy it to all your followers' accounts</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-3">
+                  <Input value={quickSymbol} onChange={e => setQuickSymbol(e.target.value)} placeholder="EURUSD" />
+                  <Select value={quickDirection} onValueChange={setQuickDirection}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BUY">BUY</SelectItem>
+                      <SelectItem value="SELL">SELL</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input type="number" value={quickLotSize} onChange={e => setQuickLotSize(e.target.value)} step="0.01" placeholder="0.01" />
+                </div>
+                <Button onClick={executeQuickTrade} disabled={executingQuickTrade || !quickSymbol.trim()} className="mt-3 w-full bg-gradient-primary">
+                  {executingQuickTrade ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  Execute & Copy to All Followers
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Active Copiers */}
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader>
+                <CardTitle>Active Followers</CardTitle>
+                <CardDescription>Clients currently copying your trades</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {copyRelationships.length === 0 ? (
+                  <p className="text-center py-4 text-muted-foreground">No followers yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {copyRelationships.map(rel => (
+                      <div key={rel.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                        <span className="text-sm font-medium">{rel.follower_display_name}</span>
+                        <Badge variant={rel.status === 'active' ? 'default' : 'secondary'}>
+                          {rel.status === 'active' ? 'Copying' : 'Paused'}
+                        </Badge>
                       </div>
                     ))}
                   </div>
@@ -608,8 +855,7 @@ export default function MentorCenter() {
                   <div className="flex gap-2 items-center">
                     <Input value={landingSlug} onChange={e => setLandingSlug(e.target.value)} placeholder="your-brand" />
                     <Button variant="outline" size="sm" onClick={() => {
-                      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-                      window.open(`https://${projectId}.supabase.co/functions/v1/render-mentor-landing?slug=${landingSlug || profile.referral_slug}`, '_blank');
+                      window.open(`${window.location.origin}/ref/${profile.referral_slug}`, '_blank');
                     }}>
                       <ExternalLink className="w-4 h-4 mr-1" /> Preview
                     </Button>
