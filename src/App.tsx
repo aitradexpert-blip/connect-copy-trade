@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "next-themes";
-import { MentorProvider } from "@/contexts/MentorContext";
+import { MentorProvider, useMentor } from "@/contexts/MentorContext";
 import Index from "./pages/Index";
 import TradingIdeas from "./pages/TradingIdeas";
 import CopyTrading from "./pages/CopyTradingNew";
@@ -32,6 +32,7 @@ import Journal from "./pages/Journal";
 import TrainingCenter from "./pages/TrainingCenter";
 import MentorCenter from "./pages/MentorCenter";
 import MentorReferral from "./pages/MentorReferral";
+import MentorClientDashboard from "./pages/MentorClientDashboard";
 import InvestorPitch from "./pages/InvestorPitch";
 import About from "./pages/About";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -81,6 +82,16 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Route that redirects mentor clients to their branded dashboard
+const MentorAwareHome = () => {
+  const { isMentorClient, loading: mentorLoading } = useMentor();
+  const { user, loading } = useAuth();
+  if (loading || mentorLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (isMentorClient) return <MentorClientDashboard />;
+  return <Index />;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
@@ -100,8 +111,13 @@ const App = () => (
                 <Route path="/about" element={<About />} />
                 <Route path="/api-docs" element={<ApiDocs />} />
 
+                {/* Home - mentor clients get branded dashboard */}
+                <Route path="/" element={<MentorAwareHome />} />
+                
+                {/* Mentor client dashboard (direct access) */}
+                <Route path="/mentor-dashboard" element={<ProtectedRoute><MentorClientDashboard /></ProtectedRoute>} />
+
                 {/* Free tier accessible routes (all authenticated users) */}
-                <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
                 <Route path="/training" element={<ProtectedRoute><TrainingCenter /></ProtectedRoute>} />
                 <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />

@@ -136,6 +136,12 @@ Light mode is default (:root), dark mode is .dark class
   }
 }
 
+/* Mentor branding override — when --mentor-primary is set, override primary */
+.mentor-branded {
+  --primary: var(--mentor-primary-hsl, var(--primary));
+  --secondary: var(--mentor-secondary-hsl, var(--secondary));
+}
+
 /* Mobile UX Enhancements - Touch Targets */
 @media (max-width: 768px) {
   button,

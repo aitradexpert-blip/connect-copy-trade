@@ -1,4 +1,4 @@
-import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Download } from "lucide-react";
+import { Bell, User, LogOut, CreditCard, Settings, TrendingUp, Moon, Sun, Download, Smartphone } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,12 +11,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "@/hooks/useNotifications";
 import { formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
+import { useState } from "react";
 
 export function TopHeader() {
   const { user, signOut } = useAuth();
@@ -24,10 +26,19 @@ export function TopHeader() {
   const { theme, setTheme } = useTheme();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(10);
   const { canInstall, install } = usePWAInstall();
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
 
   const handleLogout = async () => {
     await signOut();
     navigate("/auth");
+  };
+
+  const handleInstallClick = () => {
+    if (canInstall) {
+      install();
+    } else {
+      setShowInstallGuide(true);
+    }
   };
 
   return (
@@ -43,17 +54,6 @@ export function TopHeader() {
       </div>
 
       <div className="flex items-center gap-4">
-        {canInstall && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={install}
-            aria-label="Install App"
-            title="Install HuMi App"
-          >
-            <Download className="h-5 w-5" />
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="icon"
@@ -157,12 +157,10 @@ export function TopHeader() {
               <CreditCard className="mr-2 h-4 w-4" />
               Subscription
             </DropdownMenuItem>
-            {canInstall && (
-              <DropdownMenuItem onClick={install}>
-                <Download className="mr-2 h-4 w-4" />
-                Install App
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem onClick={handleInstallClick}>
+              <Download className="mr-2 h-4 w-4" />
+              Install App
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("/settings")}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -175,6 +173,49 @@ export function TopHeader() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Install Guide Dialog */}
+      <Dialog open={showInstallGuide} onOpenChange={setShowInstallGuide}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Smartphone className="w-5 h-5" />
+              Install HuMi App
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            {/* Android */}
+            <div className="space-y-2">
+              <h3 className="font-semibold flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-green-500/10 flex items-center justify-center text-xs">🤖</span>
+                Android
+              </h3>
+              <ol className="text-sm text-muted-foreground space-y-1 ml-8 list-decimal">
+                <li>Open <a href="https://connect-copy-trade.lovable.app" target="_blank" rel="noopener" className="text-primary underline">connect-copy-trade.lovable.app</a> in Chrome</li>
+                <li>Tap the <strong>⋮ menu</strong> (top right)</li>
+                <li>Tap <strong>"Add to Home Screen"</strong> or <strong>"Install App"</strong></li>
+              </ol>
+            </div>
+
+            {/* iOS */}
+            <div className="space-y-2">
+              <h3 className="font-semibold flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-blue-500/10 flex items-center justify-center text-xs">🍎</span>
+                iPhone / iPad
+              </h3>
+              <ol className="text-sm text-muted-foreground space-y-1 ml-8 list-decimal">
+                <li>Open <a href="https://connect-copy-trade.lovable.app" target="_blank" rel="noopener" className="text-primary underline">connect-copy-trade.lovable.app</a> in Safari</li>
+                <li>Tap the <strong>Share button</strong> (square with arrow)</li>
+                <li>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
+              </ol>
+            </div>
+
+            <div className="bg-muted rounded-lg p-3 text-sm text-muted-foreground">
+              <strong>Tip:</strong> Once installed, HuMi works like a native app — fast loading, full screen, and accessible from your home screen.
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

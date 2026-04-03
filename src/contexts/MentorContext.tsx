@@ -8,12 +8,22 @@ interface FeatureRenames {
   trading_ideas_name: string;
 }
 
+interface UiConfig {
+  primary_color?: string;
+  secondary_color?: string;
+  welcome_text?: string;
+  logo_url?: string;
+}
+
 interface MentorContextType {
   isMentorClient: boolean;
   mentorBrandName: string | null;
   featureRenames: FeatureRenames;
   mentorId: string | null;
+  mentorUserId: string | null;
   mentorMediaUrl: string | null;
+  mentorMediaType: string | null;
+  mentorUiConfig: UiConfig;
   loading: boolean;
   getFeatureName: (key: keyof FeatureRenames) => string;
 }
@@ -29,7 +39,10 @@ const MentorContext = createContext<MentorContextType>({
   mentorBrandName: null,
   featureRenames: defaultRenames,
   mentorId: null,
+  mentorUserId: null,
   mentorMediaUrl: null,
+  mentorMediaType: null,
+  mentorUiConfig: {},
   loading: true,
   getFeatureName: (key) => defaultRenames[key],
 });
@@ -40,7 +53,10 @@ export function MentorProvider({ children }: { children: ReactNode }) {
   const [mentorBrandName, setMentorBrandName] = useState<string | null>(null);
   const [featureRenames, setFeatureRenames] = useState<FeatureRenames>(defaultRenames);
   const [mentorId, setMentorId] = useState<string | null>(null);
+  const [mentorUserId, setMentorUserId] = useState<string | null>(null);
   const [mentorMediaUrl, setMentorMediaUrl] = useState<string | null>(null);
+  const [mentorMediaType, setMentorMediaType] = useState<string | null>(null);
+  const [mentorUiConfig, setMentorUiConfig] = useState<UiConfig>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -61,7 +77,7 @@ export function MentorProvider({ children }: { children: ReactNode }) {
         if (clientRecord?.mentor_id) {
           const { data: mentor } = await supabase
             .from('mentor_profiles')
-            .select('id, brand_name, feature_renames, is_active, ui_config, landing_page_media_url')
+            .select('id, user_id, brand_name, feature_renames, is_active, ui_config, landing_page_media_url, landing_page_media_type')
             .eq('id', clientRecord.mentor_id)
             .eq('is_active', true)
             .maybeSingle();
@@ -70,8 +86,15 @@ export function MentorProvider({ children }: { children: ReactNode }) {
             setIsMentorClient(true);
             setMentorBrandName(mentor.brand_name);
             setMentorId(mentor.id);
+            setMentorUserId(mentor.user_id);
             setMentorMediaUrl(mentor.landing_page_media_url);
+            setMentorMediaType(mentor.landing_page_media_type);
             
+            const uiConfig = mentor.ui_config as unknown as UiConfig;
+            if (uiConfig) {
+              setMentorUiConfig(uiConfig);
+            }
+
             const renames = mentor.feature_renames as unknown as FeatureRenames;
             if (renames) {
               setFeatureRenames({
@@ -81,16 +104,13 @@ export function MentorProvider({ children }: { children: ReactNode }) {
               });
             }
 
-            // Apply branding CSS variables if ui_config exists
-            const uiConfig = mentor.ui_config as Record<string, string> | null;
-            if (uiConfig) {
-              const root = document.documentElement;
-              if (uiConfig.primary_color) {
-                root.style.setProperty('--mentor-primary', uiConfig.primary_color);
-              }
-              if (uiConfig.secondary_color) {
-                root.style.setProperty('--mentor-secondary', uiConfig.secondary_color);
-              }
+            // Apply branding CSS variables
+            const root = document.documentElement;
+            if (uiConfig?.primary_color) {
+              root.style.setProperty('--mentor-primary', uiConfig.primary_color);
+            }
+            if (uiConfig?.secondary_color) {
+              root.style.setProperty('--mentor-secondary', uiConfig.secondary_color);
             }
           }
         }
@@ -104,7 +124,6 @@ export function MentorProvider({ children }: { children: ReactNode }) {
     loadMentorContext();
 
     return () => {
-      // Clean up custom CSS variables
       const root = document.documentElement;
       root.style.removeProperty('--mentor-primary');
       root.style.removeProperty('--mentor-secondary');
@@ -114,7 +133,10 @@ export function MentorProvider({ children }: { children: ReactNode }) {
   const getFeatureName = (key: keyof FeatureRenames) => featureRenames[key];
 
   return (
-    <MentorContext.Provider value={{ isMentorClient, mentorBrandName, featureRenames, mentorId, mentorMediaUrl, loading, getFeatureName }}>
+    <MentorContext.Provider value={{ 
+      isMentorClient, mentorBrandName, featureRenames, mentorId, mentorUserId,
+      mentorMediaUrl, mentorMediaType, mentorUiConfig, loading, getFeatureName 
+    }}>
       {children}
     </MentorContext.Provider>
   );
