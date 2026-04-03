@@ -1,180 +1,178 @@
-# Batch 3-5 Implementation Plan: Mentor Center, Branded Client UI, Admin Hardening, and Fixes
 
-## Critical Fix: Headway Account Redeploy
+# Mentor Center, Branded Client UI, and Visibility Fixes — Implementation Plan
 
-The redeploy call returns a **403 ForbiddenError**: "To allow trading account execution please top up your account." This is a **MetaAPI billing issue** — the account's resource slots or credits are exhausted on the MetaAPI side. The code is correct; you need to top up your MetaAPI account at [https://app.metaapi.cloud](https://app.metaapi.cloud) to restore the Headway account.  
-  
-We have now fixed this by buying more credits, so we need to rerun this and make sure it works.
+## Problem Summary
 
-The redeploy edge function will be updated to surface this error message clearly to the user instead of showing a generic "Redeploy failed."
+Many features were coded but never wired into the actual user flows. The result is that changes are invisible to users. This plan fixes every broken link, missing route, and dead-code component identified during the audit.
 
 ---
 
-## 1. Install App Button in Account Dropdown
+## What's Broken (Root Causes)
 
-Add "Install App" menu item in the TopHeader account dropdown (under "My Account" section, before Settings) that calls the PWA install prompt. Only shown when `canInstall` is true. Also create an APK download format on the same place make it downloadable immediately, i know you can do this, which we can use to download and send to users via social media etc
+1. **MentorClientLayout is dead code** — the component exists at `src/components/MentorClientLayout.tsx` but is never imported or rendered by any page or route in `App.tsx`. Mentor clients see the normal HuMi dashboard with zero branding.
+
+2. **Auth sign-in always redirects to `/`** — when a referred user signs in (with `?ref=slug`), they land on the main HuMi dashboard instead of a branded mentor client experience. The referral link is stored but the redirect ignores it.
+
+3. **MentorReferral page (`/ref/:slug`) is a plain card** — it doesn't use the mentor's uploaded media, branding colors, or the `render-mentor-landing` edge function. The landing page the mentor customized is only accessible via a raw Supabase function URL.
+
+4. **`--mentor-primary` CSS variable is set but never consumed** — no component or stylesheet reads this variable, so mentor colors have zero effect on the UI.
+
+5. **No Copy Trading tab in client layout** — the MentorClientLayout only has 3 tabs (Home, Ideas, Bot). Copy Trading — the most requested feature — is missing.
+
+6. **No auto-link of mentor's master account to client for copy trading** — when a client clicks "Activate Copy Trading," nothing links their trading account to the mentor's master account automatically.
+
+7. **No "Go to HuMi Dashboard" button** — neither mentors nor clients can navigate between the Mentor Center and the main HuMi dashboard from within the mentor UI.
+
+8. **Khumo AI Ideas suggestions not surfaced to mentors** — the plan called for Khumo to suggest signal ideas to mentors in the Mentor Center, but this was never implemented.
+
+9. **Install App / APK download** — the install button exists in the TopHeader dropdown but only shows when `canInstall` is true (browser-triggered). There's no always-visible download/install guidance or APK/IPA link.
+
+---
+
+## Implementation Steps
+
+### Step 1: Create Branded Mentor Client Dashboard Page
+
+**New file**: `src/pages/MentorClientDashboard.tsx`
+
+A full-page component that replaces the normal dashboard for mentor-referred users. Uses the uploaded image/video and mentor colors as the background/hero. Includes 4 tabs: **Home**, **Ideas**, **Copy Trading**, **AI Bot** (using mentor-renamed labels).
+
+- **Home tab**: Branded welcome with mentor media as hero/background (dark overlay + gradient using mentor's primary color), account summary cards, and a "Connect Trading Account" button if no accounts exist.
+- **Ideas tab**: Fetches `trading_signals` filtered by `mentor_id` OR `mentor_id IS NULL`, with execute-trade dialog (reuse existing execution logic from `brokerExecution.ts`).
+- **Copy Trading tab**: Shows mentor's master account. Single "Activate Copy Trading" button that: (a) if no trading account, opens ConnectAccountModal; (b) if account exists, creates a `copy_trading_relationships` row linking client's account to mentor's master account. Shows active/inactive status with stop button.
+- **AI Bot tab**: Links to `/ai-trading` with mentor-branded name.
+
+Applies mentor's `primary_color` and `secondary_color` via inline styles and CSS variables. Uses mentor's `landing_page_media_url` as the background/hero image.
+
+Includes a **"Go to HuMi Dashboard"** button in the header that navigates to `/`.
+
+### Step 2: Wire Mentor Client Dashboard into Routes
+
+**File**: `src/App.tsx`
+
+- Add new route: `/mentor-dashboard` → `MentorClientDashboard` (ProtectedRoute).
+- Import `useMentor` into the routing logic. Create a `MentorClientRoute` wrapper that checks `isMentorClient` from MentorContext — if true, render children; if false, redirect to `/`.
+
+### Step 3: Fix Auth Redirect for Referred Users
+
+**File**: `src/pages/Auth.tsx`
+
+- After successful sign-in (not just sign-up), check if the user has a `referred_by` value in profiles or a `mentor_clients` record. If yes, redirect to `/mentor-dashboard` instead of `/`.
+- After successful sign-up with `?ref=slug`, also set the redirect target to `/mentor-dashboard`.
+- Update `linkMentorReferral` to also set `referred_by` in the `profiles` table.
+
+### Step 4: Upgrade MentorReferral Landing Page
+
+**File**: `src/pages/MentorReferral.tsx`
+
+Replace the plain card with a full-screen branded landing page:
+- Fetch mentor's `landing_page_media_url`, `landing_page_media_type`, `ui_config`, `brand_name` from `mentor_profiles`.
+- Render full-screen media background (video autoplay muted loop or image cover) with dark overlay.
+- Overlay: mentor brand name with gradient text (using primary_color), welcome text from `ui_config`, and a prominent "Join Now" CTA button linking to `/auth?ref={slug}`.
+- Style inspired by the uploaded reference images (bold, high-contrast, trading-themed).
+
+### Step 5: Make Mentor Branding Actually Visible
+
+**File**: `src/index.css` or inline in components
+
+- Define CSS utility classes that consume `--mentor-primary` and `--mentor-secondary`:
+  ```css
+  .mentor-branded { --primary: var(--mentor-primary, hsl(var(--primary))); }
+  ```
+- Apply the `mentor-branded` class to the MentorClientDashboard wrapper so all child components using `bg-primary`, `text-primary` etc. automatically pick up mentor colors.
+
+### Step 6: Mentor Center — Add "Go to HuMi Dashboard" Button
+
+**File**: `src/pages/MentorCenter.tsx`
+
+- Add a button in the header area: "Open HuMi Dashboard" with an `ExternalLink` icon that navigates to `/`.
+- This lets mentors switch between their Mentor Center admin view and the normal HuMi dashboard.
+
+### Step 7: Mentor Center — Add Copy Trading Management
+
+**File**: `src/pages/MentorCenter.tsx`
+
+- Add a "Copy Trading" tab showing:
+  - Which of the mentor's trading accounts is set as master (`is_master = true`).
+  - A toggle to set/unset master status.
+  - A "Quick Trade" form (symbol, direction, lot size) that: (a) publishes a signal to `trading_signals` with the mentor's `mentor_id`, AND (b) calls `copy-trade-listener` edge function to execute the signal on all followers' accounts.
+  - List of active copy relationships with client names.
+
+### Step 8: Auto-Link Copy Trading for Mentor Clients
+
+**File**: `src/pages/MentorClientDashboard.tsx` (Copy Trading tab)
+
+When client clicks "Activate Copy Trading":
+1. If no trading account connected → open ConnectAccountModal.
+2. If account exists → find mentor's master account (query `trading_accounts` where `user_id = mentor's user_id` AND `is_master = true`).
+3. Insert into `copy_trading_relationships`: `{ follower_user_id: client, follower_account_id: client's account, master_account_id: mentor's master, master_user_id: mentor's user_id, status: 'active' }`.
+4. Show success state with "Stop Copy Trading" button that updates status to 'inactive'.
+
+### Step 9: Khumo Ideas Suggestions for Mentors
+
+**File**: `src/pages/MentorCenter.tsx` — Ideas tab
+
+- Add a "Get AI Suggestion" button that calls the `khumo-chat` edge function with a prompt like: "Suggest a trading signal for {popular forex pairs} with entry, SL, TP, and brief analysis."
+- Display the response in a card with a "Publish This" button that pre-fills the signal form.
+
+### Step 10: Install App — Always-Visible Guidance + Platform Links
 
 **File**: `src/components/TopHeader.tsx`
 
----
+- Change the install dropdown item to always show (not just when `canInstall` is true).
+- When `canInstall` is true: trigger PWA install prompt.
+- When `canInstall` is false (already installed or unsupported): show a small dialog with platform-specific instructions:
+  - **Android**: "Open this page in Chrome → tap menu → 'Add to Home Screen'" + link to the published URL.
+  - **iOS**: "Open in Safari → tap Share → 'Add to Home Screen'".
+- Add this same guidance as a card on the Settings page.
 
-## 2. Mentor Center Upgrades (Batch 3)
+**Note on APK/IPA**: True native APK/IPA builds require Capacitor setup and app store publishing pipelines, which cannot be done purely within this web project. The plan adds clear install instructions for both platforms using the browser-based install flow, which produces an app-like experience on both Android and iOS.
 
-### 2A. Storage Bucket for Mentor Assets
+### Step 11: Fix MentorContext to Expose Mentor's User ID
 
-Create `mentor-assets` public storage bucket via migration. Add RLS policies allowing mentors to upload to their own folder.
+**File**: `src/contexts/MentorContext.tsx`
 
-### 2B. Mentor Center — Enhanced Branding Tab
+- Add `mentorUserId` to the context (the `user_id` from `mentor_profiles`), needed for copy trading auto-linking.
+- Expose `mentorUiConfig` (the full ui_config object) for color application.
 
-Upgrade `src/pages/MentorCenter.tsx` with:
+### Step 12: Database — Add RLS for Copy Trading Relationship Management
 
-- **Media Upload**: Image/GIF/video upload area in the Branding tab. Files uploaded to `mentor-assets/{mentor_id}/`. Stores URL and type in `mentor_profiles.landing_page_media_url` and `landing_page_media_type`.
-- **UI Config Fields**: Primary color, secondary color, logo URL, custom welcome text — stored in `mentor_profiles.ui_config`.
-- **Landing Page Slug**: Auto-generated from brand name, editable. Preview link shown.
-- **Landing Page Preview**: Shows how the branded page looks inline.
+**Migration**: Allow clients to UPDATE their own copy trading relationships (currently blocked by RLS).
 
-### 2C. Mentor Ideas Publishing
-
-Add an **"Ideas"** tab in MentorCenter allowing mentors to publish their own trading signals to `trading_signals` table with a `mentor_id` column.
-
-**Database migration**: Add `mentor_id UUID` column to `trading_signals` (nullable — null = HuMi official). Add RLS policy allowing mentors to INSERT/UPDATE/SELECT their own signals.
-
-The Ideas page (`TradingIdeas.tsx`) will show both HuMi signals (where `mentor_id IS NULL`) and, for mentor clients, their mentor's signals. Execution works identically to existing flow.
-
-### 2D. Client Management Tab Enhancement
-
-In MentorCenter "Clients" tab:
-
-- Show client display names (join with profiles)
-- Show copy trading status per client
-- "Reconnect All" button — calls `metaapi-redeploy-account` for each client's MetaAPI accounts
-
-### 2E. Close All Trades
-
-**New Edge Function**: `supabase/functions/close-all-trades/index.ts`
-
-- Accepts `user_id` (close own) or `mentor_id` (close all clients')
-- For each relevant trading account, fetches open positions via MetaAPI and closes them
-- Returns summary
-
-**Frontend**: Add "Close All Trades" confirmation button in:
-
-- Copy Trading page
-- AI Bot page
-- Trading Ideas page
-- Mentor Center (for mentor's client trades)
-
-### 2F. Mentor Landing Page Edge Function
-
-**New Edge Function**: `supabase/functions/render-mentor-landing/index.ts`
-
-- Accepts slug via query parameter
-- Fetches mentor profile, media URL, ui_config
-- Returns responsive HTML page with full-screen media background, mentor brand name overlay, CTA button to `/ref/{slug}`
-
----
-
-## 3. Branded Client UI (Batch 4)
-
-### 3A. Referral Association on Signup
-
-Update `src/pages/Auth.tsx`: When `?ref=slug` is present, after successful signup, insert into `mentor_clients` and store `referred_by` in profiles.
-
-**Database migration**: Add `referred_by TEXT` column to `profiles` (nullable).
-
-### 3B. Mentor Context Branding
-
-`src/contexts/MentorContext.tsx` already loads mentor branding for clients. Enhance it to:
-
-- Apply `ui_config` colors as CSS variables on the root element
-- Expose mentor's `landing_page_media_url` for potential use in client dashboard
-
-### 3C. Mentor Client Three-Tab Layout
-
-**New component**: `src/components/MentorClientLayout.tsx`
-
-- For users who are mentor clients (`isMentorClient` from MentorContext)
-- Provides tabs: **Home** (standard dashboard), **Ideas** (mentor's signals, executable), **Trading Bot** (AI bot with mentor's custom name, start/stop controls)
-- Ideas tab filters `trading_signals` by `mentor_id` matching user's mentor
-- Each idea is executable exactly like the main TradingIdeas page
-
----
-
-## 4. Admin Hardening (Batch 5)
-
-### 4A. New Admin Edge Functions
-
-`**supabase/functions/admin-create-user/index.ts**`:
-
-- Accepts email, password, plan
-- Uses `supabaseAdmin.auth.admin.createUser()`
-- Creates profile row and subscription row
-- Returns user ID
-
-`**supabase/functions/admin-update-subscription/index.ts**`:
-
-- Accepts user_id, plan_name
-- Upserts `user_subscriptions`
-- Returns confirmation
-
-### 4B. UserManagementTab Improvements
-
-- Add "Create User" button with dialog (email, password, plan selection)
-- Calls `admin-create-user` edge function
-- Existing subscription update already works; ensure "Free" option included (already done)
-
-### 4C. Harden admin-list-users
-
-Update existing `supabase/functions/admin-list-users/index.ts` to use proper Supabase auth verification instead of manual JWT decode.
-
----
-
-## 5. Redeploy Error UX
-
-Update `metaapi-redeploy-account` to parse the error body and return human-readable messages. Update TradingAccounts.tsx reconnect handler to show specific errors like "MetaAPI credits depleted — please contact support."
+```sql
+CREATE POLICY "Users can update own copy relationships"
+ON copy_trading_relationships FOR UPDATE
+USING (auth.uid() = follower_user_id)
+WITH CHECK (auth.uid() = follower_user_id);
+```
 
 ---
 
 ## Files to Create
-
-- `supabase/functions/close-all-trades/index.ts`
-- `supabase/functions/render-mentor-landing/index.ts`
-- `supabase/functions/admin-create-user/index.ts`
-- `supabase/functions/admin-update-subscription/index.ts`
-- `src/components/MentorClientLayout.tsx`
+- `src/pages/MentorClientDashboard.tsx`
 
 ## Files to Modify
+- `src/App.tsx` — add `/mentor-dashboard` route
+- `src/pages/Auth.tsx` — redirect referred users to `/mentor-dashboard`
+- `src/pages/MentorReferral.tsx` — full-screen branded landing page
+- `src/pages/MentorCenter.tsx` — Copy Trading tab, Khumo suggestions, "Go to HuMi" button
+- `src/contexts/MentorContext.tsx` — expose `mentorUserId` and `mentorUiConfig`
+- `src/components/TopHeader.tsx` — always-visible install guidance
+- `src/index.css` — mentor branding CSS variable consumption
 
-- `src/components/TopHeader.tsx` — Install App in dropdown
-- `src/pages/MentorCenter.tsx` — media upload, UI config, ideas publishing, client management, close all trades
-- `src/pages/TradingIdeas.tsx` — show mentor-specific signals for mentor clients
-- `src/pages/TradingAccounts.tsx` — better redeploy error messages
-- `src/pages/Auth.tsx` — referral association on signup
-- `src/contexts/MentorContext.tsx` — apply branding CSS variables
-- `src/components/admin/UserManagementTab.tsx` — create user button
-- `supabase/functions/metaapi-redeploy-account/index.ts` — better error parsing
-- `supabase/functions/admin-list-users/index.ts` — auth hardening
-- `supabase/config.toml` — new function entries
+## Database Migration
+- Add UPDATE policy on `copy_trading_relationships` for followers
 
-## Database Migrations
-
-1. Add `mentor_id UUID` column to `trading_signals` + RLS for mentor INSERT/UPDATE
-2. Add `referred_by TEXT` column to `profiles`
-3. Create `mentor-assets` public storage bucket + RLS policies
-4. Add mentor signal SELECT policy (clients can see their mentor's signals)
+## No New Edge Functions Needed
+All existing functions (`copy-trade-listener`, `khumo-chat`, `metaapi-execute-trade`, `render-mentor-landing`) are reused.
 
 ## Implementation Order
-
-1. Critical fix: Redeploy error UX + Install App button
-2. Database migrations (mentor_id on signals, referred_by on profiles, storage bucket)
-3. Mentor Center upgrades (upload, branding, ideas, clients, close-all)
-4. Edge functions (close-all-trades, render-mentor-landing, admin-create-user, admin-update-subscription)
-5. Branded client UI (referral association, MentorClientLayout)
-6. Admin hardening (create user UI, auth hardening)  
-  
-Let's make sure we get these important thing correct at a go  
-  
-- We want Copy Trading to actually works. In the Mentor Center, the Mentors users should automatically be linked to the Mentor as the "Master" in Copy Trading with an option to Stop/turn off Copy Tading. AI bot the same, the mentors users should be able to opt in to trade using the bot. in the Normal HuMi Dashboard, same principle must apply, in terms of Copy Trading, we want the Master Trading account to be directly linked to the user, also the Trading Account of the master should allow us to track and check for when the Master Trading Account actually places a trade in Metatrader, so we want the Master Trader, when they place trades on their linked Master trading account linked with Metatrader, The Master should be able to place trades directly on Metatrader 4 or 5, and that trade should automatically be linked to the Follower/s account so that the exact trades are places in the Followers Linked/added Follower Trading account (Not sure if that make sense).  
-- We want Trades to be able to create trading accounts in the HuMi dashboard directly into the MetaAPI APIs, we were able to this before but now in the Tables Editor we can see that trading accounts metaapi ids are not correctly generated when the other ones are done correctly, also reattempt to create the incorrecly ceated accounts trading_accounts, metaapi_account_id  
-  
-Users in the Mentor Center should still be able to access the Normal HuMi through the menu on the top right, linked same trading accounts to the mentor center. (Think hard about this recheck if what I say makes sense, make it make sense and work on it.)
+1. MentorContext enhancement (Step 11)
+2. Database migration (Step 12)
+3. CSS branding variables (Step 5)
+4. MentorReferral landing page upgrade (Step 4)
+5. MentorClientDashboard page (Step 1)
+6. Route wiring + Auth redirect (Steps 2, 3)
+7. MentorCenter upgrades — copy trading tab, Khumo suggestions, navigation (Steps 6, 7, 9)
+8. Auto-link copy trading (Step 8)
+9. Install app guidance (Step 10)
