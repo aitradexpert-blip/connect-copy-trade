@@ -86,20 +86,41 @@ const Auth = () => {
           client_user_id: userId,
           referral_slug_used: refSlug
         });
+
+        // Also set referred_by on profile
+        await supabase
+          .from('profiles')
+          .update({ referred_by: refSlug })
+          .eq('user_id', userId);
       }
     } catch (err) {
       console.error('[Auth] Error linking mentor:', err);
     }
   };
 
+  const checkIfMentorClient = async (userId: string): Promise<boolean> => {
+    try {
+      const { data } = await supabase
+        .from('mentor_clients')
+        .select('id')
+        .eq('client_user_id', userId)
+        .limit(1)
+        .maybeSingle();
+      return !!data;
+    } catch {
+      return false;
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
+      const redirectTo = refSlug 
+        ? `${window.location.origin}/mentor-dashboard`
+        : `${window.location.origin}/`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/`,
-        }
+        options: { redirectTo }
       });
       if (error) throw error;
     } catch (error: any) {
@@ -116,7 +137,9 @@ const Auth = () => {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: refSlug 
+            ? `${window.location.origin}/mentor-dashboard`
+            : `${window.location.origin}/`,
           data: { display_name: displayName },
         },
       });
@@ -141,10 +164,23 @@ const Auth = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       toast({ title: "Welcome back!", description: "You have been logged in successfully." });
-      navigate("/");
+
+      // Check if this user is a mentor client → redirect to branded dashboard
+      if (data?.user) {
+        if (refSlug) {
+          // Link referral if signing in with ref param
+          await linkMentorReferral(data.user.id);
+          navigate("/mentor-dashboard");
+        } else {
+          const isMentorClient = await checkIfMentorClient(data.user.id);
+          navigate(isMentorClient ? "/mentor-dashboard" : "/");
+        }
+      } else {
+        navigate("/");
+      }
     } catch (error: any) {
       toast({ title: "Error signing in", description: error.message, variant: "destructive" });
     } finally {
