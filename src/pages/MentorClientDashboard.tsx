@@ -11,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet } from "lucide-react";
-import ConnectAccountModal from "@/components/ConnectAccountModal";
-import { executeOnAccount, type TradeSignal, type BrokerAccount } from "@/services/brokerExecution";
+import { ConnectAccountModal } from "@/components/ConnectAccountModal";
+import { executeOnAccount, type TradeSignal, type TradingAccount } from "@/services/brokerExecution";
 
 interface Signal {
   id: string;
