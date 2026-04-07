@@ -17,6 +17,9 @@ const Auth = () => {
   const [displayName, setDisplayName] = useState("");
   const [showSignInPw, setShowSignInPw] = useState(false);
   const [showSignUpPw, setShowSignUpPw] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -295,6 +298,11 @@ const Auth = () => {
                     </button>
                   </div>
                 </div>
+                <div className="flex justify-end">
+                  <button type="button" onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-xs text-primary hover:underline">
+                    Forgot password?
+                  </button>
+                </div>
                 <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
                   {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   Sign In
@@ -328,6 +336,55 @@ const Auth = () => {
               </form>
             </TabsContent>
           </Tabs>
+
+          {/* Forgot Password Modal */}
+          {forgotMode && (
+            <div className="mt-4 border-t pt-4 space-y-3">
+              <h3 className="font-semibold text-sm">Reset Password</h3>
+              {forgotSent ? (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Reset link sent! Check your email.</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={forgotEmail}
+                    onChange={e => setForgotEmail(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (!forgotEmail) return;
+                        setIsLoading(true);
+                        try {
+                          const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+                            redirectTo: `${window.location.origin}/reset-password`,
+                          });
+                          if (error) throw error;
+                          setForgotSent(true);
+                        } catch (err: any) {
+                          toast({ title: "Error", description: err.message, variant: "destructive" });
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }}
+                      disabled={isLoading}
+                    >
+                      {isLoading && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                      Send Reset Link
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setForgotMode(false); setForgotSent(false); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
       </div>

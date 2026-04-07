@@ -15,6 +15,7 @@ import { SupportWidget } from "@/components/SupportWidget";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import WelcomeModal from "@/components/WelcomeModal";
 
 
 import { useNavigate } from "react-router-dom";
@@ -485,6 +486,7 @@ const Index = () => {
 
         <SupportWidget />
       </div>
+      <WelcomeModal />
     </AppLayout>
   );
 };

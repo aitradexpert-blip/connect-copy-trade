@@ -10,9 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu } from "lucide-react";
 import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { executeOnAccount, type TradeSignal, type TradingAccount } from "@/services/brokerExecution";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
+import WelcomeModal from "@/components/WelcomeModal";
 
 interface Signal {
   id: string;
@@ -45,9 +48,11 @@ interface CopyRelationship {
 }
 
 export default function MentorClientDashboard() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { canInstall, install } = usePWAInstall();
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const {
     mentorBrandName, mentorId, mentorUserId, mentorMediaUrl, mentorMediaType,
     mentorUiConfig, featureRenames, getFeatureName
@@ -66,6 +71,17 @@ export default function MentorClientDashboard() {
 
   const primaryColor = mentorUiConfig?.primary_color || "#6366f1";
   const secondaryColor = mentorUiConfig?.secondary_color || "#8b5cf6";
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = /Android/.test(navigator.userAgent);
+
+  const handleInstallApp = async () => {
+    if (canInstall) {
+      await install();
+    } else {
+      setShowInstallGuide(true);
+    }
+  };
 
   useEffect(() => {
     if (user) loadData();
@@ -227,14 +243,32 @@ export default function MentorClientDashboard() {
             <h1 className="text-3xl md:text-4xl font-black text-white">{mentorBrandName || 'Mentor Center'}</h1>
             <p className="text-white/70 mt-1">{mentorUiConfig?.welcome_text || 'Your trading dashboard'}</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-            onClick={() => navigate("/")}
-          >
-            <ExternalLink className="w-4 h-4 mr-1" /> HuMi Dashboard
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
+                <Menu className="w-4 h-4 mr-1" /> Menu
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => navigate("/profile")}>
+                <User className="w-4 h-4 mr-2" /> Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <Settings className="w-4 h-4 mr-2" /> Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleInstallApp}>
+                <Download className="w-4 h-4 mr-2" /> Install App
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/?dashboard=main")}>
+                <ExternalLink className="w-4 h-4 mr-2" /> HuMi Dashboard
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={signOut} className="text-destructive">
+                <LogOut className="w-4 h-4 mr-2" /> Log Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -494,6 +528,27 @@ export default function MentorClientDashboard() {
 
       {/* Connect Account Modal */}
       <ConnectAccountModal open={showConnectModal} onOpenChange={setShowConnectModal} />
+
+      {/* Install Guide Dialog */}
+      <Dialog open={showInstallGuide} onOpenChange={setShowInstallGuide}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5" /> Install HuMi App</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground space-y-2">
+            {isIOS ? (
+              <p>Open in <strong>Safari</strong> → tap <strong>Share ↗</strong> → <strong>"Add to Home Screen"</strong></p>
+            ) : isAndroid ? (
+              <p>Open in <strong>Chrome</strong> → tap <strong>⋮ Menu</strong> → <strong>"Add to Home Screen"</strong></p>
+            ) : (
+              <p>Open in <strong>Chrome</strong> → click the install icon in the address bar, or use <strong>⋮ → Install App</strong></p>
+            )}
+          </div>
+          <Button onClick={() => setShowInstallGuide(false)}>Got it</Button>
+        </DialogContent>
+      </Dialog>
+
+      <WelcomeModal />
     </div>
   );
 }
