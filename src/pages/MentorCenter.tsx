@@ -10,11 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { Users, Link, Edit3, Copy, CheckCircle, Loader2, Crown, Bot, TrendingUp, Upload, Image, Video, Lightbulb, XCircle, ExternalLink, Palette, TrendingDown, Play, Sparkles, StopCircle, LayoutDashboard } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Users, Link, Edit3, Copy, CheckCircle, Loader2, Crown, Bot, TrendingUp, Upload, Image, Video, Lightbulb, XCircle, ExternalLink, Palette, TrendingDown, Play, Sparkles, StopCircle, LayoutDashboard, User, Settings, Download, LogOut, Smartphone, Menu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 
 interface MentorProfile {
   id: string;
@@ -69,9 +71,11 @@ interface CopyRelationship {
 }
 
 export default function MentorCenter() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { canInstall, install } = usePWAInstall();
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [profile, setProfile] = useState<MentorProfile | null>(null);
   const [clients, setClients] = useState<MentorClient[]>([]);
   const [signals, setSignals] = useState<MentorSignal[]>([]);
@@ -482,9 +486,34 @@ export default function MentorCenter() {
             <p className="text-muted-foreground mt-1">Mentor Center Dashboard</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate("/")}>
-              <LayoutDashboard className="w-4 h-4 mr-1" /> HuMi Dashboard
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Menu className="w-4 h-4 mr-1" /> Menu
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => navigate("/profile")}>
+                  <User className="w-4 h-4 mr-2" /> Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                  <Settings className="w-4 h-4 mr-2" /> Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={async () => {
+                  if (canInstall) { await install(); } else { setShowInstallGuide(true); }
+                }}>
+                  <Download className="w-4 h-4 mr-2" /> Install App
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/?dashboard=main")}>
+                  <ExternalLink className="w-4 h-4 mr-2" /> HuMi Dashboard
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut} className="text-destructive">
+                  <LogOut className="w-4 h-4 mr-2" /> Log Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Badge variant={profile.is_active ? "default" : "destructive"}>
               {profile.is_active ? "Active" : "Inactive"}
             </Badge>
@@ -527,12 +556,12 @@ export default function MentorCenter() {
         </div>
 
         <Tabs defaultValue="clients">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="clients">Clients</TabsTrigger>
-            <TabsTrigger value="ideas">Ideas</TabsTrigger>
-            <TabsTrigger value="copy-trading">Copy Trading</TabsTrigger>
-            <TabsTrigger value="branding">Branding</TabsTrigger>
-            <TabsTrigger value="media">Media & Landing</TabsTrigger>
+          <TabsList className="w-full overflow-x-auto flex-nowrap justify-start">
+            <TabsTrigger value="clients" className="whitespace-nowrap">Clients</TabsTrigger>
+            <TabsTrigger value="ideas" className="whitespace-nowrap">Ideas</TabsTrigger>
+            <TabsTrigger value="copy-trading" className="whitespace-nowrap">Copy Trading</TabsTrigger>
+            <TabsTrigger value="branding" className="whitespace-nowrap">Branding</TabsTrigger>
+            <TabsTrigger value="media" className="whitespace-nowrap">Media & Landing</TabsTrigger>
           </TabsList>
 
           {/* Clients Tab */}
