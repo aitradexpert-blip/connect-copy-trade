@@ -899,6 +899,25 @@ export default function MentorCenter() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Install Guide Dialog */}
+        <Dialog open={showInstallGuide} onOpenChange={setShowInstallGuide}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5" /> Install HuMi App</DialogTitle>
+            </DialogHeader>
+            <div className="text-sm text-muted-foreground space-y-2">
+              {/iPad|iPhone|iPod/.test(navigator.userAgent) ? (
+                <p>Open in <strong>Safari</strong> → tap <strong>Share ↗</strong> → <strong>"Add to Home Screen"</strong></p>
+              ) : /Android/.test(navigator.userAgent) ? (
+                <p>Open in <strong>Chrome</strong> → tap <strong>⋮ Menu</strong> → <strong>"Add to Home Screen"</strong></p>
+              ) : (
+                <p>Open in <strong>Chrome</strong> → click the install icon in the address bar, or use <strong>⋮ → Install App</strong></p>
+              )}
+            </div>
+            <Button onClick={() => setShowInstallGuide(false)}>Got it</Button>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
