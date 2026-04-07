@@ -35,6 +35,7 @@ import MentorReferral from "./pages/MentorReferral";
 import MentorClientDashboard from "./pages/MentorClientDashboard";
 import InvestorPitch from "./pages/InvestorPitch";
 import About from "./pages/About";
+import ResetPassword from "./pages/ResetPassword";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const queryClient = new QueryClient();
@@ -88,7 +89,9 @@ const MentorAwareHome = () => {
   const { user, loading } = useAuth();
   if (loading || mentorLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  if (isMentorClient) return <MentorClientDashboard />;
+  // Allow ?dashboard=main to bypass mentor redirect
+  const forceMain = new URLSearchParams(window.location.search).get('dashboard') === 'main';
+  if (isMentorClient && !forceMain) return <Navigate to="/mentor-dashboard" replace />;
   return <Index />;
 };
 
@@ -110,6 +113,7 @@ const App = () => (
                 <Route path="/ref/:slug" element={<MentorReferral />} />
                 <Route path="/about" element={<About />} />
                 <Route path="/api-docs" element={<ApiDocs />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
 
                 {/* Home - mentor clients get branded dashboard */}
                 <Route path="/" element={<MentorAwareHome />} />
