@@ -486,6 +486,7 @@ const Index = () => {
 
         <SupportWidget />
       </div>
+      <WelcomeModal />
     </AppLayout>
   );
 };
