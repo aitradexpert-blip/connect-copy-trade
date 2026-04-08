@@ -448,8 +448,6 @@ const Index = () => {
   );
 };
 
-export default Index;
-            <CardDescription>
               Tap any button below to get started instantly via WhatsApp
             </CardDescription>
           </CardHeader>
