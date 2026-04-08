@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const mainNavItems = [
-  { title: "Home", url: "/", icon: Home },
+  { title: "Home", url: "/?dashboard=main", icon: Home },
   { title: "Ideas", url: "/ideas", icon: TrendingUp },
   { title: "Copy", url: "/copy-trading", icon: Copy },
   { title: "AI", url: "/ai-trading", icon: Bot },
@@ -68,17 +68,6 @@ export function BottomNav() {
               >
                 <CreditCard className="mr-2 h-4 w-4" />
                 Trading Accounts
-              </Button>
-              <Button
-                variant="ghost"
-                className="justify-start"
-                onClick={() => {
-                  navigate("/wallet");
-                  setIsMenuOpen(false);
-                }}
-              >
-                <Wallet className="mr-2 h-4 w-4" />
-                Crypto Wallet
               </Button>
               <Button
                 variant="ghost"

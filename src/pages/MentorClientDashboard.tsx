@@ -297,7 +297,10 @@ export default function MentorClientDashboard() {
                 <CardContent className="p-8 text-center">
                   <Wallet className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-lg font-semibold mb-2">Connect Your Trading Account</h3>
-                  <p className="text-muted-foreground mb-4">Link your MT4/MT5 or Deriv account to start trading</p>
+                  <p className="text-muted-foreground mb-4">Link your MT4/MT5 or Deriv account to start trading. A paid subscription is required.</p>
+                  <Button onClick={() => navigate('/subscription')} variant="outline" className="mr-2">
+                    Subscribe First
+                  </Button>
                   <Button onClick={() => setShowConnectModal(true)} style={{ backgroundColor: primaryColor }}>
                     <Plus className="w-4 h-4 mr-2" /> Connect Account
                   </Button>

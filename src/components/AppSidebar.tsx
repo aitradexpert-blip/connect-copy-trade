@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/?dashboard=main", icon: LayoutDashboard },
   { title: "Trading Ideas", url: "/ideas", icon: TrendingUp },
   { title: "Copy Trading", url: "/copy-trading", icon: Copy },
   { title: "AI Auto-Trading", url: "/ai-trading", icon: Bot },
@@ -48,7 +48,6 @@ const mainItems = [
   { title: "Journal", url: "/journal", icon: BookOpen },
   { title: "Training Center", url: "/training", icon: GraduationCap },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "Crypto Wallet", url: "/wallet", icon: Wallet },
   { title: "Credit Usage", url: "/credits", icon: Zap },
   { title: "Notifications", url: "/notifications", icon: Bell },
 ];
@@ -87,8 +86,8 @@ export function AppSidebar() {
             </div>
             {!collapsed && (
               <div>
-                <h1 className="text-lg font-bold text-foreground">Meta Ai Xpert Trader</h1>
-                <p className="text-xs text-muted-foreground">Copy trading & AI</p>
+                <h1 className="text-lg font-bold text-foreground">HuMi</h1>
+                <p className="text-xs text-muted-foreground">Capital Management OS</p>
               </div>
             )}
           </div>
