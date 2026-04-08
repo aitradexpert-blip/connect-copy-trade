@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { 
   DollarSign, TrendingUp, Activity, Users, Plus, Eye, Play, RefreshCw,
-  Building, ExternalLink, Wallet, Send, ArrowDownUp, LineChart,
+  Building, ExternalLink, Send, ArrowDownUp, LineChart,
   ArrowDown, ArrowUp, Clock, CreditCard, BookOpen,
-  GraduationCap, MessageCircle, Sparkles, Lock
+  GraduationCap, MessageCircle, Sparkles, Lock, Crown
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import EconomicCalendar from "@/components/EconomicCalendar";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/MetricCard";
-import { SupportWidget } from "@/components/SupportWidget";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
@@ -38,6 +38,7 @@ const Index = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isFree, tierName, khumoQueriesRemaining, khumoQueryLimit } = useSubscription();
+  const [referredBy, setReferredBy] = useState<string | null>(null);
   const [metrics, setMetrics] = useState({
     balance: 0, equity: 0, positions: 0, dailyPnL: 0,
   });
@@ -52,8 +53,11 @@ const Index = () => {
   // Load display name
   useEffect(() => {
     if (!user) return;
-    supabase.from('profiles').select('display_name').eq('user_id', user.id).single()
-      .then(({ data }) => { if (data?.display_name) setDisplayName(data.display_name); });
+    supabase.from('profiles').select('display_name, referred_by').eq('user_id', user.id).single()
+      .then(({ data }) => { 
+        if (data?.display_name) setDisplayName(data.display_name);
+        if (data?.referred_by) setReferredBy(data.referred_by);
+      });
   }, [user]);
 
   useEffect(() => {
