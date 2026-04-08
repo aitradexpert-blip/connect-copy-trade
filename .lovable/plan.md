@@ -1,113 +1,164 @@
 
 
-# Fix Plan: Install Button, Auth Flow, Mentor Center Mobile UX, and Forgot Password
-
-## Issues Identified
-
-1. **No Install/Download button in Mentor Center** — MentorClientDashboard and MentorCenter lack the account dropdown menu with Install App option. Only the main HuMi dashboard (via TopHeader in AppLayout) has it.
-
-2. **"HuMi Dashboard" button not working** — The button at line 234 of MentorClientDashboard navigates to `/` which triggers `MentorAwareHome`, which checks `isMentorClient` and redirects back to `MentorClientDashboard`. Infinite loop / wrong destination.
-
-3. **Media & Landing tab overlaps on mobile** — The MentorCenter TabsList at line 530 uses `flex-wrap` with 5 tabs that likely overlap on small screens.
-
-4. **Google Auth error** — The `redirectTo` in `signInWithOAuth` uses `window.location.origin`, which in the Lovable preview is the preview URL. Google OAuth redirect URIs must be configured in Google Cloud Console to include the published URL. This is a configuration issue, not a code issue. The code is correct for the published URL.
-
-5. **Email confirmation redirects to localhost** — The `emailRedirectTo` in `signUp` uses `window.location.origin`. In dev preview this works, but the Supabase project's "Site URL" setting (in Authentication > URL Configuration) is likely set to `localhost:XXXX`. It must be set to the published URL.
-
-6. **No Forgot Password button** — Auth.tsx has no password reset flow.
-
-7. **No welcome/onboarding message after registration** — Users land on dashboard with no intro.
+# Implementation Plan: Dashboard Cleanup, Mentor Split, MetaAPI Scrub, Auth & Subscription Fixes
 
 ---
 
-## Implementation
+## 1. Google OAuth Configuration
 
-### 1. Add Account Dropdown (with Install App) to MentorClientDashboard
+The code is correct. The Google Client ID and Secret need to be set in **Supabase Authentication > Providers > Google**:
+- Client ID: `99538444569-b8r6h0v09a4bmo1d5anh1p5gcs3935p8.apps.googleusercontent.com`
+- Client Secret: `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`
 
-Add a user menu dropdown in the MentorClientDashboard header (top-right of hero section) with:
-- Profile
-- Settings
-- Install App (with PWA prompt or install guide dialog)
-- Open HuMi Dashboard
-- Logout
+This is a Supabase dashboard configuration — no code changes needed. The `redirectTo` in `Auth.tsx` already uses `window.location.origin`.
 
-**File**: `src/pages/MentorClientDashboard.tsx`
-
-### 2. Add Account Dropdown to MentorCenter
-
-Replace the simple "HuMi Dashboard" button in MentorCenter header with a dropdown menu matching TopHeader's pattern, including Install App.
-
-**File**: `src/pages/MentorCenter.tsx`
-
-### 3. Fix "Return to HuMi Dashboard" Navigation
-
-The issue: `navigate("/")` goes to `MentorAwareHome` which redirects mentor clients back to `/mentor-dashboard`. Fix by navigating to a dedicated bypass route or by using a query param.
-
-Solution: Change `MentorAwareHome` in `App.tsx` to check for `?dashboard=main` query param — if present, render `<Index />` regardless of mentor status. Update all "HuMi Dashboard" buttons to navigate to `/?dashboard=main`.
-
-**Files**: `src/App.tsx`, `src/pages/MentorClientDashboard.tsx`, `src/pages/MentorCenter.tsx`
-
-### 4. Fix Mobile Tab Overflow in MentorCenter
-
-Change TabsList from `flex-wrap` to a horizontally scrollable container on mobile. Use `overflow-x-auto` and ensure each tab trigger has `whitespace-nowrap` and adequate min-width.
-
-**File**: `src/pages/MentorCenter.tsx` (line 530)
-
-### 5. Google Auth — Configuration Note
-
-Google Auth fails because the OAuth redirect URIs in Google Cloud Console don't include the correct callback URL. The code is correct. The user needs to:
-- Add `https://tkgguyjoynnrsayfxzvj.supabase.co/auth/v1/callback` as an Authorized Redirect URI in Google Cloud Console
-- Add `https://connect-copy-trade.lovable.app` as an Authorized JavaScript Origin
-- Set the Site URL in Supabase Auth settings to `https://connect-copy-trade.lovable.app`
-
-No code changes needed — just configuration.
-
-### 6. Fix Email Confirmation Redirect
-
-The `emailRedirectTo` in signup uses `window.location.origin` which is correct in production. The real fix is ensuring Supabase's **Site URL** (Authentication > URL Configuration) is set to `https://connect-copy-trade.lovable.app` instead of `localhost`.
-
-Additionally, update the redirect to be mentor-aware: if `refSlug` exists, redirect to `/mentor-dashboard`, otherwise `/`.
-
-**File**: `src/pages/Auth.tsx` — already done correctly in code. The issue is Supabase config.
-
-### 7. Add Forgot Password
-
-Add a "Forgot Password?" link below the sign-in password field. When clicked, show an inline form to enter email and call `supabase.auth.resetPasswordForEmail()`. Create a `/reset-password` page that handles the recovery token and lets users set a new password.
-
-**Files**:
-- `src/pages/Auth.tsx` — add forgot password link and email input
-- `src/pages/ResetPassword.tsx` — new page for setting new password
-- `src/App.tsx` — add `/reset-password` public route
-
-### 8. Welcome Onboarding After First Login
-
-Show a welcome dialog/modal on first login (check `localStorage` for `humi_onboarded` flag). The dialog welcomes the user, shows key features, and includes an "Install App" CTA with platform-specific instructions.
-
-**File**: `src/components/WelcomeModal.tsx` — new component
-**File**: `src/pages/Index.tsx` and `src/pages/MentorClientDashboard.tsx` — render the modal
+**Action**: Configure Google provider in Supabase dashboard.
 
 ---
 
-## Files to Create
-- `src/pages/ResetPassword.tsx`
-- `src/components/WelcomeModal.tsx`
+## 2. Remove All User-Facing "MetaAPI" / "metaapi" Branding
 
-## Files to Modify
-- `src/pages/Auth.tsx` — forgot password link
-- `src/pages/MentorClientDashboard.tsx` — account dropdown with install, fix HuMi navigation
-- `src/pages/MentorCenter.tsx` — account dropdown, fix tab overflow on mobile, fix HuMi navigation
-- `src/App.tsx` — add `/reset-password` route, fix `MentorAwareHome` bypass
+Scrub visible text references in these files (variable names and internal identifiers stay):
 
-## Configuration Required (User Action)
-- Set Supabase Site URL to `https://connect-copy-trade.lovable.app`
-- Configure Google OAuth redirect URIs in Google Cloud Console
-- These are not code changes — they are dashboard settings
+- **`src/pages/ApiDocs.tsx`** — Replace "MetaAPI Bridge", "MetaAPI Provisioning Setup", references to `support@metaapi.cloud` with generic terms like "Trading Bridge", "MT4/MT5 Provisioning Setup"
+- **`src/pages/TradingIdeas.tsx`** — Comment on line 207 already says "no MetaAPI branding" — verify provider badge text
+- **`src/services/brokerExecution.ts`** — Only console.log mentions; no user-facing changes needed
+- **`src/components/ConnectAccountModal.tsx`** — Check button labels; replace any "MetaAPI" text with "MT4/MT5 Connection"
+- **`src/pages/TradingAccounts.tsx`** — Replace any visible "MetaAPI" labels with "Trading Bridge" or "MT4/MT5"
+- **`src/components/AppSidebar.tsx`** — Line 90: Replace "Meta Ai Xpert Trader" with "HuMi"
+- **`src/components/admin/UserManagementTab.tsx`** — Replace any user-facing "metaapi" labels
+- **`src/pages/CopyTradingNew.tsx`** — Replace "MetaAPI" in error messages and UI text
+- **`src/components/DerivDiagnostic.tsx`** — Check for visible references
+- **`src/pages/About.tsx`** — Check and remove MetaAPI mentions
+
+---
+
+## 3. Fix Home Button Redirect for Mentors/Clients on HuMi Dashboard
+
+**Problem**: `MentorAwareHome` in `App.tsx` redirects mentor clients to `/mentor-dashboard` even when clicking "Home" on the HuMi main dashboard sidebar/bottom nav. The sidebar `Dashboard` link goes to `/` which triggers the redirect.
+
+**Fix**: 
+- Change `BottomNav.tsx` Home link from `/` to `/?dashboard=main`
+- Change `AppSidebar.tsx` Dashboard link from `/` to `/?dashboard=main`
+- This ensures clicking Home within the HuMi layout always stays on the main dashboard
+
+**Files**: `src/components/BottomNav.tsx`, `src/components/AppSidebar.tsx`
+
+---
+
+## 4. Dashboard Cleanup — Consolidate into Tabs
+
+**File**: `src/pages/Index.tsx`
+
+Replace the 4 separate card sections (Free WhatsApp Trading Tools, Market Charts, Broker Operations, Quick Actions) with a single `Tabs` component:
+
+- **Tab: Trading Tools** — WhatsApp buttons
+- **Tab: Market Charts** — Chart buttons
+- **Tab: Broker Operations** — Broker links
+- **Tab: Quick Actions** — Add Account, Deposit, Withdraw, View Ideas (paid only)
+- **Tab: Mentor Center** — Only visible for users with `referred_by` in profile (mentor clients). Button redirects to `/mentor-dashboard`.
+
+Remove the **Crypto Wallet** card entirely from the dashboard.
+
+Also remove "Crypto Wallet" from `AppSidebar.tsx` and `BottomNav.tsx` navigation items.
+
+---
+
+## 5. Update Auto-Trade Limits
+
+**Database**: Update `subscription_plans` table via the insert tool (data update, not schema change):
+
+```sql
+UPDATE subscription_plans SET auto_trades_limit = 30 WHERE lower(name) = 'basic';
+UPDATE subscription_plans SET auto_trades_limit = 100 WHERE lower(name) = 'professional';
+UPDATE subscription_plans SET auto_trades_limit = 1000 WHERE lower(name) = 'enterprise';
+UPDATE subscription_plans SET auto_trades_limit = 3000 WHERE lower(name) = 'mentor';
+```
+
+---
+
+## 6. Mentor Center Page Restructure
+
+### Current state:
+- `/mentor-center` — Full mentor admin (Clients, Ideas, Copy Trading, Branding, Media & Landing)
+- `/mentor-dashboard` — Branded client dashboard (Home, Ideas, Copy Trading, AI Bot)
+
+### Target state:
+- `/mentor-center` — Mentor setup/config only: Clients, Branding, Media & Landing tabs + a new **"Dashboard"** tab that redirects to `/mentor-hub`
+- `/mentor-hub` — **New page** for mentor's operational dashboard (similar design to `/mentor-dashboard`): Home, Ideas, Copy Trading, AI Bot tabs with mentor functionality (publish ideas, manage master account, close all trades, quick-trade to followers, rename features)
+- `/mentor-dashboard` — Client-only dashboard (unchanged, but add subscription checks)
+
+### Implementation:
+
+**New file**: `src/pages/MentorHub.tsx`
+- Modeled after `MentorClientDashboard.tsx` but with mentor-specific functionality
+- **Home tab**: Stats (clients, followers, signals published), link back to `/mentor-center` for config
+- **Ideas tab**: Publish signals form + Khumo AI suggestions (moved from MentorCenter)
+- **Copy Trading tab**: Master account management, follower list, quick trade form, close all trades (moved from MentorCenter)
+- **AI Bot tab**: Bot configuration, renamed per branding
+- Header dropdown with Install App, Settings, HuMi Dashboard (`/?dashboard=main`), Logout
+
+**Modified file**: `src/pages/MentorCenter.tsx`
+- Remove Ideas and Copy Trading tabs
+- Keep: Clients, Branding, Media & Landing
+- Add: **Dashboard** tab that redirects to `/mentor-hub`
+- This page becomes purely a configuration/setup page
+
+**Modified file**: `src/App.tsx`
+- Add route: `/mentor-hub` → `MentorHub` (PaidRoute, mentor-tier required)
+
+### Subscription checks on client dashboard:
+
+**Modified file**: `src/pages/MentorClientDashboard.tsx`
+- On Copy Trading and AI Bot tabs, check if user has active subscription before showing controls
+- If no subscription, show "Subscribe to activate" prompt with link to `/subscription`
+- Same for "Add Trading Account" — prompt subscription if on free tier
+
+---
+
+## 7. Partnership Hub Access (Professional+ tiers)
+
+There is no existing "Partnership Hub" page. This needs clarification — is it the `/api-docs` page, or a new page? For now, I'll assume it refers to `/api-docs`.
+
+**File**: `src/App.tsx`
+- Change `/api-docs` from public route to `PaidRoute` (or create a `ProfessionalRoute` guard that checks tier >= professional)
+
+---
+
+## Files Summary
+
+### Create
+- `src/pages/MentorHub.tsx` — Mentor's operational dashboard
+
+### Modify
+- `src/App.tsx` — Add `/mentor-hub` route, restrict `/api-docs`
+- `src/pages/Index.tsx` — Tab consolidation, remove Crypto Wallet, add Mentor Center tab
+- `src/pages/MentorCenter.tsx` — Remove Ideas/Copy Trading tabs, add Dashboard redirect tab
+- `src/pages/MentorClientDashboard.tsx` — Subscription checks on Copy/Bot/Account features
+- `src/components/AppSidebar.tsx` — Fix Dashboard link, remove Crypto Wallet, fix "Meta Ai Xpert Trader" → "HuMi"
+- `src/components/BottomNav.tsx` — Fix Home link, remove Crypto Wallet
+- `src/pages/ApiDocs.tsx` — Remove MetaAPI branding
+- `src/pages/TradingAccounts.tsx` — Remove MetaAPI branding from UI text
+- `src/components/ConnectAccountModal.tsx` — Remove MetaAPI branding from UI text
+- `src/pages/CopyTradingNew.tsx` — Remove MetaAPI branding from UI text
+- `src/pages/About.tsx` — Remove MetaAPI mentions
+
+### Database (via insert tool)
+- Update `subscription_plans` auto_trades_limit values
+
+### Supabase Dashboard (manual)
+- Configure Google OAuth provider with provided Client ID/Secret
+
+---
 
 ## Implementation Order
-1. Fix MentorAwareHome bypass (`App.tsx`)
-2. Add ResetPassword page + forgot password link in Auth
-3. Add account dropdown to MentorClientDashboard and MentorCenter
-4. Fix mobile tab overflow in MentorCenter
-5. Create WelcomeModal
-6. Wire WelcomeModal into Index and MentorClientDashboard
+
+1. Google OAuth config (Supabase dashboard)
+2. Database: Update auto-trade limits
+3. MetaAPI branding scrub (all files)
+4. Dashboard cleanup + tab consolidation + hide Crypto Wallet
+5. Fix Home navigation for mentors/clients
+6. Create MentorHub page + restructure MentorCenter
+7. Add subscription checks to MentorClientDashboard
+8. Partnership Hub access restriction
 
