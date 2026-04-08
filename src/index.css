@@ -142,7 +142,7 @@ Light mode is default (:root), dark mode is .dark class
   --secondary: var(--mentor-secondary-hsl, var(--secondary));
 }
 
-/* Mobile UX Enhancements - Touch Targets */
+/* Mobile UX Enhancements - Touch Targets & Safe Areas */
 @media (max-width: 768px) {
   button,
   [role="button"],
@@ -154,5 +154,67 @@ Light mode is default (:root), dark mode is .dark class
   .lot-size-button {
     min-width: 48px;
     min-height: 48px;
+  }
+
+  /* Prevent text overlapping on cards */
+  .card-title {
+    @apply text-balance;
+  }
+
+  /* Better spacing for mobile forms */
+  .mobile-form-grid {
+    @apply grid grid-cols-1 gap-4;
+  }
+
+  /* Prevent horizontal scroll */
+  .overflow-safe {
+    @apply overflow-x-hidden max-w-full;
+  }
+}
+
+/* Safe area padding for iOS notch and home bar */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-inset-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Touch manipulation for better scrolling */
+.touch-manipulation {
+  touch-action: manipulation;
+}
+
+/* Prevent text selection on interactive elements */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Smooth scrolling for all scrollable containers */
+.scroll-smooth {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fix for overlapping content on mobile */
+@media (max-width: 640px) {
+  .grid-auto-fit {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  }
+  
+  /* Ensure badges don't overlap with titles */
+  .flex-wrap-safe {
+    @apply flex-wrap gap-2;
+  }
+
+  /* Compact trading cards on mobile */
+  .trading-card {
+    @apply p-3;
+  }
+  
+  .trading-card .text-2xl {
+    @apply text-xl;
   }
 }

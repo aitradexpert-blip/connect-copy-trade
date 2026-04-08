@@ -33,6 +33,7 @@ import TrainingCenter from "./pages/TrainingCenter";
 import MentorCenter from "./pages/MentorCenter";
 import MentorReferral from "./pages/MentorReferral";
 import MentorClientDashboard from "./pages/MentorClientDashboard";
+import MentorHub from "./pages/MentorHub";
 import InvestorPitch from "./pages/InvestorPitch";
 import About from "./pages/About";
 import ResetPassword from "./pages/ResetPassword";
@@ -83,15 +84,26 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Route that redirects mentor clients to their branded dashboard
+// Route that redirects users based on their role
 const MentorAwareHome = () => {
   const { isMentorClient, loading: mentorLoading } = useMentor();
   const { user, loading } = useAuth();
-  if (loading || mentorLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  const { tierName, loading: subLoading } = useSubscription();
+  
+  if (loading || mentorLoading || subLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  // Allow ?dashboard=main to bypass mentor redirect
+  
+  // Allow ?dashboard=main to bypass any redirect
   const forceMain = new URLSearchParams(window.location.search).get('dashboard') === 'main';
-  if (isMentorClient && !forceMain) return <Navigate to="/mentor-dashboard" replace />;
+  if (forceMain) return <Index />;
+  
+  // Mentors (subscription tier) always see main HuMi dashboard - they access MentorHub via the tab
+  if (tierName === 'mentor') return <Index />;
+  
+  // Mentor clients (referred users) go to their mentor's branded dashboard
+  if (isMentorClient) return <Navigate to="/mentor-dashboard" replace />;
+  
+  // Direct HuMi users stay on main dashboard
   return <Index />;
 };
 
@@ -139,6 +151,7 @@ const App = () => (
                 <Route path="/wallet" element={<PaidRoute><CryptoWallet /></PaidRoute>} />
                 <Route path="/credits" element={<PaidRoute><CreditUsage /></PaidRoute>} />
                 <Route path="/mentor-center" element={<PaidRoute><MentorCenter /></PaidRoute>} />
+                <Route path="/mentor-hub" element={<PaidRoute><MentorHub /></PaidRoute>} />
 
                 {/* Admin routes */}
                 <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />

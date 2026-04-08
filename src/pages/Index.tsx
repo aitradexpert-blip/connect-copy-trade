@@ -16,6 +16,7 @@ import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import WelcomeModal from "@/components/WelcomeModal";
+import KhumoForexSessions from "@/components/KhumoForexSessions";
 
 
 import { useNavigate } from "react-router-dom";
@@ -213,9 +214,9 @@ const Index = () => {
             <TabsTrigger value="actions" className="whitespace-nowrap">
               <Activity className="w-4 h-4 mr-1" /> Quick Actions
             </TabsTrigger>
-            {referredBy && (
+            {(referredBy || tierName === 'mentor') && (
               <TabsTrigger value="mentor" className="whitespace-nowrap">
-                <Crown className="w-4 h-4 mr-1" /> Mentor Center
+                <Crown className="w-4 h-4 mr-1" /> {tierName === 'mentor' ? 'Mentor Hub' : 'Mentor Center'}
               </TabsTrigger>
             )}
           </TabsList>
@@ -267,11 +268,21 @@ const Index = () => {
                   <p className="text-xs text-muted-foreground mt-1">
                     {isFree ? `${khumoQueriesRemaining}/${khumoQueryLimit} free` : 'Unlimited'}
                   </p>
-                </CardContent>
-              </Card>
-            </div>
+</CardContent>
+            </Card>
+          </div>
+          
+          {/* Khumo AI Forex Session Intelligence */}
+          {!isFree && (
+            <KhumoForexSessions 
+              compact 
+              onPublishIdea={(suggestion) => {
+                navigate('/ideas', { state: { prefill: suggestion } });
+              }}
+            />
+          )}
           </TabsContent>
-
+          
           <TabsContent value="charts">
             <Card className="bg-gradient-card border-border shadow-card">
               <CardHeader>
@@ -343,15 +354,25 @@ const Index = () => {
             )}
           </TabsContent>
 
-          {referredBy && (
+          {(referredBy || tierName === 'mentor') && (
             <TabsContent value="mentor">
               <Card className="bg-gradient-card border-border shadow-card">
                 <CardContent className="p-8 text-center">
                   <Crown className="w-12 h-12 mx-auto text-primary mb-4" />
-                  <h3 className="text-lg font-bold mb-2">Your Mentor Center</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Access your mentor's branded trading dashboard with ideas, copy trading, and more.</p>
-                  <Button onClick={() => navigate('/mentor-dashboard')} className="bg-gradient-primary">
-                    <Crown className="w-4 h-4 mr-2" /> Open Mentor Center
+                  <h3 className="text-lg font-bold mb-2">
+                    {tierName === 'mentor' ? 'Your Mentor Hub' : 'Your Mentor Center'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {tierName === 'mentor' 
+                      ? 'Manage your clients, publish ideas, and control copy trading from your branded hub.'
+                      : "Access your mentor's branded trading dashboard with ideas, copy trading, and more."}
+                  </p>
+                  <Button 
+                    onClick={() => navigate(tierName === 'mentor' ? '/mentor-hub' : '/mentor-dashboard')} 
+                    className="bg-gradient-primary"
+                  >
+                    <Crown className="w-4 h-4 mr-2" /> 
+                    {tierName === 'mentor' ? 'Open Mentor Hub' : 'Open Mentor Center'}
                   </Button>
                 </CardContent>
               </Card>
