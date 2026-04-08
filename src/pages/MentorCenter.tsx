@@ -557,9 +557,10 @@ export default function MentorCenter() {
 
         <Tabs defaultValue="clients">
           <TabsList className="w-full overflow-x-auto flex-nowrap justify-start">
+            <TabsTrigger value="dashboard" className="whitespace-nowrap" onClick={() => navigate('/mentor-hub')}>
+              <LayoutDashboard className="w-4 h-4 mr-1" /> Dashboard
+            </TabsTrigger>
             <TabsTrigger value="clients" className="whitespace-nowrap">Clients</TabsTrigger>
-            <TabsTrigger value="ideas" className="whitespace-nowrap">Ideas</TabsTrigger>
-            <TabsTrigger value="copy-trading" className="whitespace-nowrap">Copy Trading</TabsTrigger>
             <TabsTrigger value="branding" className="whitespace-nowrap">Branding</TabsTrigger>
             <TabsTrigger value="media" className="whitespace-nowrap">Media & Landing</TabsTrigger>
           </TabsList>
