@@ -448,7 +448,7 @@ const Index = () => {
   );
 };
 
-              Tap any button below to get started instantly via WhatsApp
+export default Index;
             </CardDescription>
           </CardHeader>
           <CardContent>
