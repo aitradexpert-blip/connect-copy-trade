@@ -33,6 +33,7 @@ import TrainingCenter from "./pages/TrainingCenter";
 import MentorCenter from "./pages/MentorCenter";
 import MentorReferral from "./pages/MentorReferral";
 import MentorClientDashboard from "./pages/MentorClientDashboard";
+import MentorHub from "./pages/MentorHub";
 import InvestorPitch from "./pages/InvestorPitch";
 import About from "./pages/About";
 import ResetPassword from "./pages/ResetPassword";
@@ -139,6 +140,7 @@ const App = () => (
                 <Route path="/wallet" element={<PaidRoute><CryptoWallet /></PaidRoute>} />
                 <Route path="/credits" element={<PaidRoute><CreditUsage /></PaidRoute>} />
                 <Route path="/mentor-center" element={<PaidRoute><MentorCenter /></PaidRoute>} />
+                <Route path="/mentor-hub" element={<PaidRoute><MentorHub /></PaidRoute>} />
 
                 {/* Admin routes */}
                 <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
