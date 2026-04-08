@@ -16,6 +16,7 @@ import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import WelcomeModal from "@/components/WelcomeModal";
+import KhumoForexSessions from "@/components/KhumoForexSessions";
 
 
 import { useNavigate } from "react-router-dom";
@@ -267,11 +268,21 @@ const Index = () => {
                   <p className="text-xs text-muted-foreground mt-1">
                     {isFree ? `${khumoQueriesRemaining}/${khumoQueryLimit} free` : 'Unlimited'}
                   </p>
-                </CardContent>
-              </Card>
-            </div>
+</CardContent>
+            </Card>
+          </div>
+          
+          {/* Khumo AI Forex Session Intelligence */}
+          {!isFree && (
+            <KhumoForexSessions 
+              compact 
+              onPublishIdea={(suggestion) => {
+                navigate('/ideas', { state: { prefill: suggestion } });
+              }}
+            />
+          )}
           </TabsContent>
-
+          
           <TabsContent value="charts">
             <Card className="bg-gradient-card border-border shadow-card">
               <CardHeader>

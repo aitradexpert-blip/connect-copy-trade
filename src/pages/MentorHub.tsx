@@ -18,6 +18,7 @@ import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, External
 import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
+import KhumoForexSessions from "@/components/KhumoForexSessions";
 
 interface MentorProfile {
   id: string;
@@ -525,30 +526,57 @@ export default function MentorHub() {
 
           {/* IDEAS TAB */}
           <TabsContent value="ideas" className="space-y-4">
-            {/* Khumo AI Suggestion */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-primary" />
-                    Khumo AI Suggestion
-                  </CardTitle>
-                  <CardDescription>Get AI-powered signal ideas</CardDescription>
-                </div>
-                <Button variant="outline" onClick={getAiSuggestion} disabled={loadingAiSuggestion}>
-                  {loadingAiSuggestion ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  Get Suggestion
-                </Button>
-              </CardHeader>
-              {aiSuggestion && (
-                <CardContent>
-                  <div className="bg-muted/50 rounded-lg p-4 text-sm whitespace-pre-wrap">{aiSuggestion}</div>
-                  <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowSignalDialog(true)}>
-                    <Play className="w-3 h-3 mr-1" /> Publish as Signal
-                  </Button>
-                </CardContent>
-              )}
-            </Card>
+            {/* Khumo AI Forex Session Intelligence */}
+            <KhumoForexSessions
+              mentorId={profile?.id}
+              onPublishIdea={async (suggestion) => {
+                if (!profile) return;
+                try {
+                  await supabase.from('trading_signals').insert({
+                    symbol: suggestion.symbol,
+                    direction: suggestion.direction,
+                    lot_size: 0.01,
+                    stop_loss: parseFloat(suggestion.stopLoss) || null,
+                    take_profit: parseFloat(suggestion.takeProfit) || null,
+                    comment: suggestion.analysis,
+                    mentor_id: profile.id,
+                    status: 'active',
+                  });
+                  toast({ title: "Idea Published!" });
+                  loadData();
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                }
+              }}
+              onCopyTrade={async (suggestion) => {
+                if (!profile) return;
+                try {
+                  const { data: sig } = await supabase.from('trading_signals').insert({
+                    symbol: suggestion.symbol,
+                    direction: suggestion.direction,
+                    lot_size: 0.01,
+                    stop_loss: parseFloat(suggestion.stopLoss) || null,
+                    take_profit: parseFloat(suggestion.takeProfit) || null,
+                    comment: `Copy Trade: ${suggestion.analysis}`,
+                    mentor_id: profile.id,
+                    status: 'active',
+                  }).select('id').single();
+                  
+                  if (sig) {
+                    await supabase.functions.invoke('copy-trade-listener', {
+                      body: { signal_id: sig.id, master_user_id: user!.id }
+                    });
+                  }
+                  toast({ title: "Signal copied to followers!" });
+                  loadData();
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                }
+              }}
+              onAddToBot={async (suggestion) => {
+                toast({ title: "Added to Bot Queue", description: `${suggestion.direction} ${suggestion.symbol} will be monitored by your AI Bot` });
+              }}
+            />
 
             {/* Publish Signal */}
             <Card>
