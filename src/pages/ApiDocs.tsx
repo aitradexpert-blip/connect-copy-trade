@@ -116,39 +116,39 @@
  
            <TabsContent value="overview" className="space-y-8">
              <div className="grid md:grid-cols-2 gap-6">
-               <Card className="bg-gradient-card border-border shadow-card">
-                 <CardHeader>
-                   <div className="flex items-center gap-3">
-                     <div className="p-2 bg-primary/10 rounded-lg">
-                       <Plug className="w-6 h-6 text-primary" />
-                     </div>
-                     <div>
-                       <CardTitle>MetaAPI Bridge</CardTitle>
-                       <CardDescription>Recommended for MT4/MT5</CardDescription>
-                     </div>
-                   </div>
-                 </CardHeader>
-                 <CardContent className="space-y-4">
-                   <p className="text-sm text-muted-foreground">
-                     Quick integration via MetaAPI's provisioning profiles. 
-                     Compatible with 500+ brokers worldwide.
-                   </p>
-                   <ul className="text-sm space-y-2">
-                     <li className="flex items-center gap-2">
-                       <Shield className="w-4 h-4 text-green-500" />
-                       No direct API development required
-                     </li>
-                     <li className="flex items-center gap-2">
-                       <Shield className="w-4 h-4 text-green-500" />
-                       Real-time trade synchronization
-                     </li>
-                     <li className="flex items-center gap-2">
-                       <Shield className="w-4 h-4 text-green-500" />
-                       CopyFactory support built-in
-                     </li>
-                   </ul>
-                 </CardContent>
-               </Card>
+                <Card className="bg-gradient-card border-border shadow-card">
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <Plug className="w-6 h-6 text-primary" />
+                      </div>
+                      <div>
+                        <CardTitle>Trading Bridge</CardTitle>
+                        <CardDescription>Recommended for MT4/MT5</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Quick integration via secure cloud provisioning profiles. 
+                      Compatible with 500+ brokers worldwide.
+                    </p>
+                    <ul className="text-sm space-y-2">
+                      <li className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-green-500" />
+                        No direct API development required
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-green-500" />
+                        Real-time trade synchronization
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-green-500" />
+                        Copy trading engine built-in
+                      </li>
+                    </ul>
+                  </CardContent>
+                </Card>
  
                <Card className="bg-gradient-card border-border shadow-card">
                  <CardHeader>
@@ -217,54 +217,45 @@
              </Card>
            </TabsContent>
  
-           <TabsContent value="brokers" className="space-y-8">
-             <Card className="bg-gradient-card border-border shadow-card">
-               <CardHeader>
-                 <CardTitle>MetaAPI Provisioning Setup</CardTitle>
-                 <CardDescription>For MT4/MT5 brokers using MetaAPI</CardDescription>
-               </CardHeader>
-               <CardContent className="space-y-6">
-                 <div className="space-y-4">
-                   <h4 className="font-medium">Step 1: Ensure MetaAPI Compatibility</h4>
-                   <p className="text-sm text-muted-foreground">
-                     Your broker must be registered in MetaAPI's supported broker list. 
-                     Contact MetaAPI at <code className="bg-muted px-1 rounded">support@metaapi.cloud</code> if not listed.
-                   </p>
-                 </div>
- 
-                 <div className="space-y-4">
-                   <h4 className="font-medium">Step 2: Server Configuration</h4>
-                   <p className="text-sm text-muted-foreground">
-                     Provide your server names to our team. Example format:
-                   </p>
-                   <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
- {`{
-   "broker_name": "YourBroker",
-   "mt4_servers": ["YourBroker-Live", "YourBroker-Demo"],
-   "mt5_servers": ["YourBroker-MT5-Live", "YourBroker-MT5-Demo"]
- }`}
-                   </pre>
-                 </div>
- 
-                 <div className="space-y-4">
-                   <h4 className="font-medium">Step 3: Test Connection</h4>
-                   <p className="text-sm text-muted-foreground">Sample cURL request:</p>
-                   <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
- {`curl -X POST https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts \\
-   -H "auth-token: YOUR_METAAPI_TOKEN" \\
-   -H "Content-Type: application/json" \\
-   -d '{
-     "login": "12345678",
-     "password": "your_password",
-     "name": "Test Account",
-     "server": "YourBroker-Live",
-     "platform": "mt4"
-   }'`}
-                   </pre>
-                 </div>
-               </CardContent>
-             </Card>
-           </TabsContent>
+            <TabsContent value="brokers" className="space-y-8">
+              <Card className="bg-gradient-card border-border shadow-card">
+                <CardHeader>
+                  <CardTitle>MT4/MT5 Provisioning Setup</CardTitle>
+                  <CardDescription>For MT4/MT5 brokers using HuMi's Trading Bridge</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-4">
+                    <h4 className="font-medium">Step 1: Ensure Broker Compatibility</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Your broker must support standard MT4/MT5 server connections.
+                      Contact <code className="bg-muted px-1 rounded">partnerships@humi.app</code> to verify compatibility.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="font-medium">Step 2: Server Configuration</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Provide your server names to our team. Example format:
+                    </p>
+                    <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
+{`{
+  "broker_name": "YourBroker",
+  "mt4_servers": ["YourBroker-Live", "YourBroker-Demo"],
+  "mt5_servers": ["YourBroker-MT5-Live", "YourBroker-MT5-Demo"]
+}`}
+                    </pre>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="font-medium">Step 3: Test Connection</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Our team will provide you with test credentials and a sandbox environment
+                      to verify the integration before going live.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
  
            <TabsContent value="enterprise" className="space-y-8">
              <div className="grid md:grid-cols-2 gap-6">
