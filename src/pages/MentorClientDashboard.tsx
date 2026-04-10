@@ -534,16 +534,16 @@ export default function MentorClientDashboard() {
         </Tabs>
       </div>
 
-      {/* Execute Trade Dialog */}
+      {/* Execute Trade Dialog with Risk Gauge */}
       <Dialog open={showExecuteDialog} onOpenChange={setShowExecuteDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Execute Trade</DialogTitle>
             <DialogDescription>
-              {selectedSignal?.direction} {selectedSignal?.symbol} @ {selectedSignal?.lot_size} lots
+              {selectedSignal?.direction} {selectedSignal?.symbol}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-5">
             <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
               <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
               <SelectContent>
@@ -552,8 +552,51 @@ export default function MentorClientDashboard() {
                 ))}
               </SelectContent>
             </Select>
-            {selectedSignal?.stop_loss && <p className="text-sm">Stop Loss: {selectedSignal.stop_loss}</p>}
-            {selectedSignal?.take_profit && <p className="text-sm">Take Profit: {selectedSignal.take_profit}</p>}
+
+            {/* Risk Slider */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Risk Level</span>
+                <span className={`text-sm font-bold ${getRiskColor(riskPercent)}`}>
+                  {riskPercent}% — {getRiskLabel(riskPercent)}
+                </span>
+              </div>
+              <Slider
+                value={[riskPercent]}
+                onValueChange={(v) => {
+                  setRiskPercent(v[0]);
+                  setManualLotSize(calculateLotFromRisk(v[0]));
+                }}
+                min={0.5}
+                max={10}
+                step={0.5}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0.5%</span>
+                <span>5%</span>
+                <span>10%</span>
+              </div>
+            </div>
+
+            {/* Lot Size Input */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Lot Size</span>
+                <span className="text-xs text-muted-foreground">Signal default: {selectedSignal?.lot_size}</span>
+              </div>
+              <LotSizeInput
+                value={manualLotSize}
+                onChange={(val) => {
+                  setManualLotSize(val);
+                  setRiskPercent(calculateRiskFromLot(val));
+                }}
+              />
+            </div>
+
+            {selectedSignal?.stop_loss && <p className="text-sm text-muted-foreground">Stop Loss: {selectedSignal.stop_loss}</p>}
+            {selectedSignal?.take_profit && <p className="text-sm text-muted-foreground">Take Profit: {selectedSignal.take_profit}</p>}
+            
             <Button
               onClick={executeSignal}
               disabled={!!executingSignal}
@@ -561,7 +604,27 @@ export default function MentorClientDashboard() {
               style={{ backgroundColor: primaryColor }}
             >
               {executingSignal ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-              Confirm Trade
+              Execute {selectedSignal?.direction} {manualLotSize} lots
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscribe Prompt Dialog */}
+      <Dialog open={showSubscribePrompt} onOpenChange={setShowSubscribePrompt}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Subscription Required</DialogTitle>
+            <DialogDescription>
+              You need an active subscription to connect trading accounts and access automated features.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button onClick={() => { setShowSubscribePrompt(false); navigate('/subscription'); }} className="w-full">
+              View Subscription Plans
+            </Button>
+            <Button variant="outline" onClick={() => setShowSubscribePrompt(false)} className="w-full">
+              Cancel
             </Button>
           </div>
         </DialogContent>
