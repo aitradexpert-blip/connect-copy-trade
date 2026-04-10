@@ -134,6 +134,40 @@ export default function MentorClientDashboard() {
     }
   };
 
+  const calculateLotFromRisk = (riskPct: number) => {
+    const account = accounts.find(a => a.id === selectedAccountId);
+    if (!account?.balance) return 0.01;
+    const riskAmount = (account.balance * riskPct) / 100;
+    return Math.max(0.01, Math.round((riskAmount / 100) * 100) / 100);
+  };
+
+  const calculateRiskFromLot = (lots: number) => {
+    const account = accounts.find(a => a.id === selectedAccountId);
+    if (!account?.balance) return 1;
+    return Math.min(100, Math.round(((lots * 100) / account.balance) * 100));
+  };
+
+  const getRiskColor = (risk: number) => {
+    if (risk <= 2) return 'text-green-500';
+    if (risk <= 5) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  const getRiskLabel = (risk: number) => {
+    if (risk <= 1) return 'Conservative';
+    if (risk <= 2) return 'Moderate';
+    if (risk <= 5) return 'Aggressive';
+    return 'Very High Risk';
+  };
+
+  const handleConnectAccount = () => {
+    if (isFree) {
+      setShowSubscribePrompt(true);
+    } else {
+      setShowConnectModal(true);
+    }
+  };
+
   const executeSignal = async () => {
     if (!selectedSignal || !selectedAccountId) return;
     const account = accounts.find(a => a.id === selectedAccountId);
@@ -154,13 +188,13 @@ export default function MentorClientDashboard() {
       const signal: TradeSignal = {
         symbol: selectedSignal.symbol,
         direction: selectedSignal.direction as 'BUY' | 'SELL',
-        volume: selectedSignal.lot_size,
+        volume: manualLotSize,
         stopLoss: selectedSignal.stop_loss,
         takeProfit: selectedSignal.take_profit,
         comment: selectedSignal.comment || `Signal ${selectedSignal.id.slice(0, 8)}`,
       };
       await executeOnAccount(brokerAccount, signal);
-      toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${signal.volume} lots` });
+      toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${manualLotSize} lots` });
       setShowExecuteDialog(false);
     } catch (err: any) {
       toast({ title: "Execution failed", description: err.message, variant: "destructive" });
