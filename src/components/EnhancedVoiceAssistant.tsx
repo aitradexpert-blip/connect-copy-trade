@@ -232,16 +232,8 @@ export default function EnhancedVoiceAssistant() {
     }
   };
 
-  const browserSpeak = (text: string) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.1;
-    utterance.volume = 0.8;
-    const voices = window.speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang.startsWith('en'));
-    if (englishVoice) utterance.voice = englishVoice;
-    window.speechSynthesis.speak(utterance);
-  };
+
+
 
   const toggleListening = () => {
     if (!recognition) {
