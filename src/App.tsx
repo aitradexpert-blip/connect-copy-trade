@@ -86,7 +86,7 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Route that redirects users based on their role
 const MentorAwareHome = () => {
-  const { isMentorClient, loading: mentorLoading } = useMentor();
+  const { isMentorClient, isMentor, loading: mentorLoading } = useMentor();
   const { user, loading } = useAuth();
   const { tierName, loading: subLoading } = useSubscription();
   
@@ -97,8 +97,8 @@ const MentorAwareHome = () => {
   const forceMain = new URLSearchParams(window.location.search).get('dashboard') === 'main';
   if (forceMain) return <Index />;
   
-  // Mentors (subscription tier) always see main HuMi dashboard - they access MentorHub via the tab
-  if (tierName === 'mentor') return <Index />;
+  // Mentors (have a mentor profile) go to Mentor Hub
+  if (isMentor || tierName === 'mentor') return <Navigate to="/mentor-hub" replace />;
   
   // Mentor clients (referred users) go to their mentor's branded dashboard
   if (isMentorClient) return <Navigate to="/mentor-dashboard" replace />;

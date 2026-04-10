@@ -185,9 +185,8 @@ export default function EnhancedVoiceAssistant() {
       } else if (data.action?.type === 'trade_executed') {
         setPendingConfirmation(null);
         toast({ title: "Trade Executed!", description: data.text });
-      } else if (data.action?.type === 'navigate') {
-        setTimeout(() => navigate(data.action.path), 1500);
       }
+      // Don't auto-navigate — links are shown inline in the chat instead
 
       if (data.data?.accounts) setAccountsSummary(data.data.accounts.slice(0, 5));
     } catch (error: any) {
@@ -200,7 +199,7 @@ export default function EnhancedVoiceAssistant() {
     }
   };
 
-  // ElevenLabs TTS with browser fallback
+  // ElevenLabs TTS only — no browser fallback to avoid dual voices
   const speak = async (text: string) => {
     window.speechSynthesis.cancel();
     const cleanedText = text.replace(/\*/g, '').replace(/#/g, '').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
@@ -225,30 +224,16 @@ export default function EnhancedVoiceAssistant() {
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
         audio.play();
-        return;
       }
-
-      // If JSON response (fallback flag), use browser TTS
-      const data = await response.json();
-      if (data.fallback) {
-        browserSpeak(cleanedText);
-      }
+      // If ElevenLabs fails or returns fallback, silently skip — no browser TTS
     } catch (error) {
-      console.warn('ElevenLabs TTS failed, using browser fallback:', error);
-      browserSpeak(cleanedText);
+      console.warn('ElevenLabs TTS failed:', error);
+      // No browser fallback — avoids dual voice issue
     }
   };
 
-  const browserSpeak = (text: string) => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.1;
-    utterance.volume = 0.8;
-    const voices = window.speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang.startsWith('en'));
-    if (englishVoice) utterance.voice = englishVoice;
-    window.speechSynthesis.speak(utterance);
-  };
+
+
 
   const toggleListening = () => {
     if (!recognition) {
@@ -276,7 +261,7 @@ export default function EnhancedVoiceAssistant() {
   const totalBalance = accountsSummary.reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="flex flex-col space-y-3" style={{ maxHeight: '480px' }}>
       {accountsSummary.length > 0 && (
         <div className="flex items-center gap-2 px-2">
           <Wallet className="h-4 w-4 text-muted-foreground" />
@@ -289,7 +274,7 @@ export default function EnhancedVoiceAssistant() {
         </div>
       )}
 
-      <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col">
+      <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col" style={{ maxHeight: '320px' }}>
         <CardContent className="p-4 border-b">
           <div className="space-y-1">
             <h3 className="text-lg font-semibold flex items-center gap-2">

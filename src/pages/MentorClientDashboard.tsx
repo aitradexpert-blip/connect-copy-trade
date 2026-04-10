@@ -12,6 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { LotSizeInput } from "@/components/ui/lot-size-input";
+import { useSubscription } from "@/hooks/useSubscription";
 import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { executeOnAccount, type TradeSignal, type TradingAccount } from "@/services/brokerExecution";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
@@ -68,6 +71,10 @@ export default function MentorClientDashboard() {
   const [showExecuteDialog, setShowExecuteDialog] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
   const [activatingCopy, setActivatingCopy] = useState(false);
+  const [manualLotSize, setManualLotSize] = useState(0.01);
+  const [riskPercent, setRiskPercent] = useState(1);
+  const [showSubscribePrompt, setShowSubscribePrompt] = useState(false);
+  const { subscription, isFree } = useSubscription();
 
   const primaryColor = mentorUiConfig?.primary_color || "#6366f1";
   const secondaryColor = mentorUiConfig?.secondary_color || "#8b5cf6";
@@ -127,6 +134,40 @@ export default function MentorClientDashboard() {
     }
   };
 
+  const calculateLotFromRisk = (riskPct: number) => {
+    const account = accounts.find(a => a.id === selectedAccountId);
+    if (!account?.balance) return 0.01;
+    const riskAmount = (account.balance * riskPct) / 100;
+    return Math.max(0.01, Math.round((riskAmount / 100) * 100) / 100);
+  };
+
+  const calculateRiskFromLot = (lots: number) => {
+    const account = accounts.find(a => a.id === selectedAccountId);
+    if (!account?.balance) return 1;
+    return Math.min(100, Math.round(((lots * 100) / account.balance) * 100));
+  };
+
+  const getRiskColor = (risk: number) => {
+    if (risk <= 2) return 'text-green-500';
+    if (risk <= 5) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  const getRiskLabel = (risk: number) => {
+    if (risk <= 1) return 'Conservative';
+    if (risk <= 2) return 'Moderate';
+    if (risk <= 5) return 'Aggressive';
+    return 'Very High Risk';
+  };
+
+  const handleConnectAccount = () => {
+    if (isFree) {
+      setShowSubscribePrompt(true);
+    } else {
+      setShowConnectModal(true);
+    }
+  };
+
   const executeSignal = async () => {
     if (!selectedSignal || !selectedAccountId) return;
     const account = accounts.find(a => a.id === selectedAccountId);
@@ -147,13 +188,13 @@ export default function MentorClientDashboard() {
       const signal: TradeSignal = {
         symbol: selectedSignal.symbol,
         direction: selectedSignal.direction as 'BUY' | 'SELL',
-        volume: selectedSignal.lot_size,
+        volume: manualLotSize,
         stopLoss: selectedSignal.stop_loss,
         takeProfit: selectedSignal.take_profit,
         comment: selectedSignal.comment || `Signal ${selectedSignal.id.slice(0, 8)}`,
       };
       await executeOnAccount(brokerAccount, signal);
-      toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${signal.volume} lots` });
+      toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${manualLotSize} lots` });
       setShowExecuteDialog(false);
     } catch (err: any) {
       toast({ title: "Execution failed", description: err.message, variant: "destructive" });
@@ -297,11 +338,8 @@ export default function MentorClientDashboard() {
                 <CardContent className="p-8 text-center">
                   <Wallet className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-lg font-semibold mb-2">Connect Your Trading Account</h3>
-                  <p className="text-muted-foreground mb-4">Link your MT4/MT5 or Deriv account to start trading. A paid subscription is required.</p>
-                  <Button onClick={() => navigate('/subscription')} variant="outline" className="mr-2">
-                    Subscribe First
-                  </Button>
-                  <Button onClick={() => setShowConnectModal(true)} style={{ backgroundColor: primaryColor }}>
+                  <p className="text-muted-foreground mb-4">Link your MT4/MT5 or Deriv account to start trading.</p>
+                  <Button onClick={handleConnectAccount} style={{ backgroundColor: primaryColor }}>
                     <Plus className="w-4 h-4 mr-2" /> Connect Account
                   </Button>
                 </CardContent>
@@ -320,7 +358,7 @@ export default function MentorClientDashboard() {
                     </CardContent>
                   </Card>
                 ))}
-                <Card className="border-dashed border-2 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setShowConnectModal(true)}>
+                <Card className="border-dashed border-2 cursor-pointer hover:bg-muted/50 transition-colors" onClick={handleConnectAccount}>
                   <CardContent className="p-4 flex items-center justify-center h-full min-h-[100px]">
                     <div className="text-center text-muted-foreground">
                       <Plus className="w-6 h-6 mx-auto mb-1" />
@@ -496,16 +534,16 @@ export default function MentorClientDashboard() {
         </Tabs>
       </div>
 
-      {/* Execute Trade Dialog */}
+      {/* Execute Trade Dialog with Risk Gauge */}
       <Dialog open={showExecuteDialog} onOpenChange={setShowExecuteDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Execute Trade</DialogTitle>
             <DialogDescription>
-              {selectedSignal?.direction} {selectedSignal?.symbol} @ {selectedSignal?.lot_size} lots
+              {selectedSignal?.direction} {selectedSignal?.symbol}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-5">
             <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
               <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
               <SelectContent>
@@ -514,8 +552,51 @@ export default function MentorClientDashboard() {
                 ))}
               </SelectContent>
             </Select>
-            {selectedSignal?.stop_loss && <p className="text-sm">Stop Loss: {selectedSignal.stop_loss}</p>}
-            {selectedSignal?.take_profit && <p className="text-sm">Take Profit: {selectedSignal.take_profit}</p>}
+
+            {/* Risk Slider */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Risk Level</span>
+                <span className={`text-sm font-bold ${getRiskColor(riskPercent)}`}>
+                  {riskPercent}% — {getRiskLabel(riskPercent)}
+                </span>
+              </div>
+              <Slider
+                value={[riskPercent]}
+                onValueChange={(v) => {
+                  setRiskPercent(v[0]);
+                  setManualLotSize(calculateLotFromRisk(v[0]));
+                }}
+                min={0.5}
+                max={10}
+                step={0.5}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0.5%</span>
+                <span>5%</span>
+                <span>10%</span>
+              </div>
+            </div>
+
+            {/* Lot Size Input */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Lot Size</span>
+                <span className="text-xs text-muted-foreground">Signal default: {selectedSignal?.lot_size}</span>
+              </div>
+              <LotSizeInput
+                value={manualLotSize}
+                onChange={(val) => {
+                  setManualLotSize(val);
+                  setRiskPercent(calculateRiskFromLot(val));
+                }}
+              />
+            </div>
+
+            {selectedSignal?.stop_loss && <p className="text-sm text-muted-foreground">Stop Loss: {selectedSignal.stop_loss}</p>}
+            {selectedSignal?.take_profit && <p className="text-sm text-muted-foreground">Take Profit: {selectedSignal.take_profit}</p>}
+            
             <Button
               onClick={executeSignal}
               disabled={!!executingSignal}
@@ -523,7 +604,27 @@ export default function MentorClientDashboard() {
               style={{ backgroundColor: primaryColor }}
             >
               {executingSignal ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-              Confirm Trade
+              Execute {selectedSignal?.direction} {manualLotSize} lots
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscribe Prompt Dialog */}
+      <Dialog open={showSubscribePrompt} onOpenChange={setShowSubscribePrompt}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Subscription Required</DialogTitle>
+            <DialogDescription>
+              You need an active subscription to connect trading accounts and access automated features.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Button onClick={() => { setShowSubscribePrompt(false); navigate('/subscription'); }} className="w-full">
+              View Subscription Plans
+            </Button>
+            <Button variant="outline" onClick={() => setShowSubscribePrompt(false)} className="w-full">
+              Cancel
             </Button>
           </div>
         </DialogContent>
