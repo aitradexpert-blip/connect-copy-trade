@@ -12,6 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { LotSizeInput } from "@/components/ui/lot-size-input";
+import { useSubscription } from "@/hooks/useSubscription";
 import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { executeOnAccount, type TradeSignal, type TradingAccount } from "@/services/brokerExecution";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
@@ -68,6 +71,10 @@ export default function MentorClientDashboard() {
   const [showExecuteDialog, setShowExecuteDialog] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
   const [activatingCopy, setActivatingCopy] = useState(false);
+  const [manualLotSize, setManualLotSize] = useState(0.01);
+  const [riskPercent, setRiskPercent] = useState(1);
+  const [showSubscribePrompt, setShowSubscribePrompt] = useState(false);
+  const { subscription, isFree } = useSubscription();
 
   const primaryColor = mentorUiConfig?.primary_color || "#6366f1";
   const secondaryColor = mentorUiConfig?.secondary_color || "#8b5cf6";
