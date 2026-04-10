@@ -77,6 +77,15 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const MentorDashboardRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  const { isMentor, loading: mentorLoading } = useMentor();
+  if (loading || mentorLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (isMentor) return <Navigate to="/mentor-hub" replace />;
+  return <>{children}</>;
+};
+
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -131,7 +140,7 @@ const App = () => (
                 <Route path="/" element={<MentorAwareHome />} />
                 
                 {/* Mentor client dashboard (direct access) */}
-                <Route path="/mentor-dashboard" element={<ProtectedRoute><MentorClientDashboard /></ProtectedRoute>} />
+                <Route path="/mentor-dashboard" element={<MentorDashboardRoute><MentorClientDashboard /></MentorDashboardRoute>} />
 
                 {/* Free tier accessible routes (all authenticated users) */}
                 <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />

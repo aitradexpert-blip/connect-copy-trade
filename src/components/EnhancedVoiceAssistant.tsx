@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Mic, MicOff, Loader2, Send, Wallet, RefreshCw, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -261,7 +260,7 @@ export default function EnhancedVoiceAssistant() {
   const totalBalance = accountsSummary.reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
   return (
-    <div className="flex flex-col space-y-3" style={{ maxHeight: '480px' }}>
+    <div className="flex max-h-[480px] min-h-0 flex-col space-y-3">
       {accountsSummary.length > 0 && (
         <div className="flex items-center gap-2 px-2">
           <Wallet className="h-4 w-4 text-muted-foreground" />
@@ -274,7 +273,7 @@ export default function EnhancedVoiceAssistant() {
         </div>
       )}
 
-      <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col" style={{ maxHeight: '320px' }}>
+      <Card className="flex max-h-[320px] min-h-0 flex-1 flex-col overflow-hidden border-border bg-card">
         <CardContent className="p-4 border-b">
           <div className="space-y-1">
             <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -293,9 +292,9 @@ export default function EnhancedVoiceAssistant() {
           </div>
         </CardContent>
         
-        <CardContent className="p-0 flex-1 flex flex-col">
+        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
           {conversation.length > 0 ? (
-            <ScrollArea className="flex-1" ref={scrollRef}>
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
               <div className="space-y-4 p-4">
                 {conversation.map((msg, idx) => (
                   <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -335,7 +334,7 @@ export default function EnhancedVoiceAssistant() {
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           ) : (
             <div className="flex-1 flex items-center justify-center p-6">
               <div className="text-center space-y-2">

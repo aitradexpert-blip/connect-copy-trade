@@ -115,15 +115,26 @@ const Auth = () => {
     }
   };
 
+  const checkIfMentor = async (userId: string): Promise<boolean> => {
+    try {
+      const { data } = await supabase
+        .from('mentor_profiles')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle();
+      return !!data;
+    } catch {
+      return false;
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      const redirectTo = refSlug 
-        ? `${window.location.origin}/mentor-dashboard`
-        : `${window.location.origin}/`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo }
+        options: { redirectTo: `${window.location.origin}/` }
       });
       if (error) throw error;
     } catch (error: any) {
@@ -140,9 +151,7 @@ const Auth = () => {
         email,
         password,
         options: {
-          emailRedirectTo: refSlug 
-            ? `${window.location.origin}/mentor-dashboard`
-            : `${window.location.origin}/`,
+          emailRedirectTo: `${window.location.origin}/`,
           data: { display_name: displayName },
         },
       });
@@ -171,10 +180,15 @@ const Auth = () => {
       if (error) throw error;
       toast({ title: "Welcome back!", description: "You have been logged in successfully." });
 
-      // Check if this user is a mentor client → redirect to branded dashboard
       if (data?.user) {
+        const isMentor = await checkIfMentor(data.user.id);
+
+        if (isMentor) {
+          navigate("/mentor-hub");
+          return;
+        }
+
         if (refSlug) {
-          // Link referral if signing in with ref param
           await linkMentorReferral(data.user.id);
           navigate("/mentor-dashboard");
         } else {
