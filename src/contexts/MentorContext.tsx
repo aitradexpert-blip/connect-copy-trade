@@ -17,6 +17,7 @@ interface UiConfig {
 
 interface MentorContextType {
   isMentorClient: boolean;
+  isMentor: boolean;
   mentorBrandName: string | null;
   featureRenames: FeatureRenames;
   mentorId: string | null;
@@ -36,6 +37,7 @@ const defaultRenames: FeatureRenames = {
 
 const MentorContext = createContext<MentorContextType>({
   isMentorClient: false,
+  isMentor: false,
   mentorBrandName: null,
   featureRenames: defaultRenames,
   mentorId: null,
@@ -50,6 +52,7 @@ const MentorContext = createContext<MentorContextType>({
 export function MentorProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [isMentorClient, setIsMentorClient] = useState(false);
+  const [isMentor, setIsMentor] = useState(false);
   const [mentorBrandName, setMentorBrandName] = useState<string | null>(null);
   const [featureRenames, setFeatureRenames] = useState<FeatureRenames>(defaultRenames);
   const [mentorId, setMentorId] = useState<string | null>(null);
@@ -67,6 +70,18 @@ export function MentorProvider({ children }: { children: ReactNode }) {
 
     const loadMentorContext = async () => {
       try {
+        // Check if user is a mentor (has mentor_profiles record)
+        const { data: mentorProfile } = await supabase
+          .from('mentor_profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+        
+        if (mentorProfile) {
+          setIsMentor(true);
+        }
+
         const { data: clientRecord } = await supabase
           .from('mentor_clients')
           .select('mentor_id')
@@ -134,7 +149,7 @@ export function MentorProvider({ children }: { children: ReactNode }) {
 
   return (
     <MentorContext.Provider value={{ 
-      isMentorClient, mentorBrandName, featureRenames, mentorId, mentorUserId,
+      isMentorClient, isMentor, mentorBrandName, featureRenames, mentorId, mentorUserId,
       mentorMediaUrl, mentorMediaType, mentorUiConfig, loading, getFeatureName 
     }}>
       {children}
