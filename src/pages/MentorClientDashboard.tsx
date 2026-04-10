@@ -338,11 +338,8 @@ export default function MentorClientDashboard() {
                 <CardContent className="p-8 text-center">
                   <Wallet className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-lg font-semibold mb-2">Connect Your Trading Account</h3>
-                  <p className="text-muted-foreground mb-4">Link your MT4/MT5 or Deriv account to start trading. A paid subscription is required.</p>
-                  <Button onClick={() => navigate('/subscription')} variant="outline" className="mr-2">
-                    Subscribe First
-                  </Button>
-                  <Button onClick={() => setShowConnectModal(true)} style={{ backgroundColor: primaryColor }}>
+                  <p className="text-muted-foreground mb-4">Link your MT4/MT5 or Deriv account to start trading.</p>
+                  <Button onClick={handleConnectAccount} style={{ backgroundColor: primaryColor }}>
                     <Plus className="w-4 h-4 mr-2" /> Connect Account
                   </Button>
                 </CardContent>
@@ -361,7 +358,7 @@ export default function MentorClientDashboard() {
                     </CardContent>
                   </Card>
                 ))}
-                <Card className="border-dashed border-2 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setShowConnectModal(true)}>
+                <Card className="border-dashed border-2 cursor-pointer hover:bg-muted/50 transition-colors" onClick={handleConnectAccount}>
                   <CardContent className="p-4 flex items-center justify-center h-full min-h-[100px]">
                     <div className="text-center text-muted-foreground">
                       <Plus className="w-6 h-6 mx-auto mb-1" />
