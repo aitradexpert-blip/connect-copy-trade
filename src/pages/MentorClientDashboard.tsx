@@ -351,7 +351,7 @@ export default function MentorClientDashboard() {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-semibold text-sm">{acc.name}</span>
-                        <Badge variant="outline">{acc.provider}</Badge>
+                        <Badge variant="outline">{getProviderLabel(acc.provider)}</Badge>
                       </div>
                       <p className="text-2xl font-bold">${(acc.balance || 0).toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground mt-1">Login: {acc.login}</p>
