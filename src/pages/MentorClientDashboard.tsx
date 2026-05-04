@@ -19,6 +19,7 @@ import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { executeOnAccount, type TradeSignal, type TradingAccount } from "@/services/brokerExecution";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
+import { getProviderLabel } from "@/lib/providerLabel";
 
 interface Signal {
   id: string;
