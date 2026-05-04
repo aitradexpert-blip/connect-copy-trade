@@ -19,6 +19,7 @@ import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
+import { getProviderLabel } from "@/lib/providerLabel";
 
 interface MentorProfile {
   id: string;
