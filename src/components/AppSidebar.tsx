@@ -69,6 +69,7 @@ export function AppSidebar() {
   const currentPath = location.pathname;
   const collapsed = state === "collapsed";
   const isMentor = subscription?.plan_name === 'mentor';
+  const { isMentorClient } = useMentor();
 
   const isActive = (path: string) => currentPath === path;
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
@@ -145,7 +146,7 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 </>
               )}
-              {isMentor && (
+              {isMentor ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
                     <NavLink to="/mentor-center" className={getNavCls}>
@@ -154,7 +155,16 @@ export function AppSidebar() {
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              )}
+              ) : isMentorClient ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink to="/mentor-dashboard" className={getNavCls}>
+                      <Crown className="w-4 h-4" />
+                      {!collapsed && <span>Mentor Center</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
