@@ -109,6 +109,24 @@ export type Database = {
         }
         Relationships: []
       }
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
       bankii_wallets: {
         Row: {
           balance: number | null
@@ -222,6 +240,7 @@ export type Database = {
       }
       copy_trading_relationships: {
         Row: {
+          copyfactory_subscriber_id: string | null
           created_at: string
           follower_account_id: string | null
           follower_user_id: string | null
@@ -231,6 +250,7 @@ export type Database = {
           status: string | null
         }
         Insert: {
+          copyfactory_subscriber_id?: string | null
           created_at?: string
           follower_account_id?: string | null
           follower_user_id?: string | null
@@ -240,6 +260,7 @@ export type Database = {
           status?: string | null
         }
         Update: {
+          copyfactory_subscriber_id?: string | null
           created_at?: string
           follower_account_id?: string | null
           follower_user_id?: string | null
@@ -1016,6 +1037,7 @@ export type Database = {
           broker_name: string | null
           connection_status: string | null
           connection_type: string
+          copyfactory_strategy_id: string | null
           created_at: string
           deriv_currency: string | null
           deriv_token: string | null
@@ -1025,6 +1047,9 @@ export type Database = {
           is_virtual: boolean | null
           login: string
           metaapi_account_id: string | null
+          metaapi_health_checked_at: string | null
+          metaapi_health_status: string | null
+          metaapi_last_error: string | null
           name: string
           platform: string
           provider: string
@@ -1038,6 +1063,7 @@ export type Database = {
           broker_name?: string | null
           connection_status?: string | null
           connection_type?: string
+          copyfactory_strategy_id?: string | null
           created_at?: string
           deriv_currency?: string | null
           deriv_token?: string | null
@@ -1047,6 +1073,9 @@ export type Database = {
           is_virtual?: boolean | null
           login: string
           metaapi_account_id?: string | null
+          metaapi_health_checked_at?: string | null
+          metaapi_health_status?: string | null
+          metaapi_last_error?: string | null
           name: string
           platform: string
           provider?: string
@@ -1060,6 +1089,7 @@ export type Database = {
           broker_name?: string | null
           connection_status?: string | null
           connection_type?: string
+          copyfactory_strategy_id?: string | null
           created_at?: string
           deriv_currency?: string | null
           deriv_token?: string | null
@@ -1069,6 +1099,9 @@ export type Database = {
           is_virtual?: boolean | null
           login?: string
           metaapi_account_id?: string | null
+          metaapi_health_checked_at?: string | null
+          metaapi_health_status?: string | null
+          metaapi_last_error?: string | null
           name?: string
           platform?: string
           provider?: string
