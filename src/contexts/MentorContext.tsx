@@ -18,6 +18,7 @@ interface UiConfig {
 interface MentorContextType {
   isMentorClient: boolean;
   isMentor: boolean;
+  isDefaultMentorClient: boolean;
   mentorBrandName: string | null;
   featureRenames: FeatureRenames;
   mentorId: string | null;
@@ -38,6 +39,7 @@ const defaultRenames: FeatureRenames = {
 const MentorContext = createContext<MentorContextType>({
   isMentorClient: false,
   isMentor: false,
+  isDefaultMentorClient: false,
   mentorBrandName: null,
   featureRenames: defaultRenames,
   mentorId: null,
