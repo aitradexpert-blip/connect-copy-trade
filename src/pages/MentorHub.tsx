@@ -19,6 +19,7 @@ import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
+import { getProviderLabel } from "@/lib/providerLabel";
 
 interface MentorProfile {
   id: string;
@@ -440,7 +441,7 @@ export default function MentorHub() {
                     <div className="flex items-center justify-between mb-3">
                       <span className="font-semibold text-sm truncate flex-1 mr-2">{acc.name}</span>
                       <Badge variant="outline" className="text-xs shrink-0">
-                        {acc.provider}
+                        {getProviderLabel(acc.provider)}
                       </Badge>
                     </div>
                     <p className="text-2xl font-bold">${(acc.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>

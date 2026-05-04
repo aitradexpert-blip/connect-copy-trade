@@ -97,14 +97,16 @@ Deno.serve(async (req) => {
     const responseText = await response.text()
     console.log(`Response Status: ${response.status}`)
 
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
     if (response.ok) {
       const data = JSON.parse(responseText)
-      const metaapiAccountId = data._id || data.id
+      let metaapiAccountId: string | undefined = data._id || data.id
 
-      // Validate the returned ID looks like a UUID (MetaAPI format)
-      if (!metaapiAccountId || typeof metaapiAccountId !== 'string' || metaapiAccountId.length < 10) {
-        console.error('Invalid account ID returned:', metaapiAccountId)
-        
+      // Validate the returned ID is a real MetaAPI UUID
+      if (!metaapiAccountId || !UUID_RE.test(metaapiAccountId)) {
+        console.error('Invalid (non-UUID) account ID returned:', metaapiAccountId)
+
         // Try to look up by login/server
         try {
           const lookupResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts?query=${login}`, {
@@ -113,22 +115,24 @@ Deno.serve(async (req) => {
           if (lookupResp.ok) {
             const accounts = await lookupResp.json()
             const match = accounts.find((a: any) => a.login === String(login) && a.server === server)
-            if (match) {
-              return new Response(JSON.stringify({
-                success: true,
-                metaapi_account_id: match._id || match.id,
-                state: match.state || 'CREATED',
-                name: match.name,
-                connectionStatus: match.connectionStatus,
-                region: match.region,
-              }), {
-                status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders },
-              })
+            const matchedId = match?._id || match?.id
+            if (match && matchedId && UUID_RE.test(matchedId)) {
+              metaapiAccountId = matchedId
             }
           }
         } catch (e) {
           console.warn('Lookup fallback failed:', e)
         }
+      }
+
+      if (!metaapiAccountId || !UUID_RE.test(metaapiAccountId)) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Trading Bridge did not return a valid account ID. Please retry, verify your credentials, or contact support.',
+          code: 'INVALID_ACCOUNT_ID',
+        }), {
+          status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
       }
 
       const state = data.state || 'CREATED'

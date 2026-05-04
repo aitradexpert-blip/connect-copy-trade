@@ -19,6 +19,7 @@ import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { executeOnAccount, type TradeSignal, type TradingAccount } from "@/services/brokerExecution";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
+import { getProviderLabel } from "@/lib/providerLabel";
 
 interface Signal {
   id: string;
@@ -169,6 +170,7 @@ export default function MentorClientDashboard() {
   };
 
   const executeSignal = async () => {
+    if (isFree) { setShowSubscribePrompt(true); setShowExecuteDialog(false); return; }
     if (!selectedSignal || !selectedAccountId) return;
     const account = accounts.find(a => a.id === selectedAccountId);
     if (!account) return;
@@ -204,6 +206,7 @@ export default function MentorClientDashboard() {
   };
 
   const activateCopyTrading = async () => {
+    if (isFree) { setShowSubscribePrompt(true); return; }
     if (accounts.length === 0) {
       setShowConnectModal(true);
       return;
@@ -351,7 +354,7 @@ export default function MentorClientDashboard() {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-semibold text-sm">{acc.name}</span>
-                        <Badge variant="outline">{acc.provider}</Badge>
+                        <Badge variant="outline">{getProviderLabel(acc.provider)}</Badge>
                       </div>
                       <p className="text-2xl font-bold">${(acc.balance || 0).toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground mt-1">Login: {acc.login}</p>
