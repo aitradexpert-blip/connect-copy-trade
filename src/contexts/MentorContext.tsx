@@ -55,6 +55,7 @@ export function MentorProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [isMentorClient, setIsMentorClient] = useState(false);
   const [isMentor, setIsMentor] = useState(false);
+  const [isDefaultMentorClient, setIsDefaultMentorClient] = useState(false);
   const [mentorBrandName, setMentorBrandName] = useState<string | null>(null);
   const [featureRenames, setFeatureRenames] = useState<FeatureRenames>(defaultRenames);
   const [mentorId, setMentorId] = useState<string | null>(null);
@@ -72,7 +73,14 @@ export function MentorProvider({ children }: { children: ReactNode }) {
 
     const loadMentorContext = async () => {
       try {
-        // Check if user is a mentor (has mentor_profiles record)
+        // Read default mentor slug
+        const { data: setting } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'default_mentor_slug')
+          .maybeSingle();
+        const defaultSlug = setting?.value || null;
+
         const { data: mentorProfile } = await supabase
           .from('mentor_profiles')
           .select('id')
@@ -86,7 +94,7 @@ export function MentorProvider({ children }: { children: ReactNode }) {
 
         const { data: clientRecord } = await supabase
           .from('mentor_clients')
-          .select('mentor_id')
+          .select('mentor_id, referral_slug_used')
           .eq('client_user_id', user.id)
           .limit(1)
           .maybeSingle();
@@ -94,13 +102,15 @@ export function MentorProvider({ children }: { children: ReactNode }) {
         if (clientRecord?.mentor_id) {
           const { data: mentor } = await supabase
             .from('mentor_profiles')
-            .select('id, user_id, brand_name, feature_renames, is_active, ui_config, landing_page_media_url, landing_page_media_type')
+            .select('id, user_id, brand_name, feature_renames, is_active, ui_config, landing_page_media_url, landing_page_media_type, referral_slug')
             .eq('id', clientRecord.mentor_id)
             .eq('is_active', true)
             .maybeSingle();
 
           if (mentor) {
             setIsMentorClient(true);
+            const isDefault = !!defaultSlug && mentor.referral_slug === defaultSlug;
+            setIsDefaultMentorClient(isDefault);
             setMentorBrandName(mentor.brand_name);
             setMentorId(mentor.id);
             setMentorUserId(mentor.user_id);
@@ -121,13 +131,15 @@ export function MentorProvider({ children }: { children: ReactNode }) {
               });
             }
 
-            // Apply branding CSS variables
-            const root = document.documentElement;
-            if (uiConfig?.primary_color) {
-              root.style.setProperty('--mentor-primary', uiConfig.primary_color);
-            }
-            if (uiConfig?.secondary_color) {
-              root.style.setProperty('--mentor-secondary', uiConfig.secondary_color);
+            // Apply branding CSS variables — only for genuinely-referred clients (not default)
+            if (!isDefault) {
+              const root = document.documentElement;
+              if (uiConfig?.primary_color) {
+                root.style.setProperty('--mentor-primary', uiConfig.primary_color);
+              }
+              if (uiConfig?.secondary_color) {
+                root.style.setProperty('--mentor-secondary', uiConfig.secondary_color);
+              }
             }
           }
         }
@@ -151,7 +163,7 @@ export function MentorProvider({ children }: { children: ReactNode }) {
 
   return (
     <MentorContext.Provider value={{ 
-      isMentorClient, isMentor, mentorBrandName, featureRenames, mentorId, mentorUserId,
+      isMentorClient, isMentor, isDefaultMentorClient, mentorBrandName, featureRenames, mentorId, mentorUserId,
       mentorMediaUrl, mentorMediaType, mentorUiConfig, loading, getFeatureName 
     }}>
       {children}
