@@ -170,6 +170,7 @@ export default function MentorClientDashboard() {
   };
 
   const executeSignal = async () => {
+    if (isFree) { setShowSubscribePrompt(true); setShowExecuteDialog(false); return; }
     if (!selectedSignal || !selectedAccountId) return;
     const account = accounts.find(a => a.id === selectedAccountId);
     if (!account) return;
@@ -205,6 +206,7 @@ export default function MentorClientDashboard() {
   };
 
   const activateCopyTrading = async () => {
+    if (isFree) { setShowSubscribePrompt(true); return; }
     if (accounts.length === 0) {
       setShowConnectModal(true);
       return;

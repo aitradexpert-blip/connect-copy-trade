@@ -175,6 +175,18 @@ export function ConnectAccountModal({
         return;
       }
 
+      // Validate UUID before persisting — never store MT login numbers as MetaAPI IDs
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!data.metaapi_account_id || !UUID_RE.test(data.metaapi_account_id)) {
+        toast({
+          title: "Connection incomplete",
+          description: "Trading Bridge could not auto-provision this account. Please retry, verify your credentials, or contact support.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const { error: insertError } = await supabase
         .from("trading_accounts")
         .insert([{
