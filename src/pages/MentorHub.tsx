@@ -282,6 +282,29 @@ export default function MentorHub() {
 
   const toggleMasterAccount = async (accountId: string, currentlyMaster: boolean) => {
     try {
+      const acc = accounts.find(a => a.id === accountId);
+      // If enabling master & MetaAPI account & no strategy yet -> create CopyFactory strategy
+      if (!currentlyMaster && acc?.metaapi_account_id) {
+        toast({ title: "Setting up CopyFactory strategy..." });
+        const { data, error } = await supabase.functions.invoke('copyfactory-create-strategy', {
+          body: {
+            accountId: acc.metaapi_account_id,
+            name: profile?.brand_name ? `${profile.brand_name} Master` : (acc.name || 'Master Strategy'),
+            description: 'Auto-mirror MT4/MT5 terminal trades to followers',
+          },
+        });
+        if (error) throw error;
+        if (data?.strategyId) {
+          await supabase
+            .from('trading_accounts')
+            .update({ is_master: true, copyfactory_strategy_id: data.strategyId })
+            .eq('id', accountId)
+            .eq('user_id', user!.id);
+          toast({ title: "Master enabled — terminal trades will auto-mirror to followers" });
+          loadData();
+          return;
+        }
+      }
       await supabase
         .from('trading_accounts')
         .update({ is_master: !currentlyMaster })
