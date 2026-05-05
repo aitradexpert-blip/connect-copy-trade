@@ -291,6 +291,7 @@ export default function MentorHub() {
             accountId: acc.metaapi_account_id,
             name: profile?.brand_name ? `${profile.brand_name} Master` : (acc.name || 'Master Strategy'),
             description: 'Auto-mirror MT4/MT5 terminal trades to followers',
+            existingStrategyId: (acc as any).copyfactory_strategy_id || undefined,
           },
         });
         if (error) throw error;
