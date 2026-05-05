@@ -445,6 +445,10 @@ export default function AdminPanel() {
           <TabsContent value="mentors">
             <MentorManagementTab />
           </TabsContent>
+
+          <TabsContent value="health">
+            <MetaApiHealthTab />
+          </TabsContent>
         </Tabs>
       </div>
     </AppLayout>
