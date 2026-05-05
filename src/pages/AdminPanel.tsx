@@ -303,7 +303,7 @@ export default function AdminPanel() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
+                <div className="overflow-x-auto"><Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Email</TableHead>
@@ -362,7 +362,7 @@ export default function AdminPanel() {
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                </Table></div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -376,7 +376,7 @@ export default function AdminPanel() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
+                <div className="overflow-x-auto"><Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>User ID</TableHead>
@@ -433,7 +433,7 @@ export default function AdminPanel() {
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                </Table></div>
               </CardContent>
             </Card>
           </TabsContent>
