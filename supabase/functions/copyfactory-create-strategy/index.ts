@@ -48,8 +48,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    const body: CreateStrategyRequest = await req.json()
-    const { accountId, name, description, commissionScheme, riskLimits } = body
+    const body: CreateStrategyRequest & { existingStrategyId?: string } = await req.json()
+    const { accountId, name, description, commissionScheme, riskLimits, existingStrategyId } = body
 
     if (!accountId || !name) {
       return new Response(JSON.stringify({ 
@@ -72,6 +72,50 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Creating CopyFactory strategy for account ${accountId}: ${name}`)
+
+    // Idempotency guard: if caller passed an existing strategy ID, verify it exists and reuse it.
+    if (existingStrategyId) {
+      console.log(`Idempotency: checking existing strategy ${existingStrategyId}`)
+      const existingResp = await fetch(
+        `${COPYFACTORY_API_URL}/users/current/configuration/strategies/${existingStrategyId}`,
+        { method: 'GET', headers: { 'auth-token': token, 'Accept': 'application/json' } }
+      )
+      if (existingResp.ok) {
+        const existing = await existingResp.json().catch(() => ({}))
+        console.log(`Reusing existing strategy ${existingStrategyId}`)
+        return new Response(JSON.stringify({
+          success: true,
+          strategyId: existingStrategyId,
+          message: 'Strategy already exists; reusing it.',
+          reused: true,
+          details: existing,
+        }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } })
+      }
+      console.log(`Existing strategy ${existingStrategyId} not found (status ${existingResp.status}); creating a new one.`)
+    }
+
+    // Also guard against duplicate strategies for the same accountId by listing strategies.
+    const listResp = await fetch(`${COPYFACTORY_API_URL}/users/current/configuration/strategies`, {
+      method: 'GET',
+      headers: { 'auth-token': token, 'Accept': 'application/json' },
+    })
+    if (listResp.ok) {
+      const strategies = await listResp.json().catch(() => [])
+      if (Array.isArray(strategies)) {
+        const dup = strategies.find((s: any) => s?.accountId === accountId)
+        if (dup?._id || dup?.id) {
+          const dupId = dup._id || dup.id
+          console.log(`Idempotency: found existing strategy ${dupId} for account ${accountId}; reusing.`)
+          return new Response(JSON.stringify({
+            success: true,
+            strategyId: dupId,
+            message: 'Strategy already exists for this account; reusing it.',
+            reused: true,
+            details: dup,
+          }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } })
+        }
+      }
+    }
 
     // Step 1: Generate a unique strategy ID
     console.log('Step 1: Generating strategy ID...')
