@@ -1038,7 +1038,6 @@ export type Database = {
           connection_status: string | null
           connection_type: string
           copyfactory_strategy_id: string | null
-          copyfactory_subscriber_id: string | null
           created_at: string
           deriv_currency: string | null
           deriv_token: string | null
@@ -1065,7 +1064,6 @@ export type Database = {
           connection_status?: string | null
           connection_type?: string
           copyfactory_strategy_id?: string | null
-          copyfactory_subscriber_id?: string | null
           created_at?: string
           deriv_currency?: string | null
           deriv_token?: string | null
@@ -1092,7 +1090,6 @@ export type Database = {
           connection_status?: string | null
           connection_type?: string
           copyfactory_strategy_id?: string | null
-          copyfactory_subscriber_id?: string | null
           created_at?: string
           deriv_currency?: string | null
           deriv_token?: string | null
