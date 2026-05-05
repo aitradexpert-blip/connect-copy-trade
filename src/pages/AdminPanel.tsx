@@ -252,37 +252,43 @@ export default function AdminPanel() {
         </div>
 
         <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Users
-            </TabsTrigger>
-            <TabsTrigger value="payments" className="flex items-center gap-2">
-              <CreditCard className="w-4 h-4" />
-              Payments
-              {counts.pendingPayments > 0 && (
-                <Badge variant="secondary" className="ml-1">{counts.pendingPayments}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="kyc" className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              KYC
-              {counts.pendingUsers > 0 && (
-                <Badge variant="secondary" className="ml-1">{counts.pendingUsers}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="transfers" className="flex items-center gap-2">
-              <ArrowLeftRight className="w-4 h-4" />
-              Transfers
-              {counts.pendingTransfers > 0 && (
-                <Badge variant="secondary" className="ml-1">{counts.pendingTransfers}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="mentors" className="flex items-center gap-2">
-              <Crown className="w-4 h-4" />
-              Mentors
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="inline-flex w-max">
+              <TabsTrigger value="users" className="flex items-center gap-2 whitespace-nowrap">
+                <Users className="w-4 h-4" />
+                Users
+              </TabsTrigger>
+              <TabsTrigger value="payments" className="flex items-center gap-2 whitespace-nowrap">
+                <CreditCard className="w-4 h-4" />
+                Payments
+                {counts.pendingPayments > 0 && (
+                  <Badge variant="secondary" className="ml-1">{counts.pendingPayments}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="kyc" className="flex items-center gap-2 whitespace-nowrap">
+                <FileText className="w-4 h-4" />
+                KYC
+                {counts.pendingUsers > 0 && (
+                  <Badge variant="secondary" className="ml-1">{counts.pendingUsers}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="transfers" className="flex items-center gap-2 whitespace-nowrap">
+                <ArrowLeftRight className="w-4 h-4" />
+                Transfers
+                {counts.pendingTransfers > 0 && (
+                  <Badge variant="secondary" className="ml-1">{counts.pendingTransfers}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="mentors" className="flex items-center gap-2 whitespace-nowrap">
+                <Crown className="w-4 h-4" />
+                Mentors
+              </TabsTrigger>
+              <TabsTrigger value="health" className="flex items-center gap-2 whitespace-nowrap">
+                <Activity className="w-4 h-4" />
+                MetaAPI Health
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="users">
             <UserManagementTab />
