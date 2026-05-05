@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp, Crown } from "lucide-react";
+import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp, Crown, Activity } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +13,7 @@ import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { UserManagementTab } from "@/components/admin/UserManagementTab";
 import { TransferMonitoringTab } from "@/components/admin/TransferMonitoringTab";
 import { MentorManagementTab } from "@/components/admin/MentorManagementTab";
+import { MetaApiHealthTab } from "@/components/admin/MetaApiHealthTab";
 
 export default function AdminPanel() {
   const { user } = useAuth();
