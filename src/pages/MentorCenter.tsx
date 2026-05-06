@@ -233,25 +233,27 @@ export default function MentorCenter() {
     }
     setSaving(true);
     try {
+      // UPSERT on user_id — guards against double-click and stale state.
+      // If a profile exists for this user, update its brand/feature renames; otherwise insert.
       const slug = generateSlug(brandName);
       const { error } = await supabase
         .from('mentor_profiles')
-        .insert({
+        .upsert({
           user_id: user!.id,
           brand_name: brandName.trim(),
           referral_slug: slug,
           landing_page_slug: slug,
           feature_renames: { ai_bot_name: aiBotName, copy_trading_name: copyTradingName, trading_ideas_name: tradingIdeasName },
           ui_config: { primary_color: primaryColor, secondary_color: secondaryColor, welcome_text: welcomeText },
-        })
+        }, { onConflict: 'user_id', ignoreDuplicates: false })
         .select()
         .single();
 
       if (error) throw error;
-      toast({ title: "Mentor profile created!", description: `Your brand "${brandName}" is live.` });
+      toast({ title: "Mentor profile saved!", description: `Your brand "${brandName}" is live.` });
       loadProfile();
     } catch (err: any) {
-      toast({ title: "Error creating profile", description: err.message, variant: "destructive" });
+      toast({ title: "Error saving profile", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -668,7 +670,7 @@ export default function MentorCenter() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Symbol *</Label>
-                          <Input value={newSymbol} onChange={e => setNewSymbol(e.target.value)} placeholder="e.g., EURUSD" />
+                          <SymbolCombobox value={newSymbol} onChange={setNewSymbol} placeholder="Search symbol (e.g. EURUSD, USDZAR, NAS100)..." />
                         </div>
                         <div className="space-y-2">
                           <Label>Direction</Label>
@@ -780,7 +782,7 @@ export default function MentorCenter() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 gap-3">
-                  <Input value={quickSymbol} onChange={e => setQuickSymbol(e.target.value)} placeholder="EURUSD" />
+                  <SymbolCombobox value={quickSymbol} onChange={setQuickSymbol} placeholder="Search symbol..." />
                   <Select value={quickDirection} onValueChange={setQuickDirection}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
