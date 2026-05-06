@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { executeOnAccount, TradingAccount as BrokerAccount, TradeSignal } from "@/services/brokerExecution";
+import { useFreeTierGuard, FreeTierBanner } from "@/components/FreeTierGuard";
 
 interface Signal {
   id: string;
@@ -131,7 +132,10 @@ export default function TradingIdeas() {
     load();
   }, [user, toast]);
 
+  const requirePaid = useFreeTierGuard();
+
   const executeSignal = async () => {
+    if (!requirePaid("Executing trade ideas")) return;
     if (!selectedAccount || !selectedSignal) {
       toast({ title: 'Select Account', description: 'Please select a trading account first', variant: 'destructive' });
       return;
