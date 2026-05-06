@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar, Clock, TrendingUp, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
+import { Calendar, Clock, TrendingUp, AlertTriangle, RefreshCw, Loader2, ExternalLink } from 'lucide-react';
 import { 
   getEconomicCalendar, 
   EconomicEvent, 
