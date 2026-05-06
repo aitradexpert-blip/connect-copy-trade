@@ -87,14 +87,15 @@ const MentorDashboardRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Route that requires "mentor" subscription tier - only true mentors can access
+// Route that requires "mentor" subscription tier OR an existing mentor profile
 const MentorTierRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { tierName, loading: subLoading } = useSubscription();
-  if (loading || subLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  const { isMentor, loading: mentorLoading } = useMentor();
+  if (loading || subLoading || mentorLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
-  // Only allow users with mentor subscription tier
-  if (tierName !== 'mentor') return <Navigate to="/subscription?upgrade=mentor" replace />;
+  // Allow users with mentor subscription tier OR users who already have a mentor profile
+  if (tierName !== 'mentor' && !isMentor) return <Navigate to="/subscription?upgrade=mentor" replace />;
   return <>{children}</>;
 };
 

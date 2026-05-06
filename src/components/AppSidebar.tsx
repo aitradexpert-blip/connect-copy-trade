@@ -24,6 +24,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useMentor } from "@/contexts/MentorContext";
 
 import {
   Sidebar,
@@ -68,7 +69,9 @@ export function AppSidebar() {
   const location = useLocation();
   const currentPath = location.pathname;
   const collapsed = state === "collapsed";
-  const isMentor = subscription?.plan_name === 'mentor';
+  const { isMentor: hasMentorProfile } = useMentor();
+  // Show Mentor Hub for users with mentor subscription tier OR existing mentor profile
+  const showMentorHub = subscription?.plan_name === 'mentor' || hasMentorProfile;
 
   const isActive = (path: string) => currentPath === path;
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
@@ -145,8 +148,8 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 </>
               )}
-              {/* Mentor Hub - only for mentor-tier users */}
-              {isMentor && (
+              {/* Mentor Hub - only for mentor-tier users or users with existing mentor profile */}
+              {showMentorHub && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
                     <NavLink to="/mentor-hub" className={getNavCls}>
