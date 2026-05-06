@@ -20,6 +20,7 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 import { getProviderLabel } from "@/lib/providerLabel";
+import { SymbolCombobox } from "@/components/SymbolCombobox";
 
 interface MentorProfile {
   id: string;
@@ -625,7 +626,7 @@ export default function MentorHub() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Symbol *</Label>
-                          <Input value={newSymbol} onChange={e => setNewSymbol(e.target.value)} placeholder="e.g., EURUSD" />
+                          <SymbolCombobox value={newSymbol} onChange={setNewSymbol} placeholder="Search symbol (e.g. EURUSD, USDZAR, NAS100)..." />
                         </div>
                         <div className="space-y-2">
                           <Label>Direction</Label>
@@ -741,7 +742,7 @@ export default function MentorHub() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 gap-3">
-                  <Input value={quickSymbol} onChange={e => setQuickSymbol(e.target.value)} placeholder="EURUSD" />
+                  <SymbolCombobox value={quickSymbol} onChange={setQuickSymbol} placeholder="Search symbol..." />
                   <Select value={quickDirection} onValueChange={setQuickDirection}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>

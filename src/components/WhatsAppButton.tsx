@@ -9,12 +9,17 @@ interface WhatsAppButtonProps {
   icon?: ReactNode;
   className?: string;
   variant?: 'default' | 'outline' | 'secondary';
+  /** "channel" opens the public WhatsApp channel; "dm" opens a 1:1 chat with the business number. Defaults to "channel". */
+  mode?: 'channel' | 'dm';
 }
 
 const WHATSAPP_NUMBER = "27658323910";
+const WHATSAPP_CHANNEL_URL = "https://whatsapp.com/channel/0029VaY0Klp9Gv7VhypIt61A";
 
-export default function WhatsAppButton({ keyword, label, description, icon, className, variant = 'outline' }: WhatsAppButtonProps) {
-  const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(keyword)}`;
+export default function WhatsAppButton({ keyword, label, description, icon, className, variant = 'outline', mode = 'channel' }: WhatsAppButtonProps) {
+  const url = mode === 'channel'
+    ? WHATSAPP_CHANNEL_URL
+    : `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(keyword)}`;
 
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className={className}>
