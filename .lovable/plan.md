@@ -1,230 +1,122 @@
-# Plan: Default Mentor Linking, MetaAPI Provisioning Fix, MT Terminal Copy Trading & UI Polish
+# Comprehensive Fix & Polish Pass
 
-## 1. Auto-link direct registrants to the main mentor ([mphoforex5@gmail.com](mailto:mphoforex5@gmail.com))
+This plan addresses the 9 issues you raised, in priority order.
 
-**Goal:** Users who register directly (no `/ref/:slug`) should be silently linked to the default mentor `KHUMO AI COPY TRADING` (slug: `apex-copy-trading-m9ef`). Their **Home** stays the HuMi dashboard, but clicking **Mentor Center** opens the **client view** (`/mentor-dashboard`), not the mentor's admin view.
+## 1. Trading Ideas — Full Symbol Catalog
 
-### DB
+Today `MentorCenter` and `MentorHub` use plain text inputs / a tiny built-in symbol list when posting ideas. The full catalog (170+ symbols, including `USD/ZAR`, exotics, indices, metals, synthetics, crypto, stocks) already exists in `src/config/watchlist.ts` (`COMPREHENSIVE_WATCHLIST` / `ALL_SYMBOLS`).
 
-- Migration: insert a config row in a new `app_settings` table (key `default_mentor_slug` = `apex-copy-trading-m9ef`) so the default can be changed later without a redeploy.
-- New trigger / edge function `link-default-mentor`: on new auth user, if no `mentor_clients` row exists for them after 5s (no referral cookie was applied), insert one pointing at the default mentor's `id`.
+- Replace the symbol input in MentorCenter (idea form, quick-trade form) and MentorHub (post-idea & quick-trade) with a searchable Combobox sourced from `COMPREHENSIVE_WATCHLIST`, grouped by category (Major Forex, Minor Forex, Indices, Metals, Synthetics, Crypto, Stocks).
+- Allow free-text fallback (typing a custom symbol) for brokers that have niche pairs.
+- Apply same Combobox to the Admin signal-creation panel.
 
-### Frontend
+## 2. Mentor Center — Permission Denied / Duplicate Profile
 
-- `MentorContext.tsx`: when `mentor_clients` lookup returns the default-mentor record, set `isMentorClient = true` but also expose `isDefaultMentorClient` so that:
-  - `MentorAwareHome` in `App.tsx` does **NOT** redirect them to `/mentor-dashboard` (they keep the regular HuMi dashboard).
-  - The sidebar/bottom-nav "Mentor Center" link routes them to `/mentor-dashboard` (client view) instead of `/mentor-center` (which is the mentor admin tool).
-- `AppSidebar.tsx` + `BottomNav.tsx`: when `isMentor === false`, the "Mentor Center" entry points to `/mentor-dashboard`. Mentors keep `/mentor-center` and `/mentor-hub`.
+The main account `mphoforex5@gmail.com` already has a mentor profile (`KHUMO AI COPY TRADING`, slug `apex-copy-trading-m9ef`, admin role). The "permission denied for table mentor_profiles" comes from `MentorCenter` showing the create form on slow loads and the user submitting — INSERT then collides with the existing row, surfacing as RLS denial.
 
-## 2. Subscription prompt on Copy & Ideas tabs (MentorClientDashboard)
+- Add a unique constraint on `mentor_profiles.user_id` (one mentor profile per user).
+- In `MentorCenter.loadProfile`, await with a clear loading spinner; never render the "Create profile" form until load completes.
+- If a profile exists, route the user straight to the Edit view.
+- Auto-create a mentor profile on first visit for any user whose subscription tier is `mentor` (or who is admin), so they never see the create form blocking them. Brand name defaults to their display name; they can edit later.
+- Update the create handler to UPSERT on `user_id` (so a stale duplicate click is harmless) and surface friendlier errors.
+- Confirm RLS: the existing `Mentors can insert own profile` policy with `auth.uid() = user_id` is correct — no policy change needed.
 
-Currently only the Home "Connect Account" button gates on subscription. Add the same `showSubscribePrompt` check to:
+Also, since `apex-copy-trading-m9ef` is configured in `app_settings.default_mentor_slug`, every direct-signup HuMi user is already auto-linked to this main mentor via the `link_default_mentor` trigger. We will:
 
-- Ideas tab → "Execute" button.
-- Copy tab → "Activate Copy Trading" button.
-- Bot tab → activate-bot button.
+- Verify the trigger is currently attached (it is in code, but `db-triggers` shows none — re-attach it on `auth.users AFTER INSERT`).
+- Backfill `mentor_clients` rows for any existing direct-signup users not yet linked.
 
-If the user is on Free tier, open the existing upgrade dialog with copy explaining the required tier (Basic for copy/ideas execution; Professional+ for AI bot).
+## 3. Notification Deep-Links → 404
 
-## 3. Remove visible "metaapi" branding
+Notification rows include a `data.link` field (e.g. `/trading-ideas`, `/ai-auto-trading`) but the actual routes in `App.tsx` are `/ideas` and `/ai-trading`. Every click 404s.
 
-- `MentorHub.tsx` line 443 and `MentorClientDashboard.tsx` line 354: replace `<Badge>{acc.provider}</Badge>` with a helper `getProviderLabel(acc)` that maps `metaapi` → `MT4/MT5`, `deriv` → `Deriv`. Reuse the helper from `TradingIdeas.tsx` (already exists).
-- Audit and rename remaining user-visible "MetaAPI" strings in `TradingAccounts.tsx`, `brokerExecution.ts` log labels stay (internal), and `ConnectAccountModal` ("Trading Bridge" already).
+- Update the 5 DB notification triggers (`notify_new_signal`, `notify_trade_executed`, `notify_bot_assignment`, `notify_subscription_change`, `notify_account_connected`) to use the correct route paths: `/ideas`, `/ai-trading`, `/journal`, `/subscription`, `/accounts`, `/copy-trading`.
+- Add a small client-side route alias map in `TopHeader` and `Notifications` page so legacy `data.link` values from already-stored notifications still resolve (`/trading-ideas` → `/ideas`, `/ai-auto-trading` → `/ai-trading`, `/trading-accounts` → `/accounts`).
+- For ideas/bot trades, deep-link to the specific row (`/ideas?signal=<id>`, `/journal?trade=<id>`) and have the target page scroll/highlight that item.
 
-## 4. MetaAPI provisioning — enforce real account IDs
+## 4. WhatsApp Channel (not DM)
 
-**Problem in DB:** rows like `metaapi_account_id = '131'` and `'136373'` exist — these are MT login numbers, not MetaAPI UUIDs. The provisioning function returned a non-UUID id and we stored it.
+Today every `WhatsAppButton` opens `wa.me/<number>?text=KEYWORD` (a private DM).
 
-### Edge function `metaapi-provision-account`
+- Add a `mode: 'channel' | 'dm'` prop to `WhatsAppButton`.
+- The 4 dashboard tools (`COMMUNITY`, `SIGNALS`, `EA`, `MENTOR`) switch to `mode="channel"` and open `https://whatsapp.com/channel/0029VaY0Klp9Gv7VhypIt61A`.
+- Keep DM mode for any internal flows that genuinely need a 1:1 message (none on the dashboard right now).
 
-- Add strict validation: `metaapi_account_id` must match UUID regex `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i`. If not, run the `?query=login` lookup fallback (already partially there) and only persist a UUID. If still none, return `success: false` with a clear error so the client surfaces the failure instead of writing junk.
-- Also write `connection_status = 'failed'` on the client side when the function returns no UUID, so the user sees the broken state in `TradingAccounts`.
+## 5. Auto-Populate Trading Journal from Platform Trades
 
-### Backfill
+Today `trade_history` only fills via the Manual Entry dialog. Trades executed through Trading Ideas, Copy Trading, and the AI Bot go to MetaAPI/Deriv but never get written back.
 
-- Migration script: set `connection_status = 'failed'` and clear `metaapi_account_id` for rows where the value is not a UUID (logins `2001995049`, `47021450`). User can re-attempt connection.
+- In `src/services/brokerExecution.ts` (and `derivSignalExecution.ts`, `auto-execute-signal` edge function), after a successful execution, INSERT into `trade_history` with: `user_id`, `trading_account_id`, `symbol`, `direction`, `volume`, `entry_price`, `signal_id` (when applicable), `status='open'`, `executed_at=now()`, `comment` (`'Copy trade'` / `'AI bot'` / `'Trade idea'`).
+- Add a periodic sync (Journal page `useEffect` + a `metaapi-sync-history` edge function) that pulls the last 30 days of position closures from MetaAPI / Deriv and updates matching `trade_history` rows with `exit_price`, `profit_loss`, `closed_at`, `status='closed'`.
+- Journal page already reads from `trade_history` — once writes happen, all features (AI analysis, P&L, strategy detection) work automatically.
 
-### Client (`ConnectAccountModal.tsx`)
+## 6. Economic Calendar — Open Real News + TradingView
 
-- After invoking `metaapi-provision-account`, validate the returned id is a UUID before inserting into `trading_accounts`. Surface "Could not auto-provision — please retry or contact support" toast on failure.
+- Make each event row a clickable link that opens TradingView's economic calendar filtered by currency + date: `https://www.tradingview.com/economic-calendar/?currencies=<CCY>` (new tab).
+- Add a "View on TradingView" button in the card header.
+- For Khumo voice AI: extend `khumo-chat` and `voice-ai-assistant` edge functions with a price-lookup tool that calls TradingView quote endpoint + falls back to MetaAPI `metaapi-get-positions`/symbol price for connected accounts. When the user asks "what's the current price of XAUUSD?", Khumo fetches live and reads it back.
 
-## 5. Copy trading from the MT4/MT5 terminal (mirror trades placed in MetaTrader)
+## 7. Read-Only Paid Features for Free Users
 
-**Goal:** When a mentor places a trade directly inside MT4/MT5 on their master account, the trade should appear on every linked client's account automatically.
+Free-tier users currently get blocked at the route level (`PaidRoute` redirects to `/subscription`). You want them to *see* the page and only get blocked on action.
 
-### Architecture
+- Replace `PaidRoute` with `ProtectedRoute` for `/ideas`, `/copy-trading`, `/ai-trading`. The pages stay accessible to free users.
+- Inside each page, on every action button (Execute Trade, Connect Master, Activate Bot), check `useSubscription().isFree`. If true, instead of executing, open the existing `UpgradePrompt` dialog (used in `SubscriptionGuard`) with a contextual message and a "View Plans" CTA → `/subscription`.
+- Add a thin "Free preview — upgrade to execute" banner at the top of each page when the user is free.
 
-We already have CopyFactory enabling (`metaapi-enable-copy-factory`) and a `copy-trade-listener` that fires from app-published signals. We need a server-side **broker-side** listener:
+## 8. Training Center — Real Course Links
 
-1. **Provider strategy creation** (one-time per master account): when a mentor toggles `is_master = true`, call `metaapi-enable-copy-factory` (PROVIDER role) and `copyfactory-create-strategy`. Store the strategy id on `trading_accounts.copyfactory_strategy_id` (new column).
-2. **Subscriber subscription**: when a client clicks "Activate Copy Trading", call `copyfactory-subscribe` to link their account to the mentor's strategy. CopyFactory then mirrors any trade the mentor places inside MT terminal automatically — no polling needed.
-3. **Resolving the mentor's master account:**
-  - Referred clients: use the master account belonging to `mentor_profiles.user_id` where `is_master = true`.
-  - Direct/default-mentor clients: use the master account of `mphoforex5@gmail.com`'s `mentor_profiles.user_id`. Currently `PXBTT` (login 1044161) is already flagged `is_master = true` ✅. Here we want to use the account that we have currently slected to be Copy Enabled (Users can copy that account's trades).  The Trading Account enabled was the best one connected and now we need it to be reconnected and attached on the MetaAPI Dashboard, e.g The Headway-Live Account was connected successfully at some point, but now after not having credits we are now unable to use the account, which seems to be removed or deprovisioned, this account shows on the MetaAPI Dashboard but we cannot connect to the broker (Through MetaAPI) this shouldn't happen at all with linked trading accounts.
+DB shows 20 lessons, only 8 have URLs, only 5 are advanced.
 
-### Schema additions (migration)
+- Curate a vetted list of YouTube videos / PDFs per topic (forex basics, technical analysis, risk management, smart money concepts, ICT, Wyckoff, options, synthetic indices, MT5 usage, etc.) — published creators with stable links.
+- Insert/update `training_content` rows so every lesson has a real `url`, with at least 5 lessons per difficulty (beginner / intermediate / advanced).
+- Add an in-page video embed for YouTube URLs and a PDF preview iframe for PDF URLs.
+- Verify each link resolves before saving (manual QA list in the migration).
 
-```sql
-ALTER TABLE trading_accounts ADD COLUMN copyfactory_strategy_id text;
-ALTER TABLE copy_trading_relationships ADD COLUMN copyfactory_subscriber_id text;
+## 9. End-to-End Verification & App Overview Document
+
+- **Browser-test**: Log in as the main mentor, walk through Add Account, post Trading Idea, set up Copy Trading, activate AI Bot, click each dashboard WhatsApp tool, click each notification, open economic calendar event, complete one training lesson. Capture screenshots; report any breakage.
+- **Generate `/mnt/documents/HUMI_APP_OVERVIEW.md**` — a single marketing-ready document covering: what the app does, every page (purpose, status, completeness %), mentor model, client model, monetisation, integrations (MetaAPI, Deriv, TradingView, Yoco, Bankii, ElevenLabs), what's polished, what still needs work, and recommended go-to-market positioning.
+- Deliver the overview via a `presentation-artifact` link.
+
+## Technical Details
+
+```text
+Database
+├── ALTER TABLE mentor_profiles ADD CONSTRAINT mentor_profiles_user_id_key UNIQUE (user_id)
+├── CREATE TRIGGER on auth.users → public.link_default_mentor (re-attach)
+├── UPDATE all 5 notification trigger funcs → fix link paths
+└── INSERT/UPDATE training_content (curated YouTube + PDF set)
+
+Edge functions
+├── metaapi-sync-history  (new) — closes journal trades with real P&L
+├── khumo-chat            — add live-price tool
+└── voice-ai-assistant    — add live-price tool
+
+Frontend
+├── src/components/SymbolCombobox.tsx  (new, reusable)
+├── src/pages/MentorCenter.tsx         — UPSERT, gated render
+├── src/pages/MentorHub.tsx            — symbol combobox
+├── src/pages/AdminPanel.tsx           — symbol combobox in signal form
+├── src/components/WhatsAppButton.tsx  — channel mode
+├── src/pages/Index.tsx                — channel buttons
+├── src/components/EconomicCalendar.tsx — TradingView links
+├── src/pages/TradingIdeas.tsx, CopyTradingNew.tsx, AIAutoTrading.tsx
+│                                      — read-only mode for free tier
+├── src/pages/Journal.tsx              — auto-load synced trades
+├── src/services/brokerExecution.ts    — write trade_history on execute
+├── src/services/derivSignalExecution.ts — same
+├── src/components/TopHeader.tsx       — notification link alias map
+├── src/pages/Notifications.tsx        — same alias map + click-to-open
+└── src/App.tsx                        — /ideas, /copy-trading, /ai-trading
+                                         move from PaidRoute → ProtectedRoute
 ```
 
-### Edge function changes
+No new secrets required (all existing: METAAPI_TOKEN, ELEVENLABS_API_KEY, etc.).
 
-- `copyfactory-create-strategy`: ensure strategy is created/idempotent on master toggle. Persist `copyfactory_strategy_id`.
-- `copyfactory-subscribe`: on client activation, register subscription with multiplier 1.0 (configurable later). Persist subscriber id.
-- Remove the in-app polling fallback path for MT-terminal trades — CopyFactory handles mirroring server-side.
+## Out of Scope (Flag for Now and Implement immediately)
 
-### Frontend
+- Real-time sync of trades closed *outside* HuMi requires a CopyFactory webhook; we will poll every 5 min instead in this pass.
+- TradingView "embedded news" requires a paid TradingView Charting Library license — we will deep-link to the public TradingView site instead.
 
-- `MentorClientDashboard.tsx` "Activate Copy Trading": after the subscription tier check, call `copyfactory-subscribe` with `{ masterAccountId, followerAccountId }`. Show success toast: "You're now mirroring [mentor]'s MetaTrader trades automatically."
-- `MentorHub.tsx`: when mentor toggles `is_master`, call `enable-copy-factory` then `create-strategy`. Surface strategy status badge on the master account card.
-
-## 6. Mobile UI polish (Mentor Center, Mentor Hub, Admin Panel)
-
-- Wrap top-level tab lists in `<div className="overflow-x-auto -mx-4 px-4">` with `whitespace-nowrap` on `TabsList` so tabs scroll horizontally on phones (already partial in MentorCenter — extend to MentorHub + AdminPanel).
-- Admin Panel `UserManagementTab.tsx`: convert action button row to `flex flex-wrap gap-2`; make the table horizontally scrollable (`overflow-x-auto`); shrink action labels to icons-only below `sm` breakpoint.
-- Same treatment for `MentorManagementTab.tsx` and `TransferMonitoringTab.tsx`.
-
-## Implementation Order
-
-1. Migration: backfill bad `metaapi_account_id` rows; add `copyfactory_strategy_id` & `copyfactory_subscriber_id` columns; add `app_settings` table with default mentor slug.
-2. Fix `metaapi-provision-account` UUID validation + client validation in `ConnectAccountModal`.
-3. Default-mentor auto-link (DB trigger + `MentorContext` flag + nav routing).
-4. Provider-label helper, replace `acc.provider` badges in MentorHub & MentorClientDashboard.
-5. Subscription prompts on Ideas/Copy/Bot tabs in MentorClientDashboard.
-6. CopyFactory wiring: master toggle creates strategy; client activate subscribes.
-7. Mobile responsiveness pass on Admin Panel, Mentor Hub, Mentor Center tabs/tables.
-
-## Out of scope (flag to user)
-
-- Building a brand-new MetaAPI account from broker credentials with zero MetaAPI charges — provisioning still consumes MetaAPI credits per account; no way around that.
-- Rewriting Deriv copy trading (this plan only covers MT4/MT5 → MT4/MT5 via CopyFactory).  
-  
-MetaAPI Account Health, De‑Provisioning Detection & Repair System
-  **Admin Panel Only**
-  ---
-  ## Objective
-  Implement a **robust, admin‑only MetaAPI account health and recovery system** that allows **Admins (and only Admins)** to:
-  - See all broken, paused, or de‑provisioned MetaAPI trading accounts
-  - Understand *why* an account is broken
-  - Fix or recover accounts using **clear buttons and guided instructions**
-  - Never lose visibility of an account due to MetaAPI credit loss or de‑provisioning
-  - Avoid silent failures or “ghost” accounts
-  This system **must integrate only into the Admin Panel**.  
-  No client or mentor UI changes are required.
-  ---
-  ## 1️⃣ Core Requirement: Persistent Account Visibility
-  **Trading accounts must never disappear or silently fail**, even if:
-  - MetaAPI credits are exhausted
-  - MetaAPI de‑provisions or pauses the account
-  - The account cannot sync or connect
-  - Credentials become invalid
-  Instead:
-  - Accounts remain visible
-  - Accounts are marked with a **clear health state**
-  - Admins are given tools to fix them
-  ---
-  ## 2️⃣ Computed MetaAPI Health Status (Admin‑Only)
-  Introduce a **computed account health state** derived from live MetaAPI responses, **not only stored DB flags**.
-  ### Derived Field (computed)
-  `metaapi_health_status`
-  Allowed values:
-  - `healthy`
-  - `metaapi_deprovisioned`
-  - `metaapi_paused`
-  - `insufficient_metaapi_credits`
-  - `credentials_invalid`
-  - `connection_failed`
-  - `unknown_error`
-  ✅ This value is **computed on demand** (and optionally cached), not blindly trusted from old data.
-  ---
-  ## 3️⃣ Detection Logic (Admin Panel)
-  Create an **Admin‑only MetaAPI Health Check** that runs when:
-  - Admin opens the Trading Accounts section
-  - Admin views an individual trading account
-  - Admin presses a “Refresh Status” button
-  ### Detection Rules
-
-  | MetaAPI Response              | Health Status                  |
-  | ----------------------------- | ------------------------------ |
-  | Valid MetaAPI UUID + sync OK  | `healthy`                      |
-  | Account not found / 404       | `metaapi_deprovisioned`        |
-  | Insufficient credits error    | `insufficient_metaapi_credits` |
-  | Account paused                | `metaapi_paused`               |
-  | Invalid broker login/password | `credentials_invalid`          |
-  | Sync/connection failure       | `connection_failed`            |
-  | Any other error               | `unknown_error`                |
-
-  🚨 **Never overwrite** `metaapi_account_id` **with MT login numbers**  
-  🚨 **Never mark an account “ok” without validating the UUID**
-  ---
-  ## 4️⃣ Admin Panel UI Requirements (Only Admins)
-  ### Trading Accounts Table (Admin)
-  Add:
-  - Column: **MetaAPI Status**
-  - Colored badge for each status
-  - Filter: **Show only unhealthy accounts**
-  - Summary badge in admin header:  
-  “⚠ X MetaAPI accounts need attention”
-  ---
-  ## 5️⃣ Admin Repair Actions (Buttons)
-  For each unhealthy account, show **context‑aware actions**:
-  ### Always Available
-  - **Refresh Status**
-  - **Open MetaAPI Dashboard** (deep link)
-  ### Conditionally Available
-  - **Retry Provisioning**
-  - **Reconnect Account**
-  - **Mark as Inactive** (soft‑disable, no deletion)
-  Buttons must be **safe**, **idempotent**, and clearly labeled.
-  ---
-  ## 6️⃣ Guided Fix Modal (Critical)
-  Clicking **“Fix Account”** opens an **Admin‑only diagnostic modal**.
-  ### Modal Content (Dynamic)
-  #### Example: De‑Provisioned Account
-  > 🔴 This trading account has been de‑provisioned on MetaAPI.
-  **Possible causes**
-  - MetaAPI credits exhausted
-  - Account paused or removed in MetaAPI dashboard
-  **Steps to fix**
-  1. Open the MetaAPI dashboard via the button below
-  2. Ensure sufficient credits are available
-  3. Re‑enable or recreate the account
-  4. Return here and click **Reconnect**
-  Include:
-  - “Open MetaAPI Dashboard” button
-  - “Reconnect” button
-  - Last known MetaAPI error message
-  ✅ Modal content must vary based on `metaapi_health_status`.
-  ---
-  ## 7️⃣ Strict Provisioning & Reconnection Rules
-  ### Hard Rules
-  - If MetaAPI does **not** return a UUID → provisioning fails
-  - On failure:
-    - Set `connection_status = 'failed'`
-    - Update `metaapi_health_status`
-    - Show failure clearly in Admin Panel
-  ### Never:
-  - Store MT login numbers as MetaAPI IDs
-  - Silently retry without admin visibility
-  ---
-  ## 8️⃣ Optional but Recommended: Admin Alerting
-  - Scheduled job checks MetaAPI health (e.g. every X hours)
-  - Newly broken accounts flagged automatically
-  - Admin header shows alert count
-  ---
-  ## 9️⃣ UX Principle (Admin Panel)
-  > **Admins must immediately see what is broken, why it’s broken, and how to fix it.**
-  No logs required.  
-  No guesswork.  
-  No silent failures.
-  ---
-  ## ✅ Final Outcome
-  After this implementation:
-  - All MetaAPI failures are visible in the **Admin Panel**
-  - De‑provisioned accounts are clearly flagged
-  - Admins can fix or reconnect accounts with buttons or guided steps
-  - MetaAPI credit issues are never confusing or hidden
-  - Copy trading and execution issues are easier to diagnose
-  - Support and debugging time is dramatically reduced
+Approve this plan and I will implement all 9 items in one pass.
