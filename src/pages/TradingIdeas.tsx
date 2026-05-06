@@ -231,6 +231,7 @@ export default function TradingIdeas() {
   return (
     <AppLayout>
       <div className="space-y-6">
+        <FreeTierBanner feature="trade ideas" />
         <div>
           <h1 className="text-3xl font-bold text-foreground">Trading Ideas</h1>
           <p className="text-muted-foreground mt-2">
