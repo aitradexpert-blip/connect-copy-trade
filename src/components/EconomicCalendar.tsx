@@ -180,10 +180,16 @@ export default function EconomicCalendar({ className, compact = false }: Economi
           </div>
         ) : (
           <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {filteredEvents.map((event, index) => (
-              <div 
+            {filteredEvents.map((event, index) => {
+              const tvUrl = `https://www.tradingview.com/economic-calendar/?currencies=${encodeURIComponent(event.currency || '')}`;
+              return (
+              <a 
                 key={index} 
-                className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                href={tvUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted hover:border-primary/40 border border-transparent transition-colors group"
+                title="Open on TradingView"
               >
                 <div className="flex items-center gap-3">
                   <div className="text-center min-w-[60px]">
@@ -198,7 +204,8 @@ export default function EconomicCalendar({ className, compact = false }: Economi
                   <div className="border-l pl-3 border-border">
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{event.currency}</Badge>
-                      <span className="font-medium">{event.event_name}</span>
+                      <span className="font-medium group-hover:text-primary transition-colors">{event.event_name}</span>
+                      <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 flex gap-4">
                       {event.forecast && (
@@ -227,8 +234,9 @@ export default function EconomicCalendar({ className, compact = false }: Economi
                   {event.impact === 3 && <TrendingUp className="w-3 h-3 mr-1" />}
                   {getImpactLabel(event.impact)}
                 </Badge>
-              </div>
-            ))}
+              </a>
+              );
+            })}
           </div>
         )}
       </CardContent>
