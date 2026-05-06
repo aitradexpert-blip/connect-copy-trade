@@ -121,10 +121,18 @@ export default function EconomicCalendar({ className, compact = false }: Economi
               Upcoming market-moving events for the next 7 days
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={loadEvents} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <a href="https://www.tradingview.com/economic-calendar/" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4 mr-2" />
+                TradingView
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadEvents} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
