@@ -6,6 +6,8 @@
  import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
  import { Bell, Check, CheckCheck, TrendingUp, Bot, Users, Settings } from "lucide-react";
  import { useNotifications, Notification } from "@/hooks/useNotifications";
+ import { resolveNotificationLink } from "@/lib/notificationLink";
+ import { useNavigate } from "react-router-dom";
  import { formatDistanceToNow } from "date-fns";
  
  const NOTIFICATION_ICONS: Record<string, React.ReactNode> = {
@@ -33,10 +35,17 @@
    onMarkAsRead: (id: string) => void;
  }) {
    const icon = NOTIFICATION_ICONS[notification.type] || NOTIFICATION_ICONS.SYSTEM;
+   const navigate = useNavigate();
+   const link = resolveNotificationLink(notification.data?.link);
+   const handleOpen = () => {
+     if (!notification.read) onMarkAsRead(notification.id);
+     if (link) navigate(link);
+   };
    
    return (
      <div 
-       className={`p-4 rounded-lg border transition-colors ${
+       onClick={handleOpen}
+       className={`p-4 rounded-lg border transition-colors cursor-pointer hover:border-primary/40 ${
          notification.read 
            ? 'bg-background border-border' 
            : 'bg-primary/5 border-primary/20'
@@ -60,7 +69,7 @@
            <Button 
              variant="ghost" 
              size="sm"
-             onClick={() => onMarkAsRead(notification.id)}
+             onClick={(e) => { e.stopPropagation(); onMarkAsRead(notification.id); }}
            >
              <Check className="w-4 h-4" />
            </Button>

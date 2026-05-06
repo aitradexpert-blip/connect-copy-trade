@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "@/hooks/useNotifications";
+import { resolveNotificationLink } from "@/lib/notificationLink";
 import { formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
@@ -98,10 +99,11 @@ export function TopHeader() {
                      <div 
                        key={notification.id} 
                        className={`p-3 hover:bg-muted/50 cursor-pointer ${!notification.read ? 'bg-primary/5' : ''}`}
-                       onClick={() => {
-                         if (!notification.read) markAsRead(notification.id);
-                         if (notification.data?.link) navigate(notification.data.link);
-                       }}
+                        onClick={() => {
+                          if (!notification.read) markAsRead(notification.id);
+                          const link = resolveNotificationLink(notification.data?.link);
+                          if (link) navigate(link);
+                        }}
                      >
                        <div className="flex items-start gap-2">
                          <div className="flex-1 min-w-0">
