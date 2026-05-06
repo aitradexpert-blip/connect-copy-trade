@@ -59,7 +59,7 @@ export default function MentorClientDashboard() {
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const {
     mentorBrandName, mentorId, mentorUserId, mentorMediaUrl, mentorMediaType,
-    mentorUiConfig, featureRenames, getFeatureName
+    mentorUiConfig, featureRenames, getFeatureName, isMentorClient
   } = useMentor();
 
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -76,9 +76,27 @@ export default function MentorClientDashboard() {
   const [riskPercent, setRiskPercent] = useState(1);
   const [showSubscribePrompt, setShowSubscribePrompt] = useState(false);
   const { subscription, isFree } = useSubscription();
+  
+  // Fallback mentor data for users not yet linked (shows default HuMi mentor)
+  const [fallbackMentor, setFallbackMentor] = useState<{
+    id: string;
+    user_id: string;
+    brand_name: string;
+    media_url: string | null;
+    media_type: string | null;
+    ui_config: Record<string, string>;
+  } | null>(null);
 
-  const primaryColor = mentorUiConfig?.primary_color || "#6366f1";
-  const secondaryColor = mentorUiConfig?.secondary_color || "#8b5cf6";
+  // Use mentor context or fallback to default mentor
+  const effectiveMentorId = mentorId || fallbackMentor?.id;
+  const effectiveMentorUserId = mentorUserId || fallbackMentor?.user_id;
+  const effectiveBrandName = mentorBrandName || fallbackMentor?.brand_name || 'HuMi Mentor Center';
+  const effectiveMediaUrl = mentorMediaUrl || fallbackMentor?.media_url;
+  const effectiveMediaType = mentorMediaType || fallbackMentor?.media_type;
+  const effectiveUiConfig = mentorUiConfig?.primary_color ? mentorUiConfig : (fallbackMentor?.ui_config || {});
+
+  const primaryColor = effectiveUiConfig?.primary_color || "#6366f1";
+  const secondaryColor = effectiveUiConfig?.secondary_color || "#8b5cf6";
 
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const isAndroid = /Android/.test(navigator.userAgent);
@@ -98,6 +116,42 @@ export default function MentorClientDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // If no mentor linked via context, fetch the default mentor from app_settings
+      let currentMentorId = mentorId;
+      let currentMentorUserId = mentorUserId;
+      
+      if (!currentMentorId) {
+        // Get default mentor slug from app_settings
+        const { data: setting } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'default_mentor_slug')
+          .maybeSingle();
+        
+        if (setting?.value) {
+          // Fetch the default mentor profile
+          const { data: defaultMentor } = await supabase
+            .from('mentor_profiles')
+            .select('id, user_id, brand_name, landing_page_media_url, landing_page_media_type, ui_config')
+            .eq('referral_slug', setting.value)
+            .eq('is_active', true)
+            .maybeSingle();
+          
+          if (defaultMentor) {
+            setFallbackMentor({
+              id: defaultMentor.id,
+              user_id: defaultMentor.user_id,
+              brand_name: defaultMentor.brand_name,
+              media_url: defaultMentor.landing_page_media_url,
+              media_type: defaultMentor.landing_page_media_type,
+              ui_config: (defaultMentor.ui_config as Record<string, string>) || {},
+            });
+            currentMentorId = defaultMentor.id;
+            currentMentorUserId = defaultMentor.user_id;
+          }
+        }
+      }
+
       // Load trading accounts
       const { data: accs } = await supabase
         .from('trading_accounts')
@@ -109,12 +163,12 @@ export default function MentorClientDashboard() {
       }
 
       // Load signals (mentor's + HuMi official)
-      if (mentorId) {
+      if (currentMentorId) {
         const { data: sigs } = await supabase
           .from('trading_signals')
           .select('id, symbol, direction, lot_size, stop_loss, take_profit, comment, created_at')
           .eq('status', 'active')
-          .or(`mentor_id.eq.${mentorId},mentor_id.is.null`)
+          .or(`mentor_id.eq.${currentMentorId},mentor_id.is.null`)
           .order('created_at', { ascending: false })
           .limit(20);
         setSignals((sigs || []) as Signal[]);
@@ -125,7 +179,7 @@ export default function MentorClientDashboard() {
         .from('copy_trading_relationships')
         .select('id, status, master_account_id, master_user_id')
         .eq('follower_user_id', user!.id)
-        .eq('master_user_id', mentorUserId || '')
+        .eq('master_user_id', currentMentorUserId || '')
         .maybeSingle();
       setCopyRelationship(copyData as CopyRelationship | null);
     } catch (err) {
@@ -213,11 +267,11 @@ export default function MentorClientDashboard() {
     }
     setActivatingCopy(true);
     try {
-      // Find mentor's master account
+      // Find mentor's master account (use effective mentor user ID which includes fallback)
       const { data: masterAcc } = await supabase
         .from('trading_accounts')
         .select('id, user_id')
-        .eq('user_id', mentorUserId || '')
+        .eq('user_id', effectiveMentorUserId || '')
         .eq('is_master', true)
         .maybeSingle();
 
@@ -272,11 +326,11 @@ export default function MentorClientDashboard() {
     <div className="min-h-screen bg-background">
       {/* Hero Header */}
       <div className="relative h-48 md:h-64 overflow-hidden">
-        {mentorMediaUrl ? (
-          mentorMediaType === 'video' ? (
-            <video src={mentorMediaUrl} autoPlay muted loop playsInline className="absolute inset-0 w-full h-full object-cover" />
+        {effectiveMediaUrl ? (
+          effectiveMediaType === 'video' ? (
+            <video src={effectiveMediaUrl} autoPlay muted loop playsInline className="absolute inset-0 w-full h-full object-cover" />
           ) : (
-            <img src={mentorMediaUrl} alt={mentorBrandName || ''} className="absolute inset-0 w-full h-full object-cover" />
+            <img src={effectiveMediaUrl} alt={effectiveBrandName || ''} className="absolute inset-0 w-full h-full object-cover" />
           )
         ) : (
           <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})` }} />
@@ -284,8 +338,8 @@ export default function MentorClientDashboard() {
         <div className="absolute inset-0 bg-black/50" />
         <div className="relative z-10 h-full flex items-end p-6">
           <div className="flex-1">
-            <h1 className="text-3xl md:text-4xl font-black text-white">{mentorBrandName || 'Mentor Center'}</h1>
-            <p className="text-white/70 mt-1">{mentorUiConfig?.welcome_text || 'Your trading dashboard'}</p>
+            <h1 className="text-3xl md:text-4xl font-black text-white">{effectiveBrandName}</h1>
+            <p className="text-white/70 mt-1">{effectiveUiConfig?.welcome_text || 'Your trading dashboard'}</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

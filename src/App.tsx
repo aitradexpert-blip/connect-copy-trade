@@ -77,12 +77,24 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Route for mentor clients (non-mentors) to view their mentor's dashboard
 const MentorDashboardRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { isMentor, loading: mentorLoading } = useMentor();
   if (loading || mentorLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!user) return <Navigate to="/auth" replace />;
   if (isMentor) return <Navigate to="/mentor-hub" replace />;
+  return <>{children}</>;
+};
+
+// Route that requires "mentor" subscription tier - only true mentors can access
+const MentorTierRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  const { tierName, loading: subLoading } = useSubscription();
+  if (loading || subLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  // Only allow users with mentor subscription tier
+  if (tierName !== 'mentor') return <Navigate to="/subscription?upgrade=mentor" replace />;
   return <>{children}</>;
 };
 
@@ -139,8 +151,8 @@ const App = () => (
                 {/* Home - mentor clients get branded dashboard */}
                 <Route path="/" element={<MentorAwareHome />} />
                 
-                {/* Mentor client dashboard (direct access) */}
-                <Route path="/mentor-dashboard" element={<MentorDashboardRoute><MentorClientDashboard /></MentorDashboardRoute>} />
+                {/* Mentor client dashboard - accessible by all authenticated users to view their mentor */}
+                <Route path="/mentor-dashboard" element={<ProtectedRoute><MentorClientDashboard /></ProtectedRoute>} />
 
                 {/* Free tier accessible routes (all authenticated users) */}
                 <Route path="/journal" element={<ProtectedRoute><Journal /></ProtectedRoute>} />
@@ -159,8 +171,8 @@ const App = () => (
                 <Route path="/analytics" element={<PaidRoute><Analytics /></PaidRoute>} />
                 <Route path="/wallet" element={<PaidRoute><CryptoWallet /></PaidRoute>} />
                 <Route path="/credits" element={<PaidRoute><CreditUsage /></PaidRoute>} />
-                <Route path="/mentor-center" element={<PaidRoute><MentorCenter /></PaidRoute>} />
-                <Route path="/mentor-hub" element={<PaidRoute><MentorHub /></PaidRoute>} />
+                <Route path="/mentor-center" element={<MentorTierRoute><MentorCenter /></MentorTierRoute>} />
+                <Route path="/mentor-hub" element={<MentorTierRoute><MentorHub /></MentorTierRoute>} />
 
                 {/* Admin routes */}
                 <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />

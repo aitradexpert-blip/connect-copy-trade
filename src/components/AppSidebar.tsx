@@ -147,25 +147,26 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 </>
               )}
-              {isMentor ? (
+              {/* Mentor Hub - only for mentor-tier users */}
+              {isMentor && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
-                    <NavLink to="/mentor-center" className={getNavCls}>
+                    <NavLink to="/mentor-hub" className={getNavCls}>
                       <Crown className="w-4 h-4" />
-                      {!collapsed && <span>Mentor Center</span>}
+                      {!collapsed && <span>Mentor Hub</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ) : isMentorClient ? (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/mentor-dashboard" className={getNavCls}>
-                      <Crown className="w-4 h-4" />
-                      {!collapsed && <span>Mentor Center</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ) : null}
+              )}
+              {/* Mentor Center (client view) - for ALL users to see their mentor */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink to="/mentor-dashboard" className={getNavCls}>
+                    <Crown className="w-4 h-4" />
+                    {!collapsed && <span>Mentor Center</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

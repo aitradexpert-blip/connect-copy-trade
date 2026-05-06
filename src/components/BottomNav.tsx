@@ -116,11 +116,12 @@ export function BottomNav() {
                 <CollapsibleContent className="space-y-1 pl-1">
                   <MenuButton icon={CreditCard} label="Subscription" onClick={() => navigateTo("/subscription")} />
                   <MenuButton icon={GraduationCap} label="Training Center" onClick={() => navigateTo("/training")} />
-                  {isMentor ? (
-                    <MenuButton icon={Crown} label="Mentor Center" onClick={() => navigateTo("/mentor-center")} />
-                  ) : isMentorClient ? (
-                    <MenuButton icon={Crown} label="Mentor Center" onClick={() => navigateTo("/mentor-dashboard")} />
-                  ) : null}
+                  {/* Mentor Hub - only for mentor-tier users */}
+                  {isMentor && (
+                    <MenuButton icon={Crown} label="Mentor Hub" onClick={() => navigateTo("/mentor-hub")} />
+                  )}
+                  {/* Mentor Center (client view) - for ALL users to see their mentor */}
+                  <MenuButton icon={Crown} label="Mentor Center" onClick={() => navigateTo("/mentor-dashboard")} />
                   {isAdmin && (
                     <>
                       <MenuButton icon={Send} label="Publish Ideas" onClick={() => navigateTo("/admin")} />
