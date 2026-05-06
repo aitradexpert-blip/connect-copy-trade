@@ -20,6 +20,7 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 import { getProviderLabel } from "@/lib/providerLabel";
+import { SymbolCombobox } from "@/components/SymbolCombobox";
 
 interface MentorProfile {
   id: string;
