@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useMentor } from "@/contexts/MentorContext";
 import { 
   LayoutDashboard, 
   TrendingUp, 
@@ -70,7 +69,6 @@ export function AppSidebar() {
   const currentPath = location.pathname;
   const collapsed = state === "collapsed";
   const isMentor = subscription?.plan_name === 'mentor';
-  const { isMentorClient } = useMentor();
 
   const isActive = (path: string) => currentPath === path;
   const getNavCls = ({ isActive }: { isActive: boolean }) =>
