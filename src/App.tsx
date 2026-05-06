@@ -151,10 +151,10 @@ const App = () => (
                 <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
-                {/* Paid tier routes */}
-                <Route path="/ideas" element={<PaidRoute><TradingIdeas /></PaidRoute>} />
-                <Route path="/copy-trading" element={<PaidRoute><CopyTrading /></PaidRoute>} />
-                <Route path="/ai-trading" element={<PaidRoute><AIAutoTrading /></PaidRoute>} />
+                {/* Read-only for free tier; execution is gated inside each page */}
+                <Route path="/ideas" element={<ProtectedRoute><TradingIdeas /></ProtectedRoute>} />
+                <Route path="/copy-trading" element={<ProtectedRoute><CopyTrading /></ProtectedRoute>} />
+                <Route path="/ai-trading" element={<ProtectedRoute><AIAutoTrading /></ProtectedRoute>} />
                 <Route path="/accounts" element={<PaidRoute><TradingAccounts /></PaidRoute>} />
                 <Route path="/analytics" element={<PaidRoute><Analytics /></PaidRoute>} />
                 <Route path="/wallet" element={<PaidRoute><CryptoWallet /></PaidRoute>} />
