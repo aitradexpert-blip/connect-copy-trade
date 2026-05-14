@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getDerivLoginUrl, validateDerivToken } from "@/services/derivAuth";
+import { invokeEdgeFunctionJson } from "@/lib/supabaseInvoke";
 import { ExternalLink, Wallet, Key, Loader2, Copy, Check, AlertCircle, Eye, EyeOff, Camera, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -153,33 +154,55 @@ export function ConnectAccountModal({
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('metaapi-provision-account', {
-        body: {
-          login: formData.login,
-          password: formData.password,
-          server: formData.server,
-          platform: formData.platform,
-          name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`
-        }
+      type ProvisionResult = {
+        success?: boolean;
+        metaapi_account_id?: string;
+        state?: string;
+        error?: string;
+        pending?: boolean;
+        code?: string;
+      };
+
+      const res = await invokeEdgeFunctionJson<ProvisionResult>("metaapi-provision-account", {
+        login: formData.login,
+        password: formData.password,
+        server: formData.server,
+        platform: formData.platform,
+        name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
       });
 
-      // Parse MetaAPI error body even on non-2xx (FunctionsHttpError hides it in error.context)
-      let parsed: any = data;
-      if (error && (error as any).context?.json) {
-        try { parsed = await (error as any).context.json(); } catch { /* noop */ }
-      } else if (error && (error as any).context?.text) {
-        try { parsed = JSON.parse(await (error as any).context.text()); } catch { /* noop */ }
+      if (!res.ok) {
+        toast({
+          title: "Connection Failed",
+          description: res.errorMessage || "Could not reach Trading Bridge. Deploy `metaapi-provision-account` and set METAAPI_TOKEN.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      const parsed = res.data;
+
+      if (parsed?.pending || parsed?.code === "PENDING") {
+        toast({
+          title: "MetaAPI is still processing",
+          description: parsed?.error || "Wait about one minute, then try again with the same credentials.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
       }
 
       if (!parsed?.success) {
         toast({
           title: "Connection Failed",
-          description: parsed?.error || parsed?.details || error?.message || "Failed to connect account. Please check your credentials.",
-          variant: "destructive"
+          description: parsed?.error || "Failed to connect account. Please check your credentials.",
+          variant: "destructive",
         });
         setIsLoading(false);
         return;
       }
+
       const data2 = parsed;
 
       // Validate UUID before persisting — never store MT login numbers as MetaAPI IDs
@@ -201,7 +224,7 @@ export function ConnectAccountModal({
           provider: 'metaapi',
           metaapi_account_id: data2.metaapi_account_id,
           name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
-          login: formData.login,
+          login: formData.login.replace(/\D/g, '') || formData.login,
           server: formData.server,
           platform: formData.platform,
           connection_type: 'metaapi',

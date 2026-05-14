@@ -70,8 +70,18 @@ Deno.serve(async (req) => {
       })
     }
 
+    const loginDigits = String(login).replace(/\D/g, '')
+    if (!loginDigits) {
+      return new Response(JSON.stringify({
+        error: 'Login must contain digits (MT account number)',
+        code: 'ValidationError',
+      }), {
+        status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+
     const transactionId = generateTransactionId()
-    console.log(`Provisioning account: login=${login}, server=${server}, platform=${platform}`)
+    console.log(`Provisioning account: login=${loginDigits}, server=${server}, platform=${platform}`)
 
     // Heuristic broker keywords help MetaAPI route to the correct broker pool
     const serverLower = String(server).toLowerCase()
@@ -79,14 +89,16 @@ Deno.serve(async (req) => {
     if (serverLower.includes('octa')) keywords.push('Octa Markets')
     if (serverLower.includes('headway')) keywords.push('Headway')
 
+    const magic = Math.floor(100000 + Math.random() * 899999)
+
     const provisionBody: Record<string, unknown> = {
-      name: name || `HuMi-${login}`,
+      name: name || `HuMi-${loginDigits}`,
       type: 'cloud-g2',
-      login: String(login),
+      login: loginDigits,
       password: password,
       server: server,
       platform: platform.toLowerCase(),
-      magic: 0,
+      magic,
       quoteStreamingIntervalInSeconds: 2.5,
       reliability: 'high',
     }
@@ -106,6 +118,24 @@ Deno.serve(async (req) => {
     const responseText = await response.text()
     console.log(`Response Status: ${response.status}`)
 
+    // MetaAPI returns 202 while broker auto-detection runs — do not treat as success with an id
+    if (response.status === 202) {
+      let msg = 'MetaAPI is still detecting broker settings. Please wait about one minute and try again.'
+      try {
+        const d = JSON.parse(responseText)
+        if (d?.message) msg = String(d.message)
+      } catch { /* noop */ }
+      return new Response(JSON.stringify({
+        success: false,
+        pending: true,
+        error: msg,
+        code: 'PENDING',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
+    }
+
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
     if (response.ok) {
@@ -118,12 +148,12 @@ Deno.serve(async (req) => {
 
         // Try to look up by login/server
         try {
-          const lookupResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts?query=${login}`, {
+          const lookupResp = await fetch(`${PROVISIONING_API_URL}/users/current/accounts?query=${loginDigits}`, {
             headers: { 'auth-token': token, 'Accept': 'application/json' },
           })
           if (lookupResp.ok) {
             const accounts = await lookupResp.json()
-            const match = accounts.find((a: any) => a.login === String(login) && a.server === server)
+            const match = accounts.find((a: any) => String(a.login) === loginDigits && a.server === server)
             const matchedId = match?._id || match?.id
             if (match && matchedId && UUID_RE.test(matchedId)) {
               metaapiAccountId = matchedId
@@ -189,7 +219,12 @@ Deno.serve(async (req) => {
       try { errorData = JSON.parse(responseText) } catch { errorData = { message: responseText, id: 'UNKNOWN_ERROR' } }
 
       const errorCode = errorData.id || errorData.code || 'UNKNOWN_ERROR'
-      const userMessage = ERROR_MESSAGES[errorCode] || errorData.message || 'Failed to connect account. Please try again.'
+      const detailStr = typeof errorData.details === 'string' ? errorData.details : ''
+      const userMessage =
+        ERROR_MESSAGES[detailStr] ||
+        ERROR_MESSAGES[String(errorCode)] ||
+        errorData.message ||
+        'Failed to connect account. Please try again.'
 
       console.error(`Error: code=${errorCode}, message=${errorData.message}`)
 

@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
+import { notifyMakeNewSignal } from "@/lib/makeWebhook";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramLeadsTab } from "@/components/admin/TelegramLeadsTab";
@@ -100,6 +101,23 @@ const Admin = () => {
 
       if (error) throw error;
 
+      try {
+        await notifyMakeNewSignal({
+          symbol: formData.symbol,
+          direction: formData.direction,
+          sl: signalData.stop_loss,
+          tp: signalData.take_profit,
+          comment: signalData.comment,
+        });
+      } catch (hookErr: unknown) {
+        const msg = hookErr instanceof Error ? hookErr.message : String(hookErr);
+        toast({
+          title: "Make.com webhook failed",
+          description: msg,
+          variant: "destructive",
+        });
+      }
+
       // Auto-execute for AI bots if enabled
       if (formData.auto_execute_for_bots && newSignal) {
         const { data: autoExecResult, error: autoExecError } = await supabase.functions.invoke('auto-execute-signal', {
@@ -118,10 +136,10 @@ const Admin = () => {
           });
         }
       } else {
-      toast({
-        title: "Idea published successfully!",
-        description: "Trading idea has been published.",
-      });
+        toast({
+          title: "Idea published successfully!",
+          description: "Trading idea has been published.",
+        });
       }
 
       // Reset form
