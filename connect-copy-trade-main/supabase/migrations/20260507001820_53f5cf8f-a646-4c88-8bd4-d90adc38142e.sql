@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS on_user_created_create_wallets ON auth.users;
