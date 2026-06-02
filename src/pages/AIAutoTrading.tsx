@@ -522,13 +522,25 @@ export default function AIAutoTrading() {
                 </label>
               </div>
 
-              <Button 
-                onClick={handleConfirmActivation}
-                disabled={!selectedAccount || !agreeTerms}
-                className="w-full bg-gradient-primary hover:opacity-90 transition-smooth"
-              >
-                Activate Bot
-              </Button>
+              {(() => {
+                const acc = accounts.find(a => a.id === selectedAccount);
+                const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                const ready = !!acc && (
+                  (acc.provider === 'deriv' && !!acc.deriv_token) ||
+                  (acc.provider === 'metaapi' && !!acc.metaapi_account_id && UUID_RE.test(acc.metaapi_account_id))
+                );
+                const disabled = !selectedAccount || !agreeTerms || !ready;
+                return (
+                  <Button
+                    onClick={handleConfirmActivation}
+                    disabled={disabled}
+                    title={!ready && selectedAccount ? 'Account must be fully connected to start copying.' : ''}
+                    className="w-full bg-gradient-primary hover:opacity-90 transition-smooth"
+                  >
+                    Activate Bot
+                  </Button>
+                );
+              })()}
             </div>
           </DialogContent>
         </Dialog>
