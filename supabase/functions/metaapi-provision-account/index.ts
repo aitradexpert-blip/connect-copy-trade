@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { login, password, server, platform, name } = await req.json()
+    const { login, password, server, platform, name, isMaster, email } = await req.json()
 
     if (!login || !password || !server || !platform) {
       return new Response(JSON.stringify({ 
@@ -188,6 +188,7 @@ Deno.serve(async (req) => {
             if (checkResp.ok) {
               const checkData = await checkResp.json()
               if (checkData.state === 'DEPLOYED') {
+                await maybeEnableCopyFactory(token, metaapiAccountId, isMaster, email)
                 return new Response(JSON.stringify({
                   success: true,
                   metaapi_account_id: metaapiAccountId,
@@ -202,6 +203,8 @@ Deno.serve(async (req) => {
             }
           } catch (e) { /* continue polling */ }
         }
+      } else {
+        await maybeEnableCopyFactory(token, metaapiAccountId, isMaster, email)
       }
 
       return new Response(JSON.stringify({
