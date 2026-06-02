@@ -243,18 +243,29 @@ export default function MentorHub() {
     }
     setPublishingSignal(true);
     try {
-      const { error } = await supabase.from('trading_signals').insert({
+      const lot = parseFloat(newLotSize) || 0.01;
+      const sl = newStopLoss ? parseFloat(newStopLoss) : null;
+      const tp = newTakeProfit ? parseFloat(newTakeProfit) : null;
+      const { data: sig, error } = await supabase.from('trading_signals').insert({
         symbol: newSymbol.toUpperCase().trim(),
         direction: newDirection,
-        lot_size: parseFloat(newLotSize) || 0.01,
-        stop_loss: newStopLoss ? parseFloat(newStopLoss) : null,
-        take_profit: newTakeProfit ? parseFloat(newTakeProfit) : null,
+        lot_size: lot,
+        stop_loss: sl,
+        take_profit: tp,
         comment: newComment || null,
         mentor_id: profile.id,
         status: 'active',
-      });
+        auto_to_ai_bot: broadcastToBot,
+        auto_to_copyfactory: broadcastToCopy,
+      }).select('id').single();
       if (error) throw error;
-      toast({ title: "Signal published!" });
+      if (sig) {
+        await broadcastSignal(
+          { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
+          { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
+        );
+      }
+      toast({ title: "Idea published & broadcast!" });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
       loadData();
