@@ -1240,6 +1240,8 @@ export type Database = {
       }
       trading_signals: {
         Row: {
+          auto_to_ai_bot: boolean
+          auto_to_copyfactory: boolean
           comment: string | null
           created_at: string
           direction: string
@@ -1256,6 +1258,8 @@ export type Database = {
           take_profit: number | null
         }
         Insert: {
+          auto_to_ai_bot?: boolean
+          auto_to_copyfactory?: boolean
           comment?: string | null
           created_at?: string
           direction: string
@@ -1272,6 +1276,8 @@ export type Database = {
           take_profit?: number | null
         }
         Update: {
+          auto_to_ai_bot?: boolean
+          auto_to_copyfactory?: boolean
           comment?: string | null
           created_at?: string
           direction?: string

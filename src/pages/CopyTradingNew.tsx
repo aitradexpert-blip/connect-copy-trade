@@ -451,6 +451,10 @@ export default function CopyTradingNew() {
       return;
     }
 
+    const masterTrader = masterTraders.find(m => m.account_id === masterAccountId);
+    const followerAcc = accounts.find(a => a.id === selectedAccount);
+    const isSelfCopy = !!masterTrader?.isOwn;
+
     try {
       const { error } = await supabase
         .from("copy_trading_relationships")
@@ -458,14 +462,17 @@ export default function CopyTradingNew() {
           follower_user_id: user?.id,
           follower_account_id: selectedAccount,
           master_account_id: masterAccountId,
+          master_user_id: user?.id, // allowed; RLS scoped by follower
           status: "active"
         });
 
       if (error) throw error;
 
       toast({
-        title: "Successfully following trader",
-        description: "You will now copy trades from this master account",
+        title: isSelfCopy ? "Self-copy activated" : "Successfully following trader",
+        description: isSelfCopy
+          ? `Trades from ${masterTrader?.name || 'Master'} will mirror into ${followerAcc?.name || 'this account'}.`
+          : "You will now copy trades from this master account",
       });
 
       loadData();
@@ -828,14 +835,25 @@ export default function CopyTradingNew() {
                                   </span>
                                 </div>
                               </div>
-                              <Button
-                                onClick={() => followTrader(trader.account_id)}
-                                disabled={!selectedAccount}
-                                className="bg-gradient-primary"
-                              >
-                                <Play className="w-4 h-4 mr-2" />
-                                Follow
-                              </Button>
+                              {(() => {
+                                const followerAcc = accounts.find(a => a.id === selectedAccount);
+                                const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                                const ready = !!followerAcc && (
+                                  (followerAcc.provider === 'deriv' && !!followerAcc.deriv_token) ||
+                                  (followerAcc.provider === 'metaapi' && !!followerAcc.metaapi_account_id && UUID_RE.test(followerAcc.metaapi_account_id))
+                                );
+                                return (
+                                  <Button
+                                    onClick={() => followTrader(trader.account_id)}
+                                    disabled={!ready}
+                                    title={ready ? '' : 'Account must be fully connected to start copying.'}
+                                    className="bg-gradient-primary"
+                                  >
+                                    <Play className="w-4 h-4 mr-2" />
+                                    {trader.isOwn ? 'Self-Copy' : 'Follow'}
+                                  </Button>
+                                );
+                              })()}
                             </div>
                             
                             {/* Real-time Stats */}

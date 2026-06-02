@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { login, password, server, platform, name } = await req.json()
+    const { login, password, server, platform, name, isMaster, email } = await req.json()
 
     if (!login || !password || !server || !platform) {
       return new Response(JSON.stringify({ 
@@ -188,6 +188,7 @@ Deno.serve(async (req) => {
             if (checkResp.ok) {
               const checkData = await checkResp.json()
               if (checkData.state === 'DEPLOYED') {
+                await maybeEnableCopyFactory(token, metaapiAccountId, isMaster, email)
                 return new Response(JSON.stringify({
                   success: true,
                   metaapi_account_id: metaapiAccountId,
@@ -202,6 +203,8 @@ Deno.serve(async (req) => {
             }
           } catch (e) { /* continue polling */ }
         }
+      } else {
+        await maybeEnableCopyFactory(token, metaapiAccountId, isMaster, email)
       }
 
       return new Response(JSON.stringify({
@@ -249,3 +252,40 @@ Deno.serve(async (req) => {
     })
   }
 })
+
+// Best-effort: enable CopyFactory PROVIDER + SUBSCRIBER roles for the main master account
+// (or any caller flagged isMaster:true) so they can broadcast strategies and self-follow.
+const MASTER_EMAILS = new Set(['mphoforex5@gmail.com'])
+async function maybeEnableCopyFactory(
+  token: string,
+  accountId: string,
+  isMaster?: boolean,
+  email?: string,
+) {
+  try {
+    const callerEmail = (email || '').toLowerCase()
+    if (!isMaster && !MASTER_EMAILS.has(callerEmail)) return
+    console.log(`Auto-enabling CopyFactory PROVIDER+SUBSCRIBER for ${accountId}`)
+    const resp = await fetch(
+      `${PROVISIONING_API_URL}/users/current/accounts/${accountId}/enable-copy-factory-api`,
+      {
+        method: 'POST',
+        headers: {
+          'auth-token': token,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          copyFactoryRoles: ['PROVIDER', 'SUBSCRIBER'],
+          copyFactoryResourceSlots: 1,
+        }),
+      },
+    )
+    if (!resp.ok && resp.status !== 204) {
+      const t = await resp.text()
+      console.warn('Auto-enable CopyFactory non-success:', resp.status, t)
+    }
+  } catch (e) {
+    console.warn('Auto-enable CopyFactory failed (non-fatal):', e)
+  }
+}

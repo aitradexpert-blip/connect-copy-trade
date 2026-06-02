@@ -20,6 +20,8 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 import { getProviderLabel } from "@/lib/providerLabel";
+import { broadcastSignal } from "@/services/signalBroadcast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 
 interface MentorProfile {
@@ -112,6 +114,8 @@ export default function MentorHub() {
   const [quickDirection, setQuickDirection] = useState("BUY");
   const [quickLotSize, setQuickLotSize] = useState("0.01");
   const [executingQuickTrade, setExecutingQuickTrade] = useState(false);
+  const [broadcastToBot, setBroadcastToBot] = useState(true);
+  const [broadcastToCopy, setBroadcastToCopy] = useState(true);
 
   const primaryColor = profile?.ui_config?.primary_color || "#6366f1";
   const secondaryColor = profile?.ui_config?.secondary_color || "#8b5cf6";
@@ -239,18 +243,29 @@ export default function MentorHub() {
     }
     setPublishingSignal(true);
     try {
-      const { error } = await supabase.from('trading_signals').insert({
+      const lot = parseFloat(newLotSize) || 0.01;
+      const sl = newStopLoss ? parseFloat(newStopLoss) : null;
+      const tp = newTakeProfit ? parseFloat(newTakeProfit) : null;
+      const { data: sig, error } = await supabase.from('trading_signals').insert({
         symbol: newSymbol.toUpperCase().trim(),
         direction: newDirection,
-        lot_size: parseFloat(newLotSize) || 0.01,
-        stop_loss: newStopLoss ? parseFloat(newStopLoss) : null,
-        take_profit: newTakeProfit ? parseFloat(newTakeProfit) : null,
+        lot_size: lot,
+        stop_loss: sl,
+        take_profit: tp,
         comment: newComment || null,
         mentor_id: profile.id,
         status: 'active',
-      });
+        auto_to_ai_bot: broadcastToBot,
+        auto_to_copyfactory: broadcastToCopy,
+      }).select('id').single();
       if (error) throw error;
-      toast({ title: "Signal published!" });
+      if (sig) {
+        await broadcastSignal(
+          { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
+          { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
+        );
+      }
+      toast({ title: "Idea published & broadcast!" });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
       loadData();
@@ -323,10 +338,11 @@ export default function MentorHub() {
     if (!profile || !quickSymbol.trim()) return;
     setExecutingQuickTrade(true);
     try {
+      const lot = parseFloat(quickLotSize) || 0.01;
       const { data: sig, error: sigErr } = await supabase.from('trading_signals').insert({
         symbol: quickSymbol.toUpperCase().trim(),
         direction: quickDirection,
-        lot_size: parseFloat(quickLotSize) || 0.01,
+        lot_size: lot,
         mentor_id: profile.id,
         status: 'active',
         comment: 'Quick trade from Mentor Hub',
@@ -339,8 +355,14 @@ export default function MentorHub() {
           body: { signal_id: sig.id, master_user_id: user!.id }
         });
       }
+      if (sig) {
+        await broadcastSignal(
+          { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Hub' },
+          { toAiBot: true, toCopyFactory: true },
+        );
+      }
 
-      toast({ title: "Quick trade published & copied to followers!" });
+      toast({ title: "Quick trade published — AI Bot + Copy broadcast!" });
       setQuickSymbol("");
       loadData();
     } catch (err: any) {
@@ -558,17 +580,28 @@ export default function MentorHub() {
               onPublishIdea={async (suggestion) => {
                 if (!profile) return;
                 try {
-                  await supabase.from('trading_signals').insert({
+                  const sl = parseFloat(suggestion.stopLoss) || null;
+                  const tp = parseFloat(suggestion.takeProfit) || null;
+                  const { data: sig, error } = await supabase.from('trading_signals').insert({
                     symbol: suggestion.symbol,
                     direction: suggestion.direction,
                     lot_size: 0.01,
-                    stop_loss: parseFloat(suggestion.stopLoss) || null,
-                    take_profit: parseFloat(suggestion.takeProfit) || null,
+                    stop_loss: sl,
+                    take_profit: tp,
                     comment: suggestion.analysis,
                     mentor_id: profile.id,
                     status: 'active',
-                  });
-                  toast({ title: "Idea Published!" });
+                    auto_to_ai_bot: true,
+                    auto_to_copyfactory: true,
+                  }).select('id').single();
+                  if (error) throw error;
+                  if (sig) {
+                    await broadcastSignal(
+                      { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: suggestion.analysis, mentor_id: profile.id },
+                      { toAiBot: true, toCopyFactory: true },
+                    );
+                  }
+                  toast({ title: "Idea Published — AI Bot + Copy broadcast!" });
                   loadData();
                 } catch (err: any) {
                   toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -577,30 +610,65 @@ export default function MentorHub() {
               onCopyTrade={async (suggestion) => {
                 if (!profile) return;
                 try {
+                  const sl = parseFloat(suggestion.stopLoss) || null;
+                  const tp = parseFloat(suggestion.takeProfit) || null;
                   const { data: sig } = await supabase.from('trading_signals').insert({
                     symbol: suggestion.symbol,
                     direction: suggestion.direction,
                     lot_size: 0.01,
-                    stop_loss: parseFloat(suggestion.stopLoss) || null,
-                    take_profit: parseFloat(suggestion.takeProfit) || null,
+                    stop_loss: sl,
+                    take_profit: tp,
                     comment: `Copy Trade: ${suggestion.analysis}`,
                     mentor_id: profile.id,
                     status: 'active',
+                    auto_to_ai_bot: true,
+                    auto_to_copyfactory: true,
                   }).select('id').single();
                   
                   if (sig) {
                     await supabase.functions.invoke('copy-trade-listener', {
                       body: { signal_id: sig.id, master_user_id: user!.id }
                     });
+                    await broadcastSignal(
+                      { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: `Copy Trade: ${suggestion.analysis}`, mentor_id: profile.id },
+                      { toAiBot: true, toCopyFactory: true },
+                    );
                   }
-                  toast({ title: "Signal copied to followers!" });
+                  toast({ title: "Signal broadcast to AI Bot + Copy followers!" });
                   loadData();
                 } catch (err: any) {
                   toast({ title: "Error", description: err.message, variant: "destructive" });
                 }
               }}
               onAddToBot={async (suggestion) => {
-                toast({ title: "Added to Bot Queue", description: `${suggestion.direction} ${suggestion.symbol} will be monitored by your AI Bot` });
+                if (!profile) return;
+                try {
+                  const sl = parseFloat(suggestion.stopLoss) || null;
+                  const tp = parseFloat(suggestion.takeProfit) || null;
+                  const { data: sig, error } = await supabase.from('trading_signals').insert({
+                    symbol: suggestion.symbol,
+                    direction: suggestion.direction,
+                    lot_size: 0.01,
+                    stop_loss: sl,
+                    take_profit: tp,
+                    comment: `AI Bot: ${suggestion.analysis}`,
+                    mentor_id: profile.id,
+                    status: 'active',
+                    auto_to_ai_bot: true,
+                    auto_to_copyfactory: true,
+                  }).select('id').single();
+                  if (error) throw error;
+                  if (sig) {
+                    await broadcastSignal(
+                      { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: `AI Bot: ${suggestion.analysis}`, mentor_id: profile.id },
+                      { toAiBot: true, toCopyFactory: true },
+                    );
+                  }
+                  toast({ title: "Sent to AI Bot + Copy", description: `${suggestion.direction} ${suggestion.symbol}` });
+                  loadData();
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                }
               }}
             />
 
@@ -656,6 +724,17 @@ export default function MentorHub() {
                       <div className="space-y-2">
                         <Label>Comment</Label>
                         <Textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Analysis notes..." />
+                      </div>
+                      <div className="space-y-2 p-3 rounded-lg bg-muted/40 border border-border">
+                        <p className="text-sm font-medium">Broadcast channels</p>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToBot} onCheckedChange={(v) => setBroadcastToBot(v === true)} />
+                          Broadcast to AI Bot subscribers
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToCopy} onCheckedChange={(v) => setBroadcastToCopy(v === true)} />
+                          Broadcast to Copy Trading subscribers
+                        </label>
                       </div>
                       <Button onClick={publishSignal} disabled={publishingSignal} className="w-full" style={{ backgroundColor: primaryColor }}>
                         {publishingSignal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}

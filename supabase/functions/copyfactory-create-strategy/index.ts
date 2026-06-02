@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
     console.log('Strategy payload:', JSON.stringify(strategyPayload, null, 2))
 
     // Use PUT to create/update strategy with the generated ID
-    const response = await fetch(`${COPYFACTORY_API_URL}/users/current/configuration/strategies/${strategyId}`, {
+    let response = await fetch(`${COPYFACTORY_API_URL}/users/current/configuration/strategies/${strategyId}`, {
       method: 'PUT',
       headers: {
         'auth-token': token,
@@ -174,9 +174,38 @@ Deno.serve(async (req) => {
       body: JSON.stringify(strategyPayload),
     })
 
-    const responseText = await response.text()
+    let responseText = await response.text()
     console.log(`CopyFactory response status: ${response.status}`)
     console.log(`CopyFactory response: ${responseText}`)
+
+    // Auto-recovery: if MetaAPI complains about missing PROVIDER role, enable it and retry once.
+    if (!response.ok && /copy.?factory.?role|copyFactoryRoles/i.test(responseText)) {
+      console.log('Auto-enabling PROVIDER role on account and retrying strategy creation...')
+      try {
+        const enableResp = await fetch(
+          `https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${accountId}/enable-copy-factory-api`,
+          {
+            method: 'POST',
+            headers: { 'auth-token': token, 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ copyFactoryRoles: ['PROVIDER'], copyFactoryResourceSlots: 1 }),
+          },
+        )
+        console.log('enable-copy-factory-api status:', enableResp.status)
+      } catch (e) {
+        console.warn('Auto-enable PROVIDER failed:', e)
+      }
+      response = await fetch(`${COPYFACTORY_API_URL}/users/current/configuration/strategies/${strategyId}`, {
+        method: 'PUT',
+        headers: {
+          'auth-token': token,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(strategyPayload),
+      })
+      responseText = await response.text()
+      console.log(`Retry status: ${response.status}, body: ${responseText}`)
+    }
 
     if (response.ok || response.status === 204) {
       // 204 No Content is a valid success response for PUT
