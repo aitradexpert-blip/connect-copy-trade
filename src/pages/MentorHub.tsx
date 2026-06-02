@@ -338,10 +338,11 @@ export default function MentorHub() {
     if (!profile || !quickSymbol.trim()) return;
     setExecutingQuickTrade(true);
     try {
+      const lot = parseFloat(quickLotSize) || 0.01;
       const { data: sig, error: sigErr } = await supabase.from('trading_signals').insert({
         symbol: quickSymbol.toUpperCase().trim(),
         direction: quickDirection,
-        lot_size: parseFloat(quickLotSize) || 0.01,
+        lot_size: lot,
         mentor_id: profile.id,
         status: 'active',
         comment: 'Quick trade from Mentor Hub',
@@ -354,8 +355,14 @@ export default function MentorHub() {
           body: { signal_id: sig.id, master_user_id: user!.id }
         });
       }
+      if (sig) {
+        await broadcastSignal(
+          { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Hub' },
+          { toAiBot: true, toCopyFactory: true },
+        );
+      }
 
-      toast({ title: "Quick trade published & copied to followers!" });
+      toast({ title: "Quick trade published — AI Bot + Copy broadcast!" });
       setQuickSymbol("");
       loadData();
     } catch (err: any) {
