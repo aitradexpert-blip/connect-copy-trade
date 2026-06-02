@@ -169,6 +169,7 @@ export function ConnectAccountModal({
         server: formData.server,
         platform: formData.platform,
         name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
+        email: user.email,
       });
 
       if (!res.ok) {
