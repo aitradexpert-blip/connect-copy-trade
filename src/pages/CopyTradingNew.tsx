@@ -451,6 +451,10 @@ export default function CopyTradingNew() {
       return;
     }
 
+    const masterTrader = masterTraders.find(m => m.account_id === masterAccountId);
+    const followerAcc = accounts.find(a => a.id === selectedAccount);
+    const isSelfCopy = !!masterTrader?.isOwn;
+
     try {
       const { error } = await supabase
         .from("copy_trading_relationships")
@@ -458,14 +462,17 @@ export default function CopyTradingNew() {
           follower_user_id: user?.id,
           follower_account_id: selectedAccount,
           master_account_id: masterAccountId,
+          master_user_id: user?.id, // allowed; RLS scoped by follower
           status: "active"
         });
 
       if (error) throw error;
 
       toast({
-        title: "Successfully following trader",
-        description: "You will now copy trades from this master account",
+        title: isSelfCopy ? "Self-copy activated" : "Successfully following trader",
+        description: isSelfCopy
+          ? `Trades from ${masterTrader?.name || 'Master'} will mirror into ${followerAcc?.name || 'this account'}.`
+          : "You will now copy trades from this master account",
       });
 
       loadData();
