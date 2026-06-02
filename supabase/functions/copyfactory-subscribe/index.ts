@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
     console.log('Subscriber payload:', JSON.stringify(subscriberPayload, null, 2))
 
     // Configure subscriber via PUT endpoint
-    const response = await fetch(
+    let response = await fetch(
       `${COPYFACTORY_API_URL}/users/current/configuration/subscribers/${subscriberId}`,
       {
         method: 'PUT',
@@ -119,9 +119,41 @@ Deno.serve(async (req) => {
       }
     )
 
-    const responseText = await response.text()
+    let responseText = await response.text()
     console.log(`CopyFactory subscribe response status: ${response.status}`)
     console.log(`CopyFactory subscribe response: ${responseText}`)
+
+    // Auto-recovery: if MetaAPI complains about SUBSCRIBER role, enable it and retry once.
+    if (!response.ok && /copy.?factory.?role|copyFactoryRoles/i.test(responseText)) {
+      console.log('Auto-enabling SUBSCRIBER role on subscriber account and retrying...')
+      try {
+        const enableResp = await fetch(
+          `https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai/users/current/accounts/${subscriberId}/enable-copy-factory-api`,
+          {
+            method: 'POST',
+            headers: { 'auth-token': token, 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ copyFactoryRoles: ['SUBSCRIBER'], copyFactoryResourceSlots: 1 }),
+          },
+        )
+        console.log('enable-copy-factory-api status:', enableResp.status)
+      } catch (e) {
+        console.warn('Auto-enable SUBSCRIBER failed:', e)
+      }
+      response = await fetch(
+        `${COPYFACTORY_API_URL}/users/current/configuration/subscribers/${subscriberId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'auth-token': token,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(subscriberPayload),
+        }
+      )
+      responseText = await response.text()
+      console.log(`Retry status: ${response.status}, body: ${responseText}`)
+    }
 
     if (response.ok || response.status === 204) {
       // 204 No Content is a valid success response
