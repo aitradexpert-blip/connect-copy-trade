@@ -1,1 +1,88 @@
 project_id = "tkgguyjoynnrsayfxzvj"
+
+[functions.metaapi-account-info]
+verify_jwt = false
+
+[functions.metaapi-provision-account]
+verify_jwt = false
+
+[functions.metaapi-enable-copy-factory]
+verify_jwt = false
+
+[functions.metaapi-execute-trade]
+verify_jwt = false
+
+[functions.metaapi-get-positions]
+verify_jwt = false
+
+[functions.metaapi-get-history]
+verify_jwt = false
+
+[functions.auto-execute-signal]
+verify_jwt = false
+
+[functions.copy-trade-listener]
+verify_jwt = false
+
+[functions.voice-ai-assistant]
+verify_jwt = false
+
+[functions.bankii-api]
+verify_jwt = false
+
+[functions.yoco-webhook]
+verify_jwt = false
+
+[functions.create-yoco-checkout]
+verify_jwt = false
+
+[functions.create-guest-checkout]
+verify_jwt = false
+
+[functions.deriv-execute-signal]
+verify_jwt = false
+
+[functions.deriv-copy-bridge]
+verify_jwt = false
+
+[functions.copyfactory-create-strategy]
+verify_jwt = false
+
+[functions.copyfactory-subscribe]
+verify_jwt = false
+
+[functions.copyfactory-list-strategies]
+verify_jwt = false
+
+[functions.elevenlabs-tts]
+verify_jwt = false
+
+[functions.khumo-chat]
+verify_jwt = false
+
+[functions.journal-analyze-trade]
+verify_jwt = false
+
+[functions.admin-list-users]
+verify_jwt = false
+
+[functions.metaapi-redeploy-account]
+verify_jwt = false
+
+[functions.close-all-trades]
+verify_jwt = false
+
+[functions.render-mentor-landing]
+verify_jwt = false
+
+[functions.admin-create-user]
+verify_jwt = false
+
+[functions.admin-update-subscription]
+verify_jwt = false
+
+[functions.telegram-webhook]
+verify_jwt = false
+
+[functions.telegram-broadcast]
+verify_jwt = false
