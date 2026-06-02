@@ -20,6 +20,8 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 import { getProviderLabel } from "@/lib/providerLabel";
+import { broadcastSignal } from "@/services/signalBroadcast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 
 interface MentorProfile {
@@ -112,6 +114,8 @@ export default function MentorHub() {
   const [quickDirection, setQuickDirection] = useState("BUY");
   const [quickLotSize, setQuickLotSize] = useState("0.01");
   const [executingQuickTrade, setExecutingQuickTrade] = useState(false);
+  const [broadcastToBot, setBroadcastToBot] = useState(true);
+  const [broadcastToCopy, setBroadcastToCopy] = useState(true);
 
   const primaryColor = profile?.ui_config?.primary_color || "#6366f1";
   const secondaryColor = profile?.ui_config?.secondary_color || "#8b5cf6";
