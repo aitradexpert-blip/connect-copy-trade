@@ -1,0 +1,2 @@
+ALTER TABLE public.trading_signals ADD COLUMN IF NOT EXISTS auto_to_copyfactory boolean NOT NULL DEFAULT true;
+ALTER TABLE public.trading_signals ADD COLUMN IF NOT EXISTS auto_to_ai_bot boolean NOT NULL DEFAULT true;
