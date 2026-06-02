@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { OctaFxPromoCard } from "@/components/OctaFxPromoCard";
+import { broadcastSignal } from "@/services/signalBroadcast";
 
 interface MentorProfile {
   id: string;
@@ -324,18 +325,29 @@ export default function MentorCenter() {
     }
     setPublishingSignal(true);
     try {
-      const { error } = await supabase.from('trading_signals').insert({
+      const lot = parseFloat(newLotSize) || 0.01;
+      const sl = newStopLoss ? parseFloat(newStopLoss) : null;
+      const tp = newTakeProfit ? parseFloat(newTakeProfit) : null;
+      const { data: sig, error } = await supabase.from('trading_signals').insert({
         symbol: newSymbol.toUpperCase().trim(),
         direction: newDirection,
-        lot_size: parseFloat(newLotSize) || 0.01,
-        stop_loss: newStopLoss ? parseFloat(newStopLoss) : null,
-        take_profit: newTakeProfit ? parseFloat(newTakeProfit) : null,
+        lot_size: lot,
+        stop_loss: sl,
+        take_profit: tp,
         comment: newComment || null,
         mentor_id: profile.id,
         status: 'active',
-      });
+        auto_to_ai_bot: true,
+        auto_to_copyfactory: true,
+      }).select('id').single();
       if (error) throw error;
-      toast({ title: "Signal published!" });
+      if (sig) {
+        await broadcastSignal(
+          { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
+          { toAiBot: true, toCopyFactory: true },
+        );
+      }
+      toast({ title: "Signal published — AI Bot + Copy broadcast!" });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
       loadProfile();
@@ -407,11 +419,12 @@ export default function MentorCenter() {
     if (!profile || !quickSymbol.trim()) return;
     setExecutingQuickTrade(true);
     try {
+      const lot = parseFloat(quickLotSize) || 0.01;
       // Publish signal
       const { data: sig, error: sigErr } = await supabase.from('trading_signals').insert({
         symbol: quickSymbol.toUpperCase().trim(),
         direction: quickDirection,
-        lot_size: parseFloat(quickLotSize) || 0.01,
+        lot_size: lot,
         mentor_id: profile.id,
         status: 'active',
         comment: 'Quick trade from Mentor Center',
@@ -425,8 +438,14 @@ export default function MentorCenter() {
           body: { signal_id: sig.id, master_user_id: user!.id }
         });
       }
+      if (sig) {
+        await broadcastSignal(
+          { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Center' },
+          { toAiBot: true, toCopyFactory: true },
+        );
+      }
 
-      toast({ title: "Quick trade published & copied to followers!" });
+      toast({ title: "Quick trade published — AI Bot + Copy broadcast!" });
       setQuickSymbol("");
       loadProfile();
     } catch (err: any) {
