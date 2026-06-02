@@ -580,17 +580,28 @@ export default function MentorHub() {
               onPublishIdea={async (suggestion) => {
                 if (!profile) return;
                 try {
-                  await supabase.from('trading_signals').insert({
+                  const sl = parseFloat(suggestion.stopLoss) || null;
+                  const tp = parseFloat(suggestion.takeProfit) || null;
+                  const { data: sig, error } = await supabase.from('trading_signals').insert({
                     symbol: suggestion.symbol,
                     direction: suggestion.direction,
                     lot_size: 0.01,
-                    stop_loss: parseFloat(suggestion.stopLoss) || null,
-                    take_profit: parseFloat(suggestion.takeProfit) || null,
+                    stop_loss: sl,
+                    take_profit: tp,
                     comment: suggestion.analysis,
                     mentor_id: profile.id,
                     status: 'active',
-                  });
-                  toast({ title: "Idea Published!" });
+                    auto_to_ai_bot: true,
+                    auto_to_copyfactory: true,
+                  }).select('id').single();
+                  if (error) throw error;
+                  if (sig) {
+                    await broadcastSignal(
+                      { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: suggestion.analysis, mentor_id: profile.id },
+                      { toAiBot: true, toCopyFactory: true },
+                    );
+                  }
+                  toast({ title: "Idea Published — AI Bot + Copy broadcast!" });
                   loadData();
                 } catch (err: any) {
                   toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -599,30 +610,65 @@ export default function MentorHub() {
               onCopyTrade={async (suggestion) => {
                 if (!profile) return;
                 try {
+                  const sl = parseFloat(suggestion.stopLoss) || null;
+                  const tp = parseFloat(suggestion.takeProfit) || null;
                   const { data: sig } = await supabase.from('trading_signals').insert({
                     symbol: suggestion.symbol,
                     direction: suggestion.direction,
                     lot_size: 0.01,
-                    stop_loss: parseFloat(suggestion.stopLoss) || null,
-                    take_profit: parseFloat(suggestion.takeProfit) || null,
+                    stop_loss: sl,
+                    take_profit: tp,
                     comment: `Copy Trade: ${suggestion.analysis}`,
                     mentor_id: profile.id,
                     status: 'active',
+                    auto_to_ai_bot: true,
+                    auto_to_copyfactory: true,
                   }).select('id').single();
                   
                   if (sig) {
                     await supabase.functions.invoke('copy-trade-listener', {
                       body: { signal_id: sig.id, master_user_id: user!.id }
                     });
+                    await broadcastSignal(
+                      { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: `Copy Trade: ${suggestion.analysis}`, mentor_id: profile.id },
+                      { toAiBot: true, toCopyFactory: true },
+                    );
                   }
-                  toast({ title: "Signal copied to followers!" });
+                  toast({ title: "Signal broadcast to AI Bot + Copy followers!" });
                   loadData();
                 } catch (err: any) {
                   toast({ title: "Error", description: err.message, variant: "destructive" });
                 }
               }}
               onAddToBot={async (suggestion) => {
-                toast({ title: "Added to Bot Queue", description: `${suggestion.direction} ${suggestion.symbol} will be monitored by your AI Bot` });
+                if (!profile) return;
+                try {
+                  const sl = parseFloat(suggestion.stopLoss) || null;
+                  const tp = parseFloat(suggestion.takeProfit) || null;
+                  const { data: sig, error } = await supabase.from('trading_signals').insert({
+                    symbol: suggestion.symbol,
+                    direction: suggestion.direction,
+                    lot_size: 0.01,
+                    stop_loss: sl,
+                    take_profit: tp,
+                    comment: `AI Bot: ${suggestion.analysis}`,
+                    mentor_id: profile.id,
+                    status: 'active',
+                    auto_to_ai_bot: true,
+                    auto_to_copyfactory: true,
+                  }).select('id').single();
+                  if (error) throw error;
+                  if (sig) {
+                    await broadcastSignal(
+                      { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: `AI Bot: ${suggestion.analysis}`, mentor_id: profile.id },
+                      { toAiBot: true, toCopyFactory: true },
+                    );
+                  }
+                  toast({ title: "Sent to AI Bot + Copy", description: `${suggestion.direction} ${suggestion.symbol}` });
+                  loadData();
+                } catch (err: any) {
+                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                }
               }}
             />
 
