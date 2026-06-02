@@ -725,6 +725,17 @@ export default function MentorHub() {
                         <Label>Comment</Label>
                         <Textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Analysis notes..." />
                       </div>
+                      <div className="space-y-2 p-3 rounded-lg bg-muted/40 border border-border">
+                        <p className="text-sm font-medium">Broadcast channels</p>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToBot} onCheckedChange={(v) => setBroadcastToBot(v === true)} />
+                          Broadcast to AI Bot subscribers
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToCopy} onCheckedChange={(v) => setBroadcastToCopy(v === true)} />
+                          Broadcast to Copy Trading subscribers
+                        </label>
+                      </div>
                       <Button onClick={publishSignal} disabled={publishingSignal} className="w-full" style={{ backgroundColor: primaryColor }}>
                         {publishingSignal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}
                         Publish Signal
