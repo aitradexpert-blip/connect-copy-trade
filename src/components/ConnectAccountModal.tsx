@@ -336,16 +336,18 @@ export function ConnectAccountModal({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
+        <div className="space-y-2 relative z-20">
           <Label htmlFor="server">Server *</Label>
-          <div className="relative">
+          <div className="relative z-20">
             <Input
               id="server"
               placeholder="ICMarketsSC-Demo"
               value={formData.server}
               onChange={(e) => setFormData({ ...formData, server: e.target.value })}
               list="server-suggestions"
+              autoComplete="off"
               required
+              className="relative z-20 bg-background"
             />
             <datalist id="server-suggestions">
               <option value="Headway-Real" />
@@ -360,10 +362,14 @@ export function ConnectAccountModal({
               <option value="FBS-Real" />
               <option value="FTMO-Demo" />
               <option value="OctaFX-Real" />
+              <option value="Weltrade-Live" />
+              <option value="Weltrade-Demo" />
+              <option value="Weltrade-ECN" />
             </datalist>
           </div>
+          <p className="text-xs text-muted-foreground">Type freely if your server isn't listed.</p>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 relative z-0">
           <Label htmlFor="platform">Platform *</Label>
           <Select 
             value={formData.platform} 
