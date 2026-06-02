@@ -828,14 +828,25 @@ export default function CopyTradingNew() {
                                   </span>
                                 </div>
                               </div>
-                              <Button
-                                onClick={() => followTrader(trader.account_id)}
-                                disabled={!selectedAccount}
-                                className="bg-gradient-primary"
-                              >
-                                <Play className="w-4 h-4 mr-2" />
-                                Follow
-                              </Button>
+                              {(() => {
+                                const followerAcc = accounts.find(a => a.id === selectedAccount);
+                                const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                                const ready = !!followerAcc && (
+                                  (followerAcc.provider === 'deriv' && !!followerAcc.deriv_token) ||
+                                  (followerAcc.provider === 'metaapi' && !!followerAcc.metaapi_account_id && UUID_RE.test(followerAcc.metaapi_account_id))
+                                );
+                                return (
+                                  <Button
+                                    onClick={() => followTrader(trader.account_id)}
+                                    disabled={!ready}
+                                    title={ready ? '' : 'Account must be fully connected to start copying.'}
+                                    className="bg-gradient-primary"
+                                  >
+                                    <Play className="w-4 h-4 mr-2" />
+                                    {trader.isOwn ? 'Self-Copy' : 'Follow'}
+                                  </Button>
+                                );
+                              })()}
                             </div>
                             
                             {/* Real-time Stats */}
