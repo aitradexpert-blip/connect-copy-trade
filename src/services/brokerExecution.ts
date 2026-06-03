@@ -398,18 +398,25 @@ export async function fetchTradingHistory(account: TradingAccount, days: number 
   const connectionType = getConnectionType(account);
   
   if (connectionType === 'metaapi' && account.metaapi_account_id) {
-    try {
-      const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const { data, error } = await supabase.functions.invoke('metaapi-get-history', {
-        body: { accountId: account.metaapi_account_id, startTime }
-      });
-      
-      if (error) throw error;
-      return data?.history || [];
-    } catch (error) {
-      console.error('[BrokerExecution] History fetch error:', error);
-      return [];
-    }
+    const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    return withFailover(
+      async () => {
+        const h: any = await primaryApi.getHistory(account.metaapi_account_id!, startTime);
+        return Array.isArray(h) ? h : (h?.history ?? []);
+      },
+      async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('metaapi-get-history', {
+            body: { accountId: account.metaapi_account_id, startTime },
+          });
+          if (error) throw error;
+          return data?.history || [];
+        } catch (error) {
+          console.error('[BrokerExecution] History fetch error:', error);
+          return [];
+        }
+      },
+    );
   }
   
   return [];
