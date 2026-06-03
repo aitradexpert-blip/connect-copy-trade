@@ -2,9 +2,14 @@
  * Unified Broker Execution Service
  * Routes trade execution to the appropriate API based on account provider and connection_type
  * Supports: Deriv (deriv_api), MetaAPI (metaapi), and future broker integrations
+ *
+ * Dual-engine read path: primary self-hosted FastAPI (when VITE_API_URL is set)
+ * with MetaAPI edge functions as silent fallback.
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { primaryApi } from './primaryApi';
+import { withFailover } from './tradingDataGateway';
 
 // ============ Interfaces ============
 
