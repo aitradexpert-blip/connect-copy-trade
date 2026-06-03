@@ -356,28 +356,39 @@ export async function fetchAccountData(account: TradingAccount): Promise<Account
 }
 
 async function fetchMetaApiData(accountId: string): Promise<AccountDataResult> {
-  try {
-    const [infoResp, positionsResp] = await Promise.all([
-      supabase.functions.invoke('metaapi-account-info', {
-        body: { accountId }
-      }),
-      supabase.functions.invoke('metaapi-get-positions', {
-        body: { accountId }
-      })
-    ]);
-    
-    const info = infoResp.data || {};
-    const positions = positionsResp.data?.positions || [];
-    
-    return {
-      balance: info.balance || 0,
-      equity: info.equity || 0,
-      positions,
-    };
-  } catch (error) {
-    console.error('[BrokerExecution] MetaAPI data fetch error:', error);
-    return { balance: 0, equity: 0, positions: [] };
-  }
+  return withFailover(
+    async () => {
+      const [info, positions] = await Promise.all([
+        primaryApi.getAccount(accountId),
+        primaryApi.getPositions(accountId),
+      ]);
+      const i: any = info || {};
+      const p: any = positions || {};
+      return {
+        balance: Number(i.balance ?? 0),
+        equity: Number(i.equity ?? 0),
+        positions: Array.isArray(p) ? p : (p.positions ?? []),
+      };
+    },
+    async () => {
+      try {
+        const [infoResp, positionsResp] = await Promise.all([
+          supabase.functions.invoke('metaapi-account-info', { body: { accountId } }),
+          supabase.functions.invoke('metaapi-get-positions', { body: { accountId } }),
+        ]);
+        const info = infoResp.data || {};
+        const positions = positionsResp.data?.positions || [];
+        return {
+          balance: info.balance || 0,
+          equity: info.equity || 0,
+          positions,
+        };
+      } catch (error) {
+        console.error('[BrokerExecution] MetaAPI data fetch error:', error);
+        return { balance: 0, equity: 0, positions: [] };
+      }
+    },
+  );
 }
 
 /**
