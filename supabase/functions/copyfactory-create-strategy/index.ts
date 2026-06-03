@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
           {
             method: 'POST',
             headers: { 'auth-token': token, 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ copyFactoryRoles: ['PROVIDER'], copyFactoryResourceSlots: 1 }),
+            body: JSON.stringify({ copyFactoryRoles: ['PROVIDER', 'SUBSCRIBER'], copyFactoryResourceSlots: 1 }),
           },
         )
         console.log('enable-copy-factory-api status:', enableResp.status)

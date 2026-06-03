@@ -1,92 +1,146 @@
-# HuMi — Continuation Plan
+# Dual-Engine Backend Migration Prep
 
-Grouped into 10 work items. Each is independently shippable. Items 1–9 first; Telegram bot (item 10) last as requested.
+Goal: wire FastAPI (`VITE_API_URL`) as primary engine with MetaAPI as silent fallback, decouple trade-idea publishing from a master MT fill, fix the mphoforex5 mentor lock, and harden the Connect Account modal + copy/AI-bot guards. MetaAPI stays fully live today; FastAPI is dormant until you flip the switch.
 
----
+## 1. Env + central API client (new, small)
 
-## 1. Mount OctaFx Promo Card
+- Add `VITE_API_URL="https://municipal-posh-shading.ngrok-free.dev"` to `.env`.
+- Create `src/services/primaryApi.ts` — a single thin wrapper exposing:
+  - `getAccount()`, `getPositions()`, `getHistory(from,to)`, `sendOrder(payload)`, `calcMargin(...)`, `orderCheck(...)`.
+  - Always returns the unwrapped inner object from `{source:"mt5", data:{...}}`.
+  - 6s timeout + `AbortController`; throws `PrimaryUnavailableError` on network/5xx/timeout so callers can fall back cleanly.
+- Create `src/services/tradingDataGateway.ts` — `withFailover(primaryFn, fallbackFn)` helper used by every data hook. Silent console.warn on primary failure; surfaces error only if both fail.
 
-- Add `<OctaFxPromoCard />` to:
-  - `src/pages/MentorCenter.tsx` — top of dashboard, above stats
-  - `src/pages/TradingAccounts.tsx` — above "Connect account" CTA
-- Hide automatically once user has an `octafx_promo_claims` row with status `granted` (query on mount).
+## 2. Re-route data reads through gateway (edit-in-place)
 
-## 2. Live Market Price for Khumo Forex Sessions
+Touch only the data-fetch layer, not UI:
 
-- New helper `src/services/priceFeed.ts` with `getLivePrice(symbol)`:
-  1. Try Deriv WS tick (`derivMarketData.subscribeTicks`) — already free/connected.
-  2. Fallback: TradingView cached snapshot via existing chart cache.
-  3. Final fallback: MetaAPI symbol price (5 min cache).
-- `KhumoForexSessions.tsx`: fetch live price every 30s, pass `currentPrice` into Khumo prompt; clamp Entry/SL/TP to realistic offsets per symbol class (forex pips, synthetics points, crypto %).
-- Same helper reused by `TradingIdeas` AI generation and Admin signal preview.
+- `src/services/brokerExecution.ts` — `fetchAccountData`, `fetchTradingHistory`: wrap existing MetaAPI calls in `withFailover(primary, metaapi)`. Primary path tries FastAPI `/account`, `/positions`, `/history`; fallback keeps current `metaapi-account-info` / `metaapi-get-positions` / `metaapi-get-history` edge calls verbatim.
+- Any direct `supabase.functions.invoke('metaapi-account-info'|'metaapi-get-positions'|'metaapi-get-history' ...)` sites in pages/hooks get redirected through `brokerExecution` helpers (or `tradingDataGateway` directly) — no UI markup changes.
 
-## 3. Mobile Fit — Index & MentorHub
+## 3. Trade execution: direct-copy pipeline
 
-- `src/pages/Index.tsx`: wrap top stat row in `grid-cols-2 sm:grid-cols-4`, add `overflow-x-auto` to horizontal tab/widget rows, replace fixed `min-w-[…]` with `w-full max-w-full`, ensure `KhumoForexSessions` card stacks on `<sm`.
-- `src/pages/MentorHub.tsx`: same audit — tabs scroll horizontally, cards full width, break-words on long broker names.
-- Verify at 375×812 via preview.
+Edit `src/services/signalBroadcast.ts` (already the central broadcaster):
 
-## 4. Notifications Scoping Bug (Mentor Hub seeing others')
+- New broadcast order:
+  1. Insert `trading_signals` row (analytics of record).
+  2. Concurrently `Promise.allSettled`:
+    - `primaryApi.sendOrder(...)` per opted-in follower / AI-bot account (direct distribution, no master fill required).
+    - Legacy `copyfactory-send-signal` + `auto-execute-signal` as before.
+  3. If primary `/order` rejects for a given follower, that follower's call automatically retries via existing MetaAPI execute path (`metaapi-execute-trade`) — per-follower isolation, no global desync.
+- `TradingIdeas.tsx` and `KhumoForexSessions.tsx` publish handlers already call `broadcastSignal` — no UI edits, just the service upgrade.
 
-Root cause hypothesis: `useNotifications` filter is correct, but the `notify_new_signal()` trigger inserts a row for **every profile** when `mentor_id IS NULL`. Admin "Khumo Suggestion" signals from `mphoforex5@gmail.com` now get `mentor_id` stamped via `attach_default_mentor_to_signal`, but the notify trigger fires **BEFORE** that BEFORE-INSERT trigger sets it, depending on order. Fix:
+## 4. Mentor lock fix ([mphoforex5@gmail.com](mailto:mphoforex5@gmail.com))
 
-- Reorder triggers: ensure `attach_default_mentor_to_signal` is `BEFORE INSERT` and `notify_new_signal` is `AFTER INSERT`.
-- In `notify_new_signal`, when `mentor_id IS NOT NULL`, only notify `mentor_clients` of that mentor (already correct).
-- Add safety: skip global broadcast for signals whose author is the default mentor — they should always route via `mentor_id`.
-- Also audit Realtime channel filter in `useNotifications.ts` — confirm `filter: user_id=eq.${user.id}` is applied (it is), so the bug is purely server-side row creation.
+- `supabase/functions/metaapi-provision-account/index.ts` already auto-enables `['PROVIDER','SUBSCRIBER']` for that email / `isMaster`. Extend the same helper into:
+  - `supabase/functions/copyfactory-create-strategy/index.ts`
+  - `supabase/functions/copyfactory-subscribe/index.ts`
+  Pattern: on any "copyFactoryRoles" / "must be provider" error from MetaAPI, call `metaapi-enable-copy-factory` with `['PROVIDER','SUBSCRIBER']` and retry once. Surface MetaAPI's raw message verbatim on second failure.
 
-## 5. Google OAuth Sign-In
+## 5. ConnectAccountModal polish
 
-- Supabase Google provider is now configured by user.
-- Update `src/pages/Auth.tsx`: add "Continue with Google" button calling `supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo:` ${origin}/ `} })`.
-- Ensure `handle_new_user` trigger (already idempotent) handles OAuth signups — it does.
-- Add Google logo SVG; style matches existing buttons.
+`src/components/ConnectAccountModal.tsx`:
 
-## 6. Training Center — Full PDF Ingestion
+- Append `<option value="Weltrade-Live" />`, `<option value="Weltrade-Demo" />` to `datalist#server-suggestions`.
+- Custom server `<Input>` wrapper → `className="relative z-10"`; sibling platform group → `z-0`.
+- Placeholder: `"Type freely if your server isn't listed."`
 
-- Parse `Pro_Forex_Institute_Guide_1.pdf` end-to-end (already in repo).
-- Break into Topics → Sub-topics → Lessons across Foundation / Intermediate / Advanced / Pro tracks.
-- Migration to **replace** seeded `training_content` with the full hierarchy (~40-60 lessons) and chunk full text into `khumo_knowledge_base` for RAG.
-- Add `category` field values: "Market Basics", "Technical Analysis", "Risk Management", "Psychology", "Strategies", "Pro Tools".
-- `TrainingCenter.tsx`: add category accordion grouping under each difficulty tab.
+## 6. CopyTradingNew + AIAutoTrading guards
 
-## 7. Mobile App / APK — Install & Permissions
+- Route every edge call through `src/lib/supabaseInvoke.ts` (`invokeEdgeFunctionJson`) so MetaAPI JSON error bodies (E_AUTH, OTP_REQUIRED, password change) reach the toast verbatim.
+- "Start Copying" / "Activate Bot" buttons: disabled unless `connection_status === 'connected'` AND `metaapi_health_status !== 'unhealthy'`. Wrap in shadcn `Tooltip`: `"Account must be fully connected to start copying."`
 
-- Add `/install` page already discussed → expand it:
-  - Direct APK download button (host APK in `mentor-assets` Supabase storage bucket; copy uploaded `HuMi_Mobile.apk` there).
-  - "Install on Android" guide (Allow Unknown Sources, 3 steps).
-  - "Install as PWA on iPhone" instructions.
-- Median.co APK supports notifications via OneSignal/FCM bridge — add manifest meta `median-notifications` placeholders, document the Median dashboard step.
-- Update `public/manifest.json` icons + add notification permission request on first dashboard load via existing `PWAInstallPrompt`.
+## 7. One DB migration
 
-## 8. Memory: Branding Policy Exception (OctaFX)
+`trading_signals` already has `auto_to_copyfactory boolean DEFAULT true` (per current schema dump). Verify via SELECT; if absent, run:
 
-- Update `mem://branding/white-label-policy`: **OctaFX may be referenced explicitly** in promo CTAs and partner-broker contexts because it is the named affiliated broker for the free-Basic-Plan offer. All other broker brand names remain hidden.
-- Update `mem://index.md` Core line accordingly.
+```sql
+ALTER TABLE public.trading_signals
+  ADD COLUMN IF NOT EXISTS auto_to_copyfactory boolean NOT NULL DEFAULT true;
+```
 
-## 9. Telegram Bot — HuMi "Path to Profit" (LAST)
+No new tables.
 
-- Bot already connected via standard connector.
-- Set bot identity via `setMyName`, `setMyDescription`, `setMyShortDescription`, `setMyCommands` through gateway:
-  - Name: "HuMi — Path to Profit"
-  - About: "AI-powered trade signals & copy trading. Free with OctaFX, R179/mo otherwise."
-  - Description: full HuMi pitch + WhatsApp links.
-  - Commands: `/start`, `/signals`, `/plans`, `/install`, `/support`.
-- New edge function `telegram-webhook` implementing the onboarding state machine:
-  - `/start` → 2 inline buttons: Free Basic / How it works.
-  - Free Basic → explanation + 3 buttons: Register OctaFX (affiliate link), I have an account, Pay R179 (Yoco link).
-  - "I have an account" → ask for OctaFX ID → save to new `telegram_leads` table → reply with APK download link + GPS fix tip.
-  - Verified flag (admin toggle) unlocks `/signals`.
-- Migration: `telegram_leads` (telegram_chat_id, octafx_id, verified, plan, created_at) + admin Leads page tab in `Admin.tsx` with Verify toggle + Broadcast button.
-- WhatsApp: add the channel + business URLs to `WhatsAppButton` and `/install` page.
+## Out of scope (explicit)
 
----
+UI redesign, branding, new charts, marketing pages, tests/CI, Deriv path changes, new edge functions beyond the two patched above.
 
-## Open questions before I implement
+## Files touched
 
-1. **APK hosting** — OK to upload your APK to Supabase Storage (`mentor-assets/HuMi_Mobile.apk`) and serve from there? Yes this is Okay.
-2. **Notification fix** — should I additionally **purge existing duplicate notifications** that mentor-hub users are currently seeing, or only fix forward? Both
-3. **Training Center** — replace existing 16 seeded lessons entirely with the full PDF breakdown, or keep both and tag PDF lessons with `source: "Pro Forex Institute"`? Create new where needed but tag where needed we do not want to recreate what is already there to save credits.
-4. **Telegram leads admin page** — bolt onto existing `/admin` as a new tab, or a dedicated `/admin/leads` route? existing /admin
+- `.env` (1 line)
+- `src/services/primaryApi.ts` (new, ~80 lines)
+- `src/services/tradingDataGateway.ts` (new, ~30 lines)
+- `src/services/brokerExecution.ts`
+- `src/services/signalBroadcast.ts`
+- `src/components/ConnectAccountModal.tsx`
+- `src/pages/CopyTradingNew.tsx`
+- `src/pages/AIAutoTrading.tsx`
+- `supabase/functions/copyfactory-create-strategy/index.ts`
+- `supabase/functions/copyfactory-subscribe/index.ts`
+- (conditional) one ALTER migration
 
-Once you answer, I'll execute items 1–9 in one batch and item 10 (Telegram) immediately after.
+## Safety
+
+MetaAPI remains the live engine end-to-end today; FastAPI calls only fire when `VITE_API_URL` is reachable and respond within 6s. Every fallback path is the current production code path, untouched.  
+  
+# CORE OBJECTIVE
+
+Wire FastAPI (VITE_API_URL) as primary engine with MetaAPI as a silent fallback. Fix the mentor lock, decouple trade-idea publishing, and harden UI guards completely within a strict token-saving framework.
+
+# 1. CENTRAL API CLIENT & GATEWAY
+
+- Add VITE_API_URL="[https://municipal-posh-shading.ngrok-free.dev](https://municipal-posh-shading.ngrok-free.dev)" to .env.
+
+- Create src/services/primaryApi.ts:
+
+  * Expose: getAccount(id), getPositions(id), getHistory(id, from, to), sendOrder(p), calcMargin(p), orderCheck(p).
+
+  * 6s timeout + AbortController. Throw PrimaryUnavailableError on network/5xx/timeout.
+
+  * Safety: Check if response shape contains { source: "mt5", data: [...] }. If structural validation fails or data is absent, safely throw PrimaryUnavailableError instead of crashing.
+
+- Create src/services/tradingDataGateway.ts:
+
+  * withFailover(primaryFn, fallbackFn) helper. Catch PrimaryUnavailableError, emit console.warn, silently route to fallbackFn.
+
+# 2. DATA READ RE-ROUTING (src/services/brokerExecution.ts)
+
+- Intercept fetchAccountData, fetchPositionsData, fetchTradingHistory.
+
+- Map endpoints strictly via withFailover. Ensure param normalization: primary uses internal accountId, fallback forwards metaApiAccountId verbatim to Edge functions ('metaapi-account-info', 'metaapi-get-positions', 'metaapi-get-history').
+
+# 3. DIRECT-COPY TRADE PIPELINE (src/services/signalBroadcast.ts)
+
+- On publish: Insert trading_signals row (auto_to_copyfactory: true).
+
+- Concurrently execute via Promise.allSettled:
+
+  1. Loop through opted-in followers: primaryApi.sendOrder(followerParams). On failure, instantly route that specific follower's payload to fallback edge function 'metaapi-execute-trade' (Per-follower execution isolation).
+
+  2. Legacy legacy copyfactory-send-signal + auto-execute-signal execution chain.
+
+# 4. MENTOR PROVISION LOCK BYPASS ([mphoforex5@gmail.com](mailto:mphoforex5@gmail.com))
+
+- Apply to copyfactory-create-strategy/index.ts and copyfactory-subscribe/index.ts:
+
+  * Wrap MetaAPI calls in a try-catch.
+
+  * If error contains "copyFactoryRoles" or "must be provider", intercept, invoke 'metaapi-enable-copy-factory' with ['PROVIDER', 'SUBSCRIBER'] for "[mphoforex5@gmail.com](mailto:mphoforex5@gmail.com)", then retry original transaction once. Throw raw second failure message verbatim.
+
+# 5. UI HARDENING & EDGE GUARDS
+
+- src/components/ConnectAccountModal.tsx: Append "Weltrade-Live" and "Weltrade-Demo" to datalist#server-suggestions. Set relative z-10 on custom server Input; z-0 on sibling groups.
+
+- src/pages/CopyTradingNew.tsx & src/pages/AIAutoTrading.tsx:
+
+  * Filter edge calls through src/lib/supabaseInvoke.ts for raw JSON error toast propagation.
+
+  * Disable "Start Copying"/"Activate Bot" unless connection_status === 'connected' AND metaapi_health_status !== 'unhealthy'.
+
+  * Radix Fix: Wrap the disabled Button inside an active <span> component within TooltipTrigger so hover pointer events fire the text: "Account must be fully connected to start copying."
+
+# 6. STORAGE IDENTIFIER DB MIGRATION
+
+- Assert schema consistency: 
+
+  ALTER TABLE [public.trading](http://public.trading)_signals ADD COLUMN IF NOT EXISTS auto_to_copyfactory boolean NOT NULL DEFAULT true;

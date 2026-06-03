@@ -2,9 +2,14 @@
  * Unified Broker Execution Service
  * Routes trade execution to the appropriate API based on account provider and connection_type
  * Supports: Deriv (deriv_api), MetaAPI (metaapi), and future broker integrations
+ *
+ * Dual-engine read path: primary self-hosted FastAPI (when VITE_API_URL is set)
+ * with MetaAPI edge functions as silent fallback.
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { primaryApi } from './primaryApi';
+import { withFailover } from './tradingDataGateway';
 
 // ============ Interfaces ============
 
@@ -351,28 +356,39 @@ export async function fetchAccountData(account: TradingAccount): Promise<Account
 }
 
 async function fetchMetaApiData(accountId: string): Promise<AccountDataResult> {
-  try {
-    const [infoResp, positionsResp] = await Promise.all([
-      supabase.functions.invoke('metaapi-account-info', {
-        body: { accountId }
-      }),
-      supabase.functions.invoke('metaapi-get-positions', {
-        body: { accountId }
-      })
-    ]);
-    
-    const info = infoResp.data || {};
-    const positions = positionsResp.data?.positions || [];
-    
-    return {
-      balance: info.balance || 0,
-      equity: info.equity || 0,
-      positions,
-    };
-  } catch (error) {
-    console.error('[BrokerExecution] MetaAPI data fetch error:', error);
-    return { balance: 0, equity: 0, positions: [] };
-  }
+  return withFailover(
+    async () => {
+      const [info, positions] = await Promise.all([
+        primaryApi.getAccount(accountId),
+        primaryApi.getPositions(accountId),
+      ]);
+      const i: any = info || {};
+      const p: any = positions || {};
+      return {
+        balance: Number(i.balance ?? 0),
+        equity: Number(i.equity ?? 0),
+        positions: Array.isArray(p) ? p : (p.positions ?? []),
+      };
+    },
+    async () => {
+      try {
+        const [infoResp, positionsResp] = await Promise.all([
+          supabase.functions.invoke('metaapi-account-info', { body: { accountId } }),
+          supabase.functions.invoke('metaapi-get-positions', { body: { accountId } }),
+        ]);
+        const info = infoResp.data || {};
+        const positions = positionsResp.data?.positions || [];
+        return {
+          balance: info.balance || 0,
+          equity: info.equity || 0,
+          positions,
+        };
+      } catch (error) {
+        console.error('[BrokerExecution] MetaAPI data fetch error:', error);
+        return { balance: 0, equity: 0, positions: [] };
+      }
+    },
+  );
 }
 
 /**
@@ -382,18 +398,25 @@ export async function fetchTradingHistory(account: TradingAccount, days: number 
   const connectionType = getConnectionType(account);
   
   if (connectionType === 'metaapi' && account.metaapi_account_id) {
-    try {
-      const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const { data, error } = await supabase.functions.invoke('metaapi-get-history', {
-        body: { accountId: account.metaapi_account_id, startTime }
-      });
-      
-      if (error) throw error;
-      return data?.history || [];
-    } catch (error) {
-      console.error('[BrokerExecution] History fetch error:', error);
-      return [];
-    }
+    const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    return withFailover(
+      async () => {
+        const h: any = await primaryApi.getHistory(account.metaapi_account_id!, startTime);
+        return Array.isArray(h) ? h : (h?.history ?? []);
+      },
+      async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('metaapi-get-history', {
+            body: { accountId: account.metaapi_account_id, startTime },
+          });
+          if (error) throw error;
+          return data?.history || [];
+        } catch (error) {
+          console.error('[BrokerExecution] History fetch error:', error);
+          return [];
+        }
+      },
+    );
   }
   
   return [];
