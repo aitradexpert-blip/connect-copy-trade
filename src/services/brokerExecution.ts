@@ -220,13 +220,40 @@ async function executeMetaApiTrade(
   signal: TradeSignal
 ): Promise<ExecuteTradeResult> {
   if (!account.metaapi_account_id) {
-    return { 
-      success: false, 
-      error: 'No MetaAPI account ID available for this account', 
-      provider: 'metaapi' 
+    return {
+      success: false,
+      error: 'No MetaAPI account ID available for this account',
+      provider: 'metaapi'
     };
   }
-  
+
+  const payload = {
+    accountId: account.metaapi_account_id,
+    symbol: signal.symbol,
+    direction: signal.direction,
+    volume: signal.volume,
+    stopLoss: signal.stopLoss,
+    takeProfit: signal.takeProfit,
+    comment: signal.comment || 'HuMi Trade',
+  };
+
+  // Primary-first execution via self-hosted FastAPI; silent fallback to MetaAPI edge fn.
+  try {
+    const primary = await primaryApi.sendOrder(payload);
+    return {
+      success: true,
+      tradeId: (primary as any)?.tradeId || (primary as any)?.positionId || (primary as any)?.order,
+      provider: 'metaapi',
+    };
+  } catch (primaryErr: any) {
+    // Only fall back on primary-unavailable; rethrow real broker rejections
+    const isPrimaryDown = primaryErr?.name === 'PrimaryUnavailableError';
+    if (!isPrimaryDown) {
+      console.error('[BrokerExecution] Primary order rejected:', primaryErr);
+      return { success: false, error: primaryErr?.message || 'Primary engine rejected order', provider: 'metaapi' };
+    }
+  }
+
   try {
     const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
       body: {
@@ -241,18 +268,18 @@ async function executeMetaApiTrade(
         }
       }
     });
-    
+
     if (error) {
       console.error('[BrokerExecution] MetaAPI edge function error:', error);
       throw new Error(error.message || 'MetaAPI trade execution failed');
     }
-    
+
     if (data?.error) {
       throw new Error(data.error);
     }
-    
+
     console.log('[BrokerExecution] MetaAPI trade successful:', data);
-    
+
     return {
       success: true,
       tradeId: data?.tradeId || data?.positionId,
@@ -267,6 +294,7 @@ async function executeMetaApiTrade(
     };
   }
 }
+
 
 // ============ Utility Functions ============
 
