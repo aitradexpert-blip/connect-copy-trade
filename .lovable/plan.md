@@ -1,146 +1,81 @@
-# Dual-Engine Backend Migration Prep
+# Plan — Primary-First UI + Mentor Fix + Dual-Mode Broadcast
 
-Goal: wire FastAPI (`VITE_API_URL`) as primary engine with MetaAPI as silent fallback, decouple trade-idea publishing from a master MT fill, fix the mphoforex5 mentor lock, and harden the Connect Account modal + copy/AI-bot guards. MetaAPI stays fully live today; FastAPI is dormant until you flip the switch.
+Backend (`https://municipal-posh-shading.ngrok-free.dev`) is verified live (`/account`, `/positions`). We already have `primaryApi`, `withFailover`, and `signalBroadcast`. This plan finishes wiring the UI to the primary engine, fixes the mphoforex5 mentor flow, and tightens the dual-mode broadcast contract. No backend code is written here — FastAPI service stays as-is on the VPS.
 
-## 1. Env + central API client (new, small)
+## 1. Mentor role fix ([mphoforex5@gmail.com](mailto:mphoforex5@gmail.com))
 
-- Add `VITE_API_URL="https://municipal-posh-shading.ngrok-free.dev"` to `.env`.
-- Create `src/services/primaryApi.ts` — a single thin wrapper exposing:
-  - `getAccount()`, `getPositions()`, `getHistory(from,to)`, `sendOrder(payload)`, `calcMargin(...)`, `orderCheck(...)`.
-  - Always returns the unwrapped inner object from `{source:"mt5", data:{...}}`.
-  - 6s timeout + `AbortController`; throws `PrimaryUnavailableError` on network/5xx/timeout so callers can fall back cleanly.
-- Create `src/services/tradingDataGateway.ts` — `withFailover(primaryFn, fallbackFn)` helper used by every data hook. Silent console.warn on primary failure; surfaces error only if both fail.
+Current DB state (verified): user `11a1db6b-…`, `mentor_profiles.is_active = true`, `referral_slug = khumo-copy-ai-l99j`, but `user_roles.role = 'admin'` only — no `'mentor'` row. The "not a mentor" guard fails because it checks `user_roles`, not `mentor_profiles`.
 
-## 2. Re-route data reads through gateway (edit-in-place)
+Migration:
 
-Touch only the data-fetch layer, not UI:
+- `INSERT INTO user_roles (user_id, role) VALUES ('11a1db6b-…','mentor') ON CONFLICT DO NOTHING;`
+- Backfill: insert `'mentor'` for every `user_id` present in `mentor_profiles` where `is_active = true` and missing the role.
+- Add a trigger on `mentor_profiles` AFTER INSERT/UPDATE that upserts the matching `user_roles` row when `is_active = true`, so future mentors stay in sync automatically.
+- ([mphoforex@gmail.com](mailto:mphoforex@gmail.com) does not exist in `auth.users` — skipped; user must sign up first.)
 
-- `src/services/brokerExecution.ts` — `fetchAccountData`, `fetchTradingHistory`: wrap existing MetaAPI calls in `withFailover(primary, metaapi)`. Primary path tries FastAPI `/account`, `/positions`, `/history`; fallback keeps current `metaapi-account-info` / `metaapi-get-positions` / `metaapi-get-history` edge calls verbatim.
-- Any direct `supabase.functions.invoke('metaapi-account-info'|'metaapi-get-positions'|'metaapi-get-history' ...)` sites in pages/hooks get redirected through `brokerExecution` helpers (or `tradingDataGateway` directly) — no UI markup changes.
+Referral link flow: `MentorReferral.tsx` already resolves by `referral_slug` and `Auth.tsx` already attaches `mentor_clients` on signup. After the role fix the existing flow works — no code change needed there. Verify by walking `/m/khumo-copy-ai-l99j` in incognito.
 
-## 3. Trade execution: direct-copy pipeline
+## 2. Point UI reads/writes at the primary engine
 
-Edit `src/services/signalBroadcast.ts` (already the central broadcaster):
+Keep `withFailover` so MetaAPI edge functions remain silent fallback. Refactor only the call sites; no UI/layout edits.
 
-- New broadcast order:
-  1. Insert `trading_signals` row (analytics of record).
-  2. Concurrently `Promise.allSettled`:
-    - `primaryApi.sendOrder(...)` per opted-in follower / AI-bot account (direct distribution, no master fill required).
-    - Legacy `copyfactory-send-signal` + `auto-execute-signal` as before.
-  3. If primary `/order` rejects for a given follower, that follower's call automatically retries via existing MetaAPI execute path (`metaapi-execute-trade`) — per-follower isolation, no global desync.
-- `TradingIdeas.tsx` and `KhumoForexSessions.tsx` publish handlers already call `broadcastSignal` — no UI edits, just the service upgrade.
+- `src/pages/TradingAccounts.tsx`, `src/pages/AIAutoTrading.tsx`, `src/pages/CopyTradingNew.tsx`, `src/pages/Analytics.tsx`, `src/components/admin/MetaApiHealthTab.tsx`: route balance/equity/positions/history reads through `fetchAccountData` / `fetchTradingHistory` (already failover-wrapped) instead of direct `supabase.functions.invoke('metaapi-…')`.
+- Quick-trade / manual execution forms (`DerivQuickTrade` is Deriv-only — leave alone; MT5 execution paths in `MentorHub`, `MentorCenter`, `TradingIdeas`): call `primaryApi.sendOrder({...})` first via a new helper `executePrimaryOrder()` in `brokerExecution.ts`; on `PrimaryUnavailableError` fall back to existing `metaapi-execute-trade` edge function.
+- Account-connected status: after provisioning, poll `primaryApi.getAccount(metaapi_account_id)` — a 200 flips local `connection_status` to `'connected'` immediately so the "Start Copying" / "Activate Bot" guards unlock.
 
-## 4. Mentor lock fix ([mphoforex5@gmail.com](mailto:mphoforex5@gmail.com))
+## 3. Dual-mode Copy / AI engine
 
-- `supabase/functions/metaapi-provision-account/index.ts` already auto-enables `['PROVIDER','SUBSCRIBER']` for that email / `isMaster`. Extend the same helper into:
-  - `supabase/functions/copyfactory-create-strategy/index.ts`
-  - `supabase/functions/copyfactory-subscribe/index.ts`
-  Pattern: on any "copyFactoryRoles" / "must be provider" error from MetaAPI, call `metaapi-enable-copy-factory` with `['PROVIDER','SUBSCRIBER']` and retry once. Surface MetaAPI's raw message verbatim on second failure.
+`signalBroadcast.broadcastSignal` already fans out via primary `/order` with per-follower MetaAPI fallback. Tighten and document the two modes:
 
-## 5. ConnectAccountModal polish
+- **Mode A (Idea publish)** — already wired in `MentorHub`, `MentorCenter`, Khumo sessions. Add: when building the eligible-account list, include accounts where `copy_trading_relationships.master_user_id = signal.mentor_user_id AND status='active'` (currently filters by `status` only, not by master). This guarantees only followers of the publishing mentor receive trades.
+- **Mode B (Master-Slave mirror)** — extend the existing `copy-trade-listener` edge function: when triggered (cron / webhook from VPS), for each master with `is_master=true` it pulls fresh trades via `primaryApi.getHistory`, diffs against `trade_history`, and calls `primaryApi.sendOrder` per follower (fallback to `metaapi-execute-trade`). Insert a `trading_signals` row tagged `source='master_mirror'` so the same downstream pipeline handles it.
 
-`src/components/ConnectAccountModal.tsx`:
+## 4. Connection status UI
 
-- Append `<option value="Weltrade-Live" />`, `<option value="Weltrade-Demo" />` to `datalist#server-suggestions`.
-- Custom server `<Input>` wrapper → `className="relative z-10"`; sibling platform group → `z-0`.
-- Placeholder: `"Type freely if your server isn't listed."`
+New small component `src/components/PrimaryStatusBadge.tsx`:
 
-## 6. CopyTradingNew + AIAutoTrading guards
+- Pings `${VITE_API_URL}/account?id=health` (or a `/health` route if you add one) every 30s.
+- Shows `Online` (green), `Reconnecting…` (amber, on 1st failure), `Offline — using fallback` (red, on 3 consecutive failures).
+- Mount in `TopHeader.tsx` next to the existing user menu. No layout shift; purely presentational.
 
-- Route every edge call through `src/lib/supabaseInvoke.ts` (`invokeEdgeFunctionJson`) so MetaAPI JSON error bodies (E_AUTH, OTP_REQUIRED, password change) reach the toast verbatim.
-- "Start Copying" / "Activate Bot" buttons: disabled unless `connection_status === 'connected'` AND `metaapi_health_status !== 'unhealthy'`. Wrap in shadcn `Tooltip`: `"Account must be fully connected to start copying."`
+## 5. Local credentials cache (optional resilience)
 
-## 7. One DB migration
-
-`trading_signals` already has `auto_to_copyfactory boolean DEFAULT true` (per current schema dump). Verify via SELECT; if absent, run:
-
-```sql
-ALTER TABLE public.trading_signals
-  ADD COLUMN IF NOT EXISTS auto_to_copyfactory boolean NOT NULL DEFAULT true;
-```
-
-No new tables.
-
-## Out of scope (explicit)
-
-UI redesign, branding, new charts, marketing pages, tests/CI, Deriv path changes, new edge functions beyond the two patched above.
+Add `src/services/credentialsCache.ts`: persists `{ accountId, login, server, metaapi_account_id }` per user in `localStorage` after each successful Supabase fetch. If `supabase.from('trading_accounts').select(...)` throws a network error, hydrate from cache so the UI keeps rendering. No secrets cached — only public identifiers already exposed to the client.
 
 ## Files touched
 
-- `.env` (1 line)
-- `src/services/primaryApi.ts` (new, ~80 lines)
-- `src/services/tradingDataGateway.ts` (new, ~30 lines)
-- `src/services/brokerExecution.ts`
-- `src/services/signalBroadcast.ts`
-- `src/components/ConnectAccountModal.tsx`
-- `src/pages/CopyTradingNew.tsx`
-- `src/pages/AIAutoTrading.tsx`
-- `supabase/functions/copyfactory-create-strategy/index.ts`
-- `supabase/functions/copyfactory-subscribe/index.ts`
-- (conditional) one ALTER migration
+- **Migration**: 1 new SQL file (role backfill + trigger).
+- **Edit**: `src/services/brokerExecution.ts` (add `executePrimaryOrder`), `src/services/signalBroadcast.ts` (filter by `master_user_id`), `src/pages/MentorHub.tsx`, `src/pages/MentorCenter.tsx`, `src/pages/TradingIdeas.tsx`, `src/pages/TradingAccounts.tsx`, `src/pages/AIAutoTrading.tsx`, `src/pages/CopyTradingNew.tsx`, `src/pages/Analytics.tsx`, `src/components/admin/MetaApiHealthTab.tsx`, `src/components/TopHeader.tsx`, `supabase/functions/copy-trade-listener/index.ts`.
+- **New**: `src/components/PrimaryStatusBadge.tsx`, `src/services/credentialsCache.ts`.
 
-## Safety
+## Out of scope
 
-MetaAPI remains the live engine end-to-end today; FastAPI calls only fire when `VITE_API_URL` is reachable and respond within 6s. Every fallback path is the current production code path, untouched.  
+- FastAPI / `mt5_service.py` changes (VPS already serves the contract).
+- Visual redesign of any page — only adding the status badge and rewiring data sources.
+- Per-user OAuth, Celery/TaskQ infra (use existing Supabase cron + edge functions instead).  
   
-# CORE OBJECTIVE
-
-Wire FastAPI (VITE_API_URL) as primary engine with MetaAPI as a silent fallback. Fix the mentor lock, decouple trade-idea publishing, and harden UI guards completely within a strict token-saving framework.
-
-# 1. CENTRAL API CLIENT & GATEWAY
-
-- Add VITE_API_URL="[https://municipal-posh-shading.ngrok-free.dev](https://municipal-posh-shading.ngrok-free.dev)" to .env.
-
-- Create src/services/primaryApi.ts:
-
-  * Expose: getAccount(id), getPositions(id), getHistory(id, from, to), sendOrder(p), calcMargin(p), orderCheck(p).
-
-  * 6s timeout + AbortController. Throw PrimaryUnavailableError on network/5xx/timeout.
-
-  * Safety: Check if response shape contains { source: "mt5", data: [...] }. If structural validation fails or data is absent, safely throw PrimaryUnavailableError instead of crashing.
-
-- Create src/services/tradingDataGateway.ts:
-
-  * withFailover(primaryFn, fallbackFn) helper. Catch PrimaryUnavailableError, emit console.warn, silently route to fallbackFn.
-
-# 2. DATA READ RE-ROUTING (src/services/brokerExecution.ts)
-
-- Intercept fetchAccountData, fetchPositionsData, fetchTradingHistory.
-
-- Map endpoints strictly via withFailover. Ensure param normalization: primary uses internal accountId, fallback forwards metaApiAccountId verbatim to Edge functions ('metaapi-account-info', 'metaapi-get-positions', 'metaapi-get-history').
-
-# 3. DIRECT-COPY TRADE PIPELINE (src/services/signalBroadcast.ts)
-
-- On publish: Insert trading_signals row (auto_to_copyfactory: true).
-
-- Concurrently execute via Promise.allSettled:
-
-  1. Loop through opted-in followers: primaryApi.sendOrder(followerParams). On failure, instantly route that specific follower's payload to fallback edge function 'metaapi-execute-trade' (Per-follower execution isolation).
-
-  2. Legacy legacy copyfactory-send-signal + auto-execute-signal execution chain.
-
-# 4. MENTOR PROVISION LOCK BYPASS ([mphoforex5@gmail.com](mailto:mphoforex5@gmail.com))
-
-- Apply to copyfactory-create-strategy/index.ts and copyfactory-subscribe/index.ts:
-
-  * Wrap MetaAPI calls in a try-catch.
-
-  * If error contains "copyFactoryRoles" or "must be provider", intercept, invoke 'metaapi-enable-copy-factory' with ['PROVIDER', 'SUBSCRIBER'] for "[mphoforex5@gmail.com](mailto:mphoforex5@gmail.com)", then retry original transaction once. Throw raw second failure message verbatim.
-
-# 5. UI HARDENING & EDGE GUARDS
-
-- src/components/ConnectAccountModal.tsx: Append "Weltrade-Live" and "Weltrade-Demo" to datalist#server-suggestions. Set relative z-10 on custom server Input; z-0 on sibling groups.
-
-- src/pages/CopyTradingNew.tsx & src/pages/AIAutoTrading.tsx:
-
-  * Filter edge calls through src/lib/supabaseInvoke.ts for raw JSON error toast propagation.
-
-  * Disable "Start Copying"/"Activate Bot" unless connection_status === 'connected' AND metaapi_health_status !== 'unhealthy'.
-
-  * Radix Fix: Wrap the disabled Button inside an active <span> component within TooltipTrigger so hover pointer events fire the text: "Account must be fully connected to start copying."
-
-# 6. STORAGE IDENTIFIER DB MIGRATION
-
-- Assert schema consistency: 
-
-  ALTER TABLE [public.trading](http://public.trading)_signals ADD COLUMN IF NOT EXISTS auto_to_copyfactory boolean NOT NULL DEFAULT true;
+I need to refactor the core backend and UI logic for our Mentor/Copy Trading system. We have critical gaps in how Mentors are identified and how trades propagate. Please align the codebase with these requirements:
+  **1. Mentor Authentication & Referral Logic (The 'mphoforex5' Fix):**
+  - **Role Enforcement:** Implement an admin-side check to explicitly set/verify the `MENTOR` role for `mphoforex5@gmail.com`.
+  - **Referral Flow:** When a user registers via a Mentor’s unique link, the `mentor_id` must be injected into the user's profile metadata immediately upon registration.
+  - **Center Association:** If the `mentor_id` exists on a user record, the UI must automatically route them to that specific Mentor's Center/Dashboard. If this fails, the system must show a 'Mentor Connection Pending' status instead of an error.
+  **2. Dual-Engine Copy Trading Architecture:** We need two distinct execution flows implemented in our backend service:
+  - **Flow A (Idea-Triggered Execution):** When a Mentor publishes an 'Idea' (via our publishing tool), trigger a background job that:
+    1. Queries all users linked to that Mentor who have 'Copy Trading' or 'AI Bot' toggled ON.
+    2. Pushes a trade execution command to each client's linked MT5 account with the parameters defined in the published idea.
+  - **Flow B (Real-time Mirroring):** Implement a service that monitors the Master Mentor’s MT5 trading account via our `mt5_service.py`. When a new trade is opened on the Master account, the service must:
+    1. Identify all active Followers of that specific Master.
+    2. Mirror the trade (Open/Modify/Close) onto those followers' trading accounts immediately.
+  **3. Infrastructure Alignment:**
+  - **API Routing:** All frontend API calls must be directed to our active VPS endpoint: `https://municipal-posh-shading.ngrok-free.dev`.
+  - **Resilience Layer:** If the connection to the primary database or MT5 server fails, the system should log the error and check the `credentials_cache.json` for stored account credentials to maintain local uptime.
+  - **Connection Monitor:** Add a component to the Dashboard that pings the VPS backend and provides a clear status indicator (Online/Reconnecting).
+  **4. Goal:** Remove the 'account is not a mentor' error and ensure that every user registered under a Mentor's link is correctly 'docked' into that Mentor's Center with Copy Trading active by default if they opt-in."
+  ### Why this prompt will work:
+  - **Separation of Concerns:** It separates the **Role Fix** (Mentor ID assignment) from the **Execution Fix** (Copy Trading).
+  - **Dynamic Logic:** It asks Lovable to implement a "State Monitor" (checking for `mentor_id` in metadata) rather than relying on hardcoded checks that were failing.
+  - **VPS Integration:** By explicitly mentioning the Ngrok URL and the `credentials_cache.json`, you are forcing Lovable to stop trying to use local `localhost` logic and start building for your actual production VPS environment.
+  Ensure your `credentials_cache.json` is perfectly formatted (as we discussed previously). When Lovable asks for the backend configuration, you can now confidently point them to this file as the "source of truth" for your trading accounts, which makes their job of writing the integration code much easier.  
+    
+  Remember that we are not looking to change the structure that we are currently operating in, uh, but we want to place our new, newly, um, implemented server to be the primary one where, uh, you should be able to communicate to, uh, the VPS as a primary engine. And you, you will use the Meta API-- APIs as our backup, as our fallback. And we need to make sure that this is done properly and is aligned properly with our UI, is aligned properly with the, uh, the code that is currently there, and also aligns properly with the MetaTrader documentation, API documentation that actually, um, guides us on how to achieve this.  
+    

@@ -20,6 +20,8 @@ import { formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { useState } from "react";
+import { PrimaryStatusBadge } from "@/components/PrimaryStatusBadge";
+
 
 export function TopHeader() {
   const { user, signOut } = useAuth();
@@ -54,8 +56,10 @@ export function TopHeader() {
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <PrimaryStatusBadge />
         <Button
+
           variant="ghost"
           size="icon"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
