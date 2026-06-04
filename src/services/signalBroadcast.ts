@@ -71,11 +71,24 @@ export async function broadcastSignal(
 }
 
 async function fanOutDirect(signal: BroadcastSignal) {
-  // Followers = active copy_trading_relationships
-  const { data: rels } = await supabase
+  // Resolve mentor.user_id (so we only fan out to followers of THIS mentor)
+  let mentorUserId: string | null = null;
+  if (signal.mentor_id) {
+    const { data: mp } = await supabase
+      .from("mentor_profiles")
+      .select("user_id")
+      .eq("id", signal.mentor_id)
+      .maybeSingle();
+    mentorUserId = (mp as any)?.user_id ?? null;
+  }
+
+  // Followers = active copy_trading_relationships scoped to this mentor's master
+  let relsQuery = supabase
     .from("copy_trading_relationships")
-    .select("follower_account_id")
+    .select("follower_account_id, master_user_id")
     .eq("status", "active");
+  if (mentorUserId) relsQuery = relsQuery.eq("master_user_id", mentorUserId);
+  const { data: rels } = await relsQuery;
 
   // AI-bot opted-in accounts = ai_bot_assignments referencing this signal (eligible accounts)
   const { data: botAcc } = await supabase
@@ -83,6 +96,7 @@ async function fanOutDirect(signal: BroadcastSignal) {
     .select("trading_account_id")
     .eq("signal_id", signal.id)
     .eq("auto_execute", true);
+
 
   const ids = new Set<string>();
   (rels || []).forEach((r: any) => r?.follower_account_id && ids.add(r.follower_account_id));
