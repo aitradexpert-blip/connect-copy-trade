@@ -13,8 +13,11 @@ async function ping(): Promise<boolean> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    // Use the verified /account endpoint with a sentinel id — a 200 means engine is up
-    const resp = await fetch(`${BASE}/account?id=health`, { signal: ctl.signal });
+    // Prefer FastAPI /health; fall back to /account?id=health sentinel for older VPS builds.
+    let resp = await fetch(`${BASE}/health`, { signal: ctl.signal });
+    if (resp.status === 404) {
+      resp = await fetch(`${BASE}/account?id=health`, { signal: ctl.signal });
+    }
     return resp.ok;
   } catch {
     return false;

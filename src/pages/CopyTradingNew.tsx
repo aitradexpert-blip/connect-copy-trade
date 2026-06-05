@@ -162,6 +162,7 @@ export default function CopyTradingNew() {
           performance: 12.5,
           followers: 0,
           account_id: master.id,
+          master_user_id: master.user_id,
           source: 'local' as const,
           isOwn: master.user_id === user?.id
         }));
@@ -174,6 +175,7 @@ export default function CopyTradingNew() {
           performance: 12.5,
           followers: 0,
           account_id: master.id,
+          master_user_id: master.user_id,
           source: 'local' as const,
           isOwn: master.user_id === user?.id
         }));
@@ -417,6 +419,20 @@ export default function CopyTradingNew() {
 
   const toggleMasterStatus = async (accountId: string, currentStatus: boolean) => {
     try {
+      // Lifecycle guard: only allow Master activation on connected accounts
+      if (!currentStatus) {
+        const acc: any = accounts.find((a) => a.id === accountId);
+        const status = acc?.connection_status;
+        if (status && status !== 'connected') {
+          toast({
+            title: "Cannot enable Master",
+            description: `Account is "${status}". Connect / re-sync this account before activating Master role.`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from("trading_accounts")
         .update({ is_master: !currentStatus })
@@ -455,6 +471,17 @@ export default function CopyTradingNew() {
     const followerAcc = accounts.find(a => a.id === selectedAccount);
     const isSelfCopy = !!masterTrader?.isOwn;
 
+    // Resolve the master's real user_id (server-side trigger also enforces this).
+    let resolvedMasterUserId: string | undefined = (masterTrader as any)?.master_user_id;
+    if (!resolvedMasterUserId) {
+      const { data: masterRow } = await supabase
+        .from("trading_accounts")
+        .select("user_id")
+        .eq("id", masterAccountId)
+        .maybeSingle();
+      resolvedMasterUserId = (masterRow as any)?.user_id;
+    }
+
     try {
       const { error } = await supabase
         .from("copy_trading_relationships")
@@ -462,7 +489,7 @@ export default function CopyTradingNew() {
           follower_user_id: user?.id,
           follower_account_id: selectedAccount,
           master_account_id: masterAccountId,
-          master_user_id: user?.id, // allowed; RLS scoped by follower
+          master_user_id: resolvedMasterUserId || user?.id,
           status: "active"
         });
 

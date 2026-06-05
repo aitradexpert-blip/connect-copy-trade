@@ -170,40 +170,26 @@ export default function AIAutoTrading() {
         return;
       }
 
-      // First, get the latest trading signal to use as reference (or create a placeholder)
-      const { data: latestSignal } = await supabase
-        .from('trading_signals')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      // If no signals exist, we need to handle this gracefully
-      if (!latestSignal) {
-        toast({
-          title: "No signals available",
-          description: "Please wait for admin to publish trading signals first",
-          variant: "destructive",
-        });
-        return;
-      }
-
+      // Subscription-mode assignment: bot listens to every future published signal.
+      // signal_id NULL + subscription_mentor_id NULL = "any mentor". The broadcast
+      // pipeline matches these rows via the new subscription_mentor_id column.
       const { error } = await supabase
         .from('ai_bot_assignments')
         .insert([{
           bot_id: bot.id,
-          signal_id: latestSignal.id, // Use actual signal ID, not bot ID
+          signal_id: null,
+          subscription_mentor_id: null,
           user_id: user?.id || '',
           trading_account_id: selectedAccount,
           auto_execute: true,
           status: 'active'
-        }]);
+        }] as any);
 
       if (error) throw error;
 
       toast({
-        title: "Forex Signal Bot Activated!",
-        description: `Bot will automatically execute admin signals on ${account.name}`,
+        title: "AI Signal Bot Activated",
+        description: `Bot will auto-execute every published signal on ${account.name}.`,
       });
       setIsModalOpen(false);
       setSelectedAccount("");
