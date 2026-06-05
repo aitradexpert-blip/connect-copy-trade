@@ -21,8 +21,9 @@ export type Database = {
           created_at: string
           executed_at: string | null
           id: string
-          signal_id: string
+          signal_id: string | null
           status: string
+          subscription_mentor_id: string | null
           trading_account_id: string
           updated_at: string
           user_id: string
@@ -33,8 +34,9 @@ export type Database = {
           created_at?: string
           executed_at?: string | null
           id?: string
-          signal_id: string
+          signal_id?: string | null
           status?: string
+          subscription_mentor_id?: string | null
           trading_account_id: string
           updated_at?: string
           user_id: string
@@ -45,8 +47,9 @@ export type Database = {
           created_at?: string
           executed_at?: string | null
           id?: string
-          signal_id?: string
+          signal_id?: string | null
           status?: string
+          subscription_mentor_id?: string | null
           trading_account_id?: string
           updated_at?: string
           user_id?: string
@@ -64,6 +67,13 @@ export type Database = {
             columns: ["signal_id"]
             isOneToOne: false
             referencedRelation: "trading_signals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_bot_assignments_subscription_mentor_id_fkey"
+            columns: ["subscription_mentor_id"]
+            isOneToOne: false
+            referencedRelation: "mentor_profiles"
             referencedColumns: ["id"]
           },
           {
