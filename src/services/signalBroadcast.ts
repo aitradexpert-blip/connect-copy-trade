@@ -90,17 +90,39 @@ async function fanOutDirect(signal: BroadcastSignal) {
   if (mentorUserId) relsQuery = relsQuery.eq("master_user_id", mentorUserId);
   const { data: rels } = await relsQuery;
 
-  // AI-bot opted-in accounts = ai_bot_assignments referencing this signal (eligible accounts)
-  const { data: botAcc } = await supabase
-    .from("ai_bot_assignments")
-    .select("trading_account_id")
-    .eq("signal_id", signal.id)
-    .eq("auto_execute", true);
-
+  // AI-bot opted-in accounts:
+  //   (a) legacy: rows referencing this exact signal_id
+  //   (b) subscription rows: signal_id IS NULL — mentor matches, or null = any mentor
+  const [legacyBot, subBotAll, subBotMentor] = await Promise.all([
+    supabase
+      .from("ai_bot_assignments")
+      .select("trading_account_id")
+      .eq("signal_id", signal.id)
+      .eq("auto_execute", true)
+      .eq("status", "active"),
+    supabase
+      .from("ai_bot_assignments")
+      .select("trading_account_id")
+      .is("signal_id", null)
+      .is("subscription_mentor_id", null)
+      .eq("auto_execute", true)
+      .eq("status", "active"),
+    signal.mentor_id
+      ? supabase
+          .from("ai_bot_assignments")
+          .select("trading_account_id")
+          .is("signal_id", null)
+          .eq("subscription_mentor_id", signal.mentor_id)
+          .eq("auto_execute", true)
+          .eq("status", "active")
+      : Promise.resolve({ data: [] as any[] } as any),
+  ]);
 
   const ids = new Set<string>();
   (rels || []).forEach((r: any) => r?.follower_account_id && ids.add(r.follower_account_id));
-  (botAcc || []).forEach((b: any) => b?.trading_account_id && ids.add(b.trading_account_id));
+  [legacyBot, subBotAll, subBotMentor].forEach((q: any) =>
+    (q?.data || []).forEach((b: any) => b?.trading_account_id && ids.add(b.trading_account_id)),
+  );
   if (!ids.size) return { delivered: 0, skipped: "no eligible followers" };
 
   const { data: accounts } = await supabase
