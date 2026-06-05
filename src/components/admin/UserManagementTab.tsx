@@ -247,6 +247,30 @@ export function UserManagementTab() {
     }
   };
 
+  const toggleMentor = async (userId: string, email: string) => {
+    const { data: existing } = await supabase
+      .from('user_roles')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('role', 'mentor')
+      .maybeSingle();
+    const willEnable = !existing;
+    if (!confirm(`${willEnable ? 'Grant' : 'Revoke'} Mentor role for ${email}?`)) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-set-flags', {
+        body: { action: 'set_mentor', target_user_id: userId, value: willEnable },
+      });
+      if (error || (data as any)?.error) throw new Error(error?.message || (data as any).error);
+      toast({
+        title: willEnable ? 'Mentor role granted' : 'Mentor role revoked',
+        description: email,
+      });
+    } catch (e: any) {
+      toast({ title: 'Mentor toggle failed', description: e.message, variant: 'destructive' });
+    }
+  };
+
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -353,6 +377,14 @@ export function UserManagementTab() {
                     title="Change subscription tier"
                   >
                     <Crown className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => toggleMentor(user.id, user.email)}
+                    title="Toggle Mentor role"
+                  >
+                    Mentor
                   </Button>
                   <Button
                     size="sm"
