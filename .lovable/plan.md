@@ -1,90 +1,103 @@
-# Plan — Master/Follower Handshake, AI Bot Linking, Gateway Failover
+## Goal
 
-This focuses on three confirmed bugs and the new gateway/health-check work. Backend (`mt5_service.py`, FastAPI) is out of scope for code edits — I'll only list the one VPS-side route you need to add.
+Single cohesive build pass covering 8 phases: Notice Board, Notifications, Telegram migration, POPIA consent, EFT payments, Mentor system, Broker reorder, and Telegram bot menu — reusing existing tables/components wherever possible.
 
-## Bug 1 — `master_user_id` is set to the FOLLOWER's user id (root cause of broken copy chain)
+---
 
-`src/pages/CopyTradingNew.tsx:465` writes `master_user_id: user?.id` when a follower clicks Follow. This makes every relationship look like a self-copy, and `broadcastSignal` filtering by `master_user_id = mentor.user_id` returns zero followers — so trades never propagate.
+### Phase 1 — Telegram Bot Menu (extend existing `telegram-webhook`)
 
-Fix:
+Update `supabase/functions/telegram-webhook/index.ts` to add an inline keyboard with three brokers in order: OctaFX (with HUMI100 promo message), PrimeXBT, WelTrade. Each "Submit Proof" callback puts the user into an `awaiting_proof:<broker>` state (stored in a small `telegram_bot_sessions` table — new, minimal). When an image arrives, forward to `@mansamusafx` and group `+dFAS3vs7awAwOWJk` via `forwardMessage`, then reply with confirmation.
 
-- Carry the master's real `user_id` into `masterTraders[]` (lines 158-180) as a new `master_user_id` field.
-- In `followTrader`, set `master_user_id` to the master account's owner, never `user?.id`.
-- Add a server-side guard via migration: trigger on `copy_trading_relationships BEFORE INSERT` that resolves `master_user_id` from `trading_accounts WHERE id = NEW.master_account_id` and overwrites whatever the client sent. This prevents future regressions and self-healing for existing wrong rows via a one-shot UPDATE.
+### Phase 2 — Main Dashboard Broker Reorder
 
-## Bug 2 — AI bot subscription is signal-scoped, not account-scoped
+Edit `src/pages/Index.tsx` (and `OctaFxPromoCard.tsx` if applicable) so the broker registration block lists OctaFX → PrimeXBT → WelTrade at the top with min-deposit labels and the HUMI100 highlight on OctaFX. Other brokers collapse into a "More Brokers" accordion. Each card gets a "Submit Proof" button opening a small dialog that uploads to existing `payment-proofs` bucket and calls a new edge function `submit-broker-proof` that pushes a Telegram message to `@mansamusafx`.
 
-`AIAutoTrading.tsx` writes one `ai_bot_assignments` row per *past* `signal_id`. `signalBroadcast.fanOutDirect` filters by `signal_id = NEW.id`, so a freshly published signal matches no assignments and AI-bot accounts never execute.
+### Phase 3 — WhatsApp → Telegram Migration
 
-Fix:
+Replace links in the 7 known files (`WhatsAppButton.tsx`, `Subscription.tsx`, `useSubscription.tsx`, `Pricing.tsx`, `Index.tsx`, `Install.tsx`, `About.tsx`) and `Auth.tsx`. 
 
-- New nullable column `ai_bot_assignments.subscription_mentor_id uuid` (mentor whose signals this bot should auto-execute, NULL = any mentor).
-- Activation path inserts a row with `signal_id = NULL`, `subscription_mentor_id = <mentor of selected master>` (or `NULL` for "all mentors"), `auto_execute = true`, `status = 'active'`.
-- `broadcastSignal.fanOutDirect` selects bot accounts via `signal_id IS NULL AND auto_execute=true AND status='active' AND (subscription_mentor_id IS NULL OR subscription_mentor_id = signal.mentor_id)`.
-- Keep the legacy per-signal flow working (don't break old assignment rows).
+- Support/group link: `https://t.me/+dFAS3vs7awAwOWJk`
+- Personal/download link on Sign-in/Sign-up CTA: `https://t.me/mansamusafx` ("Download HuMi App")
+Rename `WhatsAppButton.tsx` usage to a new `TelegramButton.tsx` (keep WhatsApp file as deprecated shim re-exporting Telegram button to avoid breaking imports).
 
-## Bug 3 — Master-status lifecycle has no MT5 validation
+### Phase 4 — Payment Migration (remove Yoco)
 
-Toggling `is_master` is a raw UPDATE with no credential check, so a half-provisioned account can become a "master" that no broker request will ever match.
+- Replace Yoco UI in `Subscription.tsx` / `Pricing.tsx` with a static Capitec banking-details card (Acc 1609645411, Branch 470010) + "Upload Proof of Payment" button + "Contact Support on Telegram" button.
+- Reuse existing `payment_proofs` table and `payment-proofs` storage bucket. Add columns if missing (e.g. `reference`, `telegram_forwarded_at`) — already has user_id/plan/amount/image_url/status.
+- New edge function `submit-payment-proof` uploads file, inserts row, forwards image+caption to `@mansamusafx` via Telegram Bot gateway.
+- Delete (or leave dormant) `create-yoco-checkout`, `create-guest-checkout`, `yoco-webhook` — remove all frontend calls. Keep secrets untouched.
 
-Fix in `toggleMasterStatus`:
+### Phase 5 — POPIA Consent
 
-- Block enable when `connection_status !== 'connected'` (already on the row) and surface a clear toast.
-- Before flipping the flag, call `primaryApi.getAccount(metaapi_account_id)`; only on 200 set `is_master=true`. On failure: toast "Master activation failed — terminal unreachable. Try again or run Health Check".
-- Add a "Re-sync" button next to disabled Follow buttons: re-runs `getAccount` and flips local `connection_status` once the engine answers.
+- New table `user_consents` (user_id, consent_type, version, accepted_at) — reused for all checkpoints. Extend existing `user_settings` only if simpler — but separate table is cleaner for audit.
+- New static pages `/terms` and `/privacy` with POPIA-compliant text (South African data-protection language, mediator disclaimer per memory).
+- Add mandatory checkbox + link on: Sign-up (`Auth.tsx`), Copy Trading activation (`CopyTradingNew.tsx`), AI Bot activation (`AIAutoTrading.tsx`), Trade Ideas execution (`TradingIdeas.tsx`), Payment submission.
+- Block submit until checked; insert one row per acceptance.
 
-## New — Gateway health, status badge, MetaAPI failover
+### Phase 6 — Mentor System & Execution
 
-VPS-side (you'll add this to `main.py` — outside Lovable):
+- Insert a `user_roles` row (`role='mentor'`) for `mphoforex5@gmail.com` via insert tool.
+- Ensure `mentor_profiles` row exists & `is_active=true` for that user (idempotent insert).
+- Verify the existing `enforce_master_user_id` trigger + `subscription_mentor_id` column on `ai_bot_assignments` (already added in earlier migration) — no new schema.
+- Audit `CopyTradingNew.tsx` activation flow: when follower clicks "Follow", ensure the call uses `mentor_profiles.user_id` (not profile id) and `mentor_clients` link is created. Add explicit error toasts.
+- `signalBroadcast.ts` already handles dual pathway (subscription_mentor_id) — verify and add a manual MT5 mirror trigger note (the VPS gateway already pushes manual trades via `trade_history` insert → existing `notify_trade_executed` fan-out).
 
-```python
-@app.get("/health")
-async def health_check():
-    return {"status":"online","engine":"FastAPI","mt5_status": mt5.initialize() if hasattr(mt5,"initialize") else False}
-```
+### Phase 7 — Notice Board
 
-Frontend:
+- New table `announcements` (id, title, body, audience enum: `all|mentor_hub|mentor_center`, is_active, starts_at, ends_at, created_by). Full GRANTs + RLS (admin write via `has_role`, public read of active).
+- Admin tab in `AdminPanel.tsx` → new `AnnouncementsTab.tsx` (create/edit/toggle/delete).
+- New `NoticeBoard.tsx` component embedded in `Index.tsx`, `MentorHub.tsx`, `MentorCenter.tsx`, `MentorClientDashboard.tsx`.
 
-- Update `PrimaryStatusBadge` to ping `/health` (not the `/account?id=health` sentinel). Show three states: `VPS Online`, `Reconnecting…`, `Fallback (MetaAPI Cloud)`. On three consecutive failures the badge switches to red and a tooltip shows last successful sync.
-- Failover is already partially in place: `executeMetaApiTrade` tries `primaryApi.sendOrder` first and falls back to the `metaapi-execute-trade` edge function on `PrimaryUnavailableError`. Extend the same pattern to `withFailover` reads — already done for `/account`, `/positions`, `/history`.
-- New `src/components/admin/GatewayStatusCard.tsx` for the admin Trading Accounts area: rows for **VPS Gateway**, **MetaAPI Failover**, **Last DB Sync**. Pure read-only.
+### Phase 8 — Notification Centre Fix
 
-## Admin override — mentor / master flags
+- Audit `useNotifications.ts` — already filters by `user_id=eq.<auth.uid>`, so the bug is upstream. Check `notify_new_signal` trigger (correct), `notify_account_connected` (correct), `notify_trade_executed` (correct).
+- The real gap: copy-trade execution path (VPS gateway / `signalBroadcast.ts`) may not insert into `trade_history` per follower → no notification fires. Patch `signalBroadcast.ts` to insert a `trade_history` row per follower execution so triggers fan out, and to insert an explicit `notifications` row when AI bot executes.
+- Add RLS verification: `notifications` SELECT policy must be `auth.uid() = user_id` only.
 
-Extend `src/components/admin/UserManagementTab.tsx`:
+---
 
-- Per-user actions: "Make Mentor" / "Revoke Mentor" — inserts or deletes a `user_roles(role='mentor')` row (the sync trigger from last turn keeps `mentor_profiles` aligned only one-way, so this gives admins the manual switch).
-- Per-account action on the user's trading accounts list: "Mark as Master" — runs the same validated path as Bug 3 above.
-- Both actions go through a new `admin-set-flags` edge function so the service-role write bypasses RLS without exposing the key.
+### New files
 
-## Resilience messaging (offline-first)
+- `src/components/TelegramButton.tsx`
+- `src/components/NoticeBoard.tsx`
+- `src/components/admin/AnnouncementsTab.tsx`
+- `src/components/PopiaConsentCheckbox.tsx`
+- `src/components/BrokerProofUploadDialog.tsx`
+- `src/pages/Terms.tsx`, `src/pages/Privacy.tsx`
+- `supabase/functions/submit-payment-proof/index.ts`
+- `supabase/functions/submit-broker-proof/index.ts`
 
-- Wrap trade-execution toasts: catch network errors from `primaryApi.sendOrder` and show `"Syncing with engine…"` (amber toast) instead of red error, while the MetaAPI fallback runs in the background. Final outcome toast (success/fail) replaces it.
-- No client-side credentials cache: the VPS owns `credentials_cache.json`. Frontend stays stateless on credentials — we only mirror engine connection status in UI.
+### Edited files
 
-## Migrations (one file)
+- Bot menu: `supabase/functions/telegram-webhook/index.ts`
+- WhatsApp→Telegram: `WhatsAppButton.tsx`, `Auth.tsx`, `Index.tsx`, `Install.tsx`, `About.tsx`, `Pricing.tsx`, `Subscription.tsx`, `useSubscription.tsx`
+- Consent: `Auth.tsx`, `CopyTradingNew.tsx`, `AIAutoTrading.tsx`, `TradingIdeas.tsx`, `Subscription.tsx`
+- Notices: `Index.tsx`, `MentorHub.tsx`, `MentorCenter.tsx`, `MentorClientDashboard.tsx`, `AdminPanel.tsx`
+- Execution fix: `services/signalBroadcast.ts`
+- Routes: `App.tsx` (Terms/Privacy)
 
-1. `ALTER TABLE ai_bot_assignments ADD COLUMN subscription_mentor_id uuid REFERENCES mentor_profiles(id);` + index on `(status, auto_execute, subscription_mentor_id) WHERE signal_id IS NULL`.
-2. Backfill: `UPDATE copy_trading_relationships r SET master_user_id = a.user_id FROM trading_accounts a WHERE r.master_account_id = a.id AND r.master_user_id = r.follower_user_id;`
-3. Trigger `BEFORE INSERT OR UPDATE OF master_account_id ON copy_trading_relationships` that forces `NEW.master_user_id := (SELECT user_id FROM trading_accounts WHERE id = NEW.master_account_id)`.
+### Migrations
 
-## Files touched
+1. `announcements` table + GRANTs + RLS + update trigger.
+2. `user_consents` table + GRANTs + RLS.
+3. `telegram_bot_sessions` table (chat_id PK, state, broker, updated_at) + GRANTs.
+4. Insert mentor role + ensure `mentor_profiles` for `mphoforex5@gmail.com` (via insert tool, not migration).
 
-- **Edit**: `src/pages/CopyTradingNew.tsx`, `src/pages/AIAutoTrading.tsx`, `src/services/signalBroadcast.ts`, `src/components/PrimaryStatusBadge.tsx`, `src/components/admin/UserManagementTab.tsx`, `src/components/admin/MetaApiHealthTab.tsx` (mount GatewayStatusCard).
-- **New**: `src/components/admin/GatewayStatusCard.tsx`, `supabase/functions/admin-set-flags/index.ts`.
-- **Migration**: one SQL file covering the three items above.
+### Out of scope (will not touch)
 
-## Out of scope
+- MT5 VPS gateway code (unchanged; we only adapt the client to its existing payloads).
+- Existing security policies tightened in prior pass.
+- Yoco secrets (left in place but unused).
 
-- `mt5_service.py` and FastAPI route changes (you own the VPS deploy).
-- Embedding `credentials_cache.json` in the browser — security risk and architecturally redundant with the VPS-owned cache.
-- Pricing/billing surfaces.  
+### Confirmation needed before build
+
+1. POPIA Terms/Privacy text: should I draft standard South-African POPIA text (mediator, data controller = HuMi, no financial advice) or do you have your own copy to paste? Draft it for me and use it.
+2. Bank "Account Name" was left blank in your spec — what name should display? M Maphanga  
   
-**The SQL Trigger:** The plan suggests a `BEFORE INSERT` trigger to resolve `master_user_id`. Ensure that your database (Supabase/PostgreSQL) has the correct permissions for the `authenticated` role to execute this trigger. If the trigger fails, your trade execution will fail. **Test this in the SQL Editor first.**
-- **The Gateway Failover:** The plan assumes the frontend can handle a state change from "VPS Gateway" to "MetaAPI Gateway" smoothly. Ensure that when this failover happens, the *UI* communicates this clearly to the user. You don't want a user thinking they are trading on the VPS gateway when they are actually failing over to the cloud.
-
-### My Recommendation for the "Final Boss" execution:
-
-1. **Approve the Plan:** Tell Lovable: *"The plan is approved. Proceed with the migration and the refactor of the copy-trading engine."*
-2. **The Manual Override (Crucial):** Regarding the `mphoforex5@gmail.com` issue: Ensure the `admin-set-flags` function is tested immediately after they implement it. You want to be able to fix that specific account in seconds.
-3. **The "One-Shot" Update:** The migration plan includes a `Backfill` update. **Ask them to provide a dry-run log** before they run the migration on production. You want to see which rows are currently "broken" before the SQL command overwrites them.
+Important change by Phases:  
+Phase 4  
+Phase 7  
+Phase 5  
+Phase 6  
+  
+Then choose which one works best to save more credits
