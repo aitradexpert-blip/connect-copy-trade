@@ -9,6 +9,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle, Sparkles, Eye, EyeOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import PopiaConsentCheckbox, { recordConsent } from "@/components/PopiaConsentCheckbox";
+import TelegramButton, { TELEGRAM_CHANNEL_URL, TELEGRAM_DM_URL } from "@/components/TelegramButton";
+import { Send, Download } from "lucide-react";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -20,6 +23,7 @@ const Auth = () => {
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
+  const [signupConsent, setSignupConsent] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -145,6 +149,10 @@ const Auth = () => {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!signupConsent) {
+      toast({ title: "Please accept the Terms & Privacy Policy", variant: "destructive" });
+      return;
+    }
     setIsLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -158,6 +166,7 @@ const Auth = () => {
       if (error) throw error;
 
       if (data?.user) {
+        await recordConsent(supabase, data.user.id, 'signup', { email });
         await linkMentorReferral(data.user.id);
         const activated = await activatePendingSubscription(data.user.id, email);
         toast({
@@ -343,13 +352,40 @@ const Auth = () => {
                     </button>
                   </div>
                 </div>
-                <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
+                <PopiaConsentCheckbox
+                  checked={signupConsent}
+                  onChange={setSignupConsent}
+                  id="signup-consent"
+                />
+                <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading || !signupConsent}>
                   {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                   Create Account
                 </Button>
               </form>
             </TabsContent>
           </Tabs>
+
+          {/* Telegram quick-actions */}
+          <div className="mt-6 space-y-2">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Need help?</span>
+              </div>
+            </div>
+            <TelegramButton
+              mode="dm"
+              label="Download HuMi App"
+              description="Get the install link & support from @mansamusafx"
+              icon={<Download className="w-5 h-5 text-primary" />}
+            />
+            <TelegramButton
+              mode="channel"
+              label="Join the HuMi Community"
+              description="Free trading tools, signals & updates"
+              icon={<Send className="w-5 h-5 text-primary" />}
+            />
+          </div>
 
           {/* Forgot Password Modal */}
           {forgotMode && (
