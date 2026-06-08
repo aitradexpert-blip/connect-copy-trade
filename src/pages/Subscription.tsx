@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Loader2, CreditCard, Upload, Sparkles, X, MessageCircle, BookOpen, GraduationCap, LineChart, Bot, Users, Shield, Headphones } from "lucide-react";
+import { Check, Loader2, Upload, Copy as CopyIcon, Building2, Send } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSubscriptionPlans, getFeatureList } from "@/hooks/useSubscriptionPlans";
+import TelegramButton, { TELEGRAM_CHANNEL_URL, TELEGRAM_DM_URL } from "@/components/TelegramButton";
+import PopiaConsentCheckbox, { recordConsent } from "@/components/PopiaConsentCheckbox";
 
 interface Plan {
   name: string;
@@ -24,8 +26,8 @@ interface Plan {
 }
 
 const freeFeatures = [
-  "WhatsApp Trading Community",
-  "Daily Trading Signals (WhatsApp)",
+  "Telegram Trading Community",
+  "Daily Trading Signals (Telegram)",
   "Free Expert Advisor",
   "Free Mentorship Program",
   "Training Center (full access)",
@@ -36,16 +38,25 @@ const freeFeatures = [
   "Real-Time Notifications (limited)",
 ];
 
+const BANK = {
+  bank: "Capitec",
+  accountName: "M Maphanga",
+  accountType: "Savings",
+  accountNumber: "1609645411",
+  branchCode: "470010",
+};
+
 export default function Subscription() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const { tierName, isFree } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [loading, setLoading] = useState<string | null>(null);
   const [showProofDialog, setShowProofDialog] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [reference, setReference] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [consent, setConsent] = useState(false);
   const { plans: dbPlans, loading: plansLoading } = useSubscriptionPlans();
 
   const plans: Plan[] = useMemo(() => {
@@ -60,42 +71,68 @@ export default function Subscription() {
     }));
   }, [dbPlans]);
 
-  const handleYocoPayment = async (plan: Plan) => {
-    if (!user) { toast({ title: "Please sign in", variant: "destructive" }); return; }
-    setLoading(plan.tier);
-    try {
-      const { data, error } = await supabase.functions.invoke('create-yoco-checkout', {
-        body: { tier: plan.tier, userId: user.id, userEmail: user.email, successUrl: `${window.location.origin}/subscription?success=true`, cancelUrl: `${window.location.origin}/subscription?cancelled=true` }
-      });
-      if (error) throw error;
-      if (data?.redirectUrl) window.location.href = data.redirectUrl;
-      else throw new Error('No redirect URL received');
-    } catch (error: any) {
-      toast({ title: "Payment Error", description: error.message, variant: "destructive" });
-      setSelectedPlan(plan); setShowProofDialog(true);
-    } finally { setLoading(null); }
+  const openProofDialog = (plan: Plan) => {
+    if (!user) {
+      toast({ title: "Please sign in to subscribe", variant: "destructive" });
+      navigate('/auth');
+      return;
+    }
+    setSelectedPlan(plan);
+    setConsent(false);
+    setReference(`HUMI-${plan.tier.toUpperCase()}-${user.email?.split('@')[0] || user.id.slice(0, 6)}`);
+    setShowProofDialog(true);
+  };
+
+  const copyToClipboard = (value: string, label: string) => {
+    navigator.clipboard.writeText(value).then(() =>
+      toast({ title: `${label} copied` }),
+    );
   };
 
   const handleProofUpload = async () => {
     if (!proofFile || !selectedPlan || !user) return;
+    if (!consent) {
+      toast({ title: "Please accept the Terms & Privacy Policy", variant: "destructive" });
+      return;
+    }
     setUploading(true);
     try {
       const fileExt = proofFile.name.split('.').pop();
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('payment-proofs').upload(fileName, proofFile);
+      const { error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(fileName, proofFile);
       if (uploadError) throw uploadError;
-      const { data: urlData } = supabase.storage.from('payment-proofs').getPublicUrl(fileName);
-      const { error: dbError } = await supabase.from('payment_proofs').insert({ user_id: user.id, email: user.email || '', plan: selectedPlan.tier, amount: selectedPlan.priceZar, image_url: urlData.publicUrl, status: 'pending' });
-      if (dbError) throw dbError;
-      toast({ title: "Proof uploaded", description: "We'll activate your subscription within 24 hours." });
-      setShowProofDialog(false); setProofFile(null); setSelectedPlan(null);
-    } catch (error: any) { toast({ title: "Upload failed", description: error.message, variant: "destructive" }); }
-    finally { setUploading(false); }
-  };
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const paymentSuccess = urlParams.get('success') === 'true';
-  const paymentCancelled = urlParams.get('cancelled') === 'true';
+      const { data: urlData } = supabase.storage.from('payment-proofs').getPublicUrl(fileName);
+
+      const { error: fnErr } = await supabase.functions.invoke('submit-payment-proof', {
+        body: {
+          plan: selectedPlan.tier,
+          amount: selectedPlan.priceZar,
+          image_url: urlData.publicUrl,
+          reference,
+        },
+      });
+      if (fnErr) throw fnErr;
+
+      await recordConsent(supabase, user.id, 'payment', { plan: selectedPlan.tier, amount: selectedPlan.priceZar });
+
+      toast({
+        title: "Proof submitted",
+        description: "Forwarded to our team on Telegram. We'll activate within a few hours.",
+      });
+      setShowProofDialog(false);
+      setProofFile(null);
+      setSelectedPlan(null);
+      setReference("");
+      setConsent(false);
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -109,24 +146,66 @@ export default function Subscription() {
           </p>
         </div>
 
-        {paymentSuccess && (
-          <div className="bg-profit/10 border border-profit rounded-lg p-4 text-center">
-            <h3 className="text-profit font-semibold">Payment Successful!</h3>
-            <p className="text-sm text-muted-foreground">Your subscription is being activated.</p>
-          </div>
-        )}
-        {paymentCancelled && (
-          <div className="bg-amber-500/10 border border-amber-500 rounded-lg p-4 text-center">
-            <h3 className="text-amber-500 font-semibold">Payment Cancelled</h3>
-            <p className="text-sm text-muted-foreground">You can try again whenever you're ready.</p>
-          </div>
-        )}
+        {/* Bank details card */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5" /> Pay by EFT
+            </CardTitle>
+            <CardDescription>
+              Deposit into the HuMi account below, then upload your proof of payment for activation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              {[
+                ["Bank", BANK.bank],
+                ["Account Name", BANK.accountName],
+                ["Account Type", BANK.accountType],
+                ["Account Number", BANK.accountNumber],
+                ["Branch Code", BANK.branchCode],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between gap-2 p-3 rounded-lg border border-border bg-background/40"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs text-muted-foreground">{label}</div>
+                    <div className="font-medium truncate">{value}</div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => copyToClipboard(value, label)}
+                    aria-label={`Copy ${label}`}
+                  >
+                    <CopyIcon className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <TelegramButton
+                mode="dm"
+                label="Contact Support on Telegram"
+                description="@mansamusafx · DM us with payment questions"
+                icon={<Send className="w-5 h-5 text-primary" />}
+              />
+              <TelegramButton
+                mode="channel"
+                label="Join HuMi Community"
+                description="Free signals, updates and announcements"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         {plansLoading ? (
-          <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Free Tier Card */}
             <Card className={`relative bg-gradient-card border-border shadow-card ${isFree ? 'ring-2 ring-profit' : ''}`}>
               {isFree && <Badge className="absolute -top-3 right-4 bg-profit">Current</Badge>}
               <CardHeader className="text-center">
@@ -152,9 +231,11 @@ export default function Subscription() {
               </CardContent>
             </Card>
 
-            {/* Paid Plans */}
             {plans.map((plan) => (
-              <Card key={plan.name} className={`relative bg-gradient-card border-border shadow-card ${plan.popular ? 'ring-2 ring-primary' : ''} ${plan.tier === tierName ? 'ring-2 ring-profit' : ''}`}>
+              <Card
+                key={plan.name}
+                className={`relative bg-gradient-card border-border shadow-card ${plan.popular ? 'ring-2 ring-primary' : ''} ${plan.tier === tierName ? 'ring-2 ring-profit' : ''}`}
+              >
                 {plan.popular && <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-primary">Most Popular</Badge>}
                 {plan.tier === tierName && <Badge className="absolute -top-3 right-4 bg-profit">Current</Badge>}
                 <CardHeader className="text-center">
@@ -174,8 +255,13 @@ export default function Subscription() {
                       </li>
                     ))}
                   </ul>
-                  <Button className="w-full" variant={plan.popular ? "default" : "outline"} onClick={() => handleYocoPayment(plan)} disabled={loading !== null || plan.tier === tierName}>
-                    {plan.tier === tierName ? 'Current Plan' : loading === plan.tier ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : <><CreditCard className="w-4 h-4 mr-2" />Subscribe</>}
+                  <Button
+                    className="w-full"
+                    variant={plan.popular ? "default" : "outline"}
+                    onClick={() => openProofDialog(plan)}
+                    disabled={plan.tier === tierName}
+                  >
+                    {plan.tier === tierName ? 'Current Plan' : <><Upload className="w-4 h-4 mr-2" />Pay by EFT &amp; Submit Proof</>}
                   </Button>
                 </CardContent>
               </Card>
@@ -184,7 +270,7 @@ export default function Subscription() {
         )}
 
         <div className="text-center text-sm text-muted-foreground space-y-1">
-          <p>All payments processed via Yoco. Cancel anytime.</p>
+          <p>Subscriptions are activated within a few hours of payment verification. Cancel anytime.</p>
           <Button variant="link" className="p-0 h-auto text-sm" onClick={() => navigate('/pricing')}>
             View full feature comparison →
           </Button>
@@ -194,18 +280,56 @@ export default function Subscription() {
       <Dialog open={showProofDialog} onOpenChange={setShowProofDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Upload Payment Proof</DialogTitle>
-            <DialogDescription>If automatic payment failed, upload your proof for manual verification.</DialogDescription>
+            <DialogTitle>Submit Proof of Payment</DialogTitle>
+            <DialogDescription>
+              After making the EFT, upload your bank confirmation. Our team is notified instantly on Telegram.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div><Label>Selected Plan</Label><p className="text-sm font-medium">{selectedPlan?.name} - R{selectedPlan?.priceZar.toFixed(2)}/month</p></div>
-            <div><Label htmlFor="proof">Payment Screenshot</Label><Input id="proof" type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] || null)} /></div>
+            <div>
+              <Label>Selected Plan</Label>
+              <p className="text-sm font-medium">
+                {selectedPlan?.name} - R{selectedPlan?.priceZar.toFixed(2)}/month
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reference">Payment Reference (use this as EFT reference)</Label>
+              <Input id="reference" value={reference} onChange={(e) => setReference(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="proof">Bank Confirmation / Screenshot</Label>
+              <Input
+                id="proof"
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setProofFile(e.target.files?.[0] || null)}
+              />
+            </div>
+            <PopiaConsentCheckbox checked={consent} onChange={setConsent} id="consent-payment" />
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowProofDialog(false)} className="flex-1">Cancel</Button>
-              <Button onClick={handleProofUpload} disabled={!proofFile || uploading} className="flex-1">
-                {uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</> : <><Upload className="w-4 h-4 mr-2" />Upload Proof</>}
+              <Button variant="outline" onClick={() => setShowProofDialog(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleProofUpload}
+                disabled={!proofFile || uploading || !consent}
+                className="flex-1"
+              >
+                {uploading ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting…</>
+                ) : (
+                  <><Upload className="w-4 h-4 mr-2" />Submit Proof</>
+                )}
               </Button>
             </div>
+            <a
+              href={TELEGRAM_DM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs text-center text-primary hover:underline"
+            >
+              Need help? Chat with support on Telegram →
+            </a>
           </div>
         </DialogContent>
       </Dialog>

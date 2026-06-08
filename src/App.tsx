@@ -38,6 +38,8 @@ import InvestorPitch from "./pages/InvestorPitch";
 import About from "./pages/About";
 import ResetPassword from "./pages/ResetPassword";
 import Install from "./pages/Install";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const queryClient = new QueryClient();
@@ -137,6 +139,8 @@ const App = () => (
                 <Route path="/api-docs" element={<ApiDocs />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/install" element={<Install />} />
+                <Route path="/terms" element={<Terms />} />
+                <Route path="/privacy" element={<Privacy />} />
 
                 {/* Home - mentor clients get branded dashboard */}
                 <Route path="/" element={<MentorAwareHome />} />

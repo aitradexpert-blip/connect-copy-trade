@@ -119,6 +119,45 @@ export type Database = {
         }
         Relationships: []
       }
+      announcements: {
+        Row: {
+          audience: Database["public"]["Enums"]["announcement_audience"]
+          body: string
+          created_at: string
+          created_by: string | null
+          ends_at: string | null
+          id: string
+          is_active: boolean
+          starts_at: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          audience?: Database["public"]["Enums"]["announcement_audience"]
+          body: string
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          is_active?: boolean
+          starts_at?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          audience?: Database["public"]["Enums"]["announcement_audience"]
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          is_active?: boolean
+          starts_at?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -761,9 +800,12 @@ export type Database = {
           email: string
           id: string
           image_url: string
+          payment_method: string
           plan: string
+          reference: string | null
           status: string | null
           submitted_at: string
+          telegram_forwarded_at: string | null
           user_id: string | null
         }
         Insert: {
@@ -773,9 +815,12 @@ export type Database = {
           email: string
           id?: string
           image_url: string
+          payment_method?: string
           plan: string
+          reference?: string | null
           status?: string | null
           submitted_at?: string
+          telegram_forwarded_at?: string | null
           user_id?: string | null
         }
         Update: {
@@ -785,9 +830,12 @@ export type Database = {
           email?: string
           id?: string
           image_url?: string
+          payment_method?: string
           plan?: string
+          reference?: string | null
           status?: string | null
           submitted_at?: string
+          telegram_forwarded_at?: string | null
           user_id?: string | null
         }
         Relationships: []
@@ -1347,6 +1395,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_consents: {
+        Row: {
+          accepted_at: string
+          consent_type: string
+          document_version: string
+          id: string
+          ip_address: string | null
+          metadata: Json | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string
+          consent_type: string
+          document_version?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string
+          consent_type?: string
+          document_version?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1554,7 +1635,7 @@ export type Database = {
       reset_monthly_limits: { Args: never; Returns: undefined }
     }
     Enums: {
-      [_ in never]: never
+      announcement_audience: "all" | "mentor_hub" | "mentor_center" | "admins"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1681,6 +1762,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      announcement_audience: ["all", "mentor_hub", "mentor_center", "admins"],
+    },
   },
 } as const

@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import NoticeBoard from "@/components/NoticeBoard";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 
@@ -178,6 +179,7 @@ const Index = () => {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-full overflow-x-hidden">
+        <NoticeBoard audience="all" />
         {/* Welcome Banner */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>

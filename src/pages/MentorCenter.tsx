@@ -20,6 +20,7 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { OctaFxPromoCard } from "@/components/OctaFxPromoCard";
 import { broadcastSignal } from "@/services/signalBroadcast";
+import NoticeBoard from "@/components/NoticeBoard";
 
 interface MentorProfile {
   id: string;
@@ -523,6 +524,7 @@ export default function MentorCenter() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-full overflow-x-hidden">
+        <NoticeBoard audience="mentor_center" />
         <OctaFxPromoCard />
         <div className="flex items-center justify-between">
           <div>
