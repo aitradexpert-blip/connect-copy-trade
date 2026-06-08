@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp, Crown, Activity } from "lucide-react";
+import { CheckCircle, XCircle, Eye, FileText, CreditCard, Users, ArrowLeftRight, TrendingUp, Crown, Activity, Megaphone } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +14,7 @@ import { UserManagementTab } from "@/components/admin/UserManagementTab";
 import { TransferMonitoringTab } from "@/components/admin/TransferMonitoringTab";
 import { MentorManagementTab } from "@/components/admin/MentorManagementTab";
 import { MetaApiHealthTab } from "@/components/admin/MetaApiHealthTab";
+import { AnnouncementsTab } from "@/components/admin/AnnouncementsTab";
 
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -287,6 +288,10 @@ export default function AdminPanel() {
                 <Activity className="w-4 h-4" />
                 MetaAPI Health
               </TabsTrigger>
+              <TabsTrigger value="notices" className="flex items-center gap-2 whitespace-nowrap">
+                <Megaphone className="w-4 h-4" />
+                Notices
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -448,6 +453,10 @@ export default function AdminPanel() {
 
           <TabsContent value="health">
             <MetaApiHealthTab />
+          </TabsContent>
+
+          <TabsContent value="notices">
+            <AnnouncementsTab />
           </TabsContent>
         </Tabs>
       </div>
