@@ -43,6 +43,9 @@ async function req<T = any>(
       signal: ctl.signal,
       headers: {
         Accept: "application/json",
+        // Free ngrok tunnels inject an HTML interstitial unless this is set,
+        // which would corrupt JSON parsing. Harmless on a custom domain.
+        "ngrok-skip-browser-warning": "true",
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...(init.headers || {}),
       },
@@ -53,12 +56,18 @@ async function req<T = any>(
       );
     }
     const body = await resp.json().catch(() => null);
-    if (!body || typeof body !== "object" || !("data" in body)) {
+    // Accept both the canonical wrapper { source, data } and a bare payload
+    // ({...} / [...]) so a healthy bridge isn't wrongly marked unavailable just
+    // because it omits the wrapper. Only an empty/invalid response fails over.
+    if (body === null || body === undefined) {
       throw new PrimaryUnavailableError(
-        `Primary engine returned unexpected shape on ${path}`,
+        `Primary engine returned empty body on ${path}`,
       );
     }
-    return (body as { data: T }).data;
+    if (typeof body === "object" && !Array.isArray(body) && "data" in body) {
+      return (body as { data: T }).data;
+    }
+    return body as T;
   } catch (e: any) {
     if (e instanceof PrimaryUnavailableError) throw e;
     throw new PrimaryUnavailableError(
