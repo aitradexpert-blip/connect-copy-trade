@@ -1234,6 +1234,7 @@ export type Database = {
           metaapi_health_checked_at: string | null
           metaapi_health_status: string | null
           metaapi_last_error: string | null
+          mt5_password: string | null
           name: string
           platform: string
           provider: string
@@ -1260,6 +1261,7 @@ export type Database = {
           metaapi_health_checked_at?: string | null
           metaapi_health_status?: string | null
           metaapi_last_error?: string | null
+          mt5_password?: string | null
           name: string
           platform: string
           provider?: string
@@ -1286,6 +1288,7 @@ export type Database = {
           metaapi_health_checked_at?: string | null
           metaapi_health_status?: string | null
           metaapi_last_error?: string | null
+          mt5_password?: string | null
           name?: string
           platform?: string
           provider?: string
