@@ -145,7 +145,6 @@ export function ConnectAccountModal({
       });
       return;
     }
-
     if (provider === 'screenshot' && !agreedToTerms) {
       toast({ title: "Please agree to the terms", variant: "destructive" });
       return;
@@ -153,6 +152,87 @@ export function ConnectAccountModal({
     
     setIsLoading(true);
 
+    // ---------------------------------------------------------
+    // STEP 1: Try our own VPS backend first (primary engine)
+    // ---------------------------------------------------------
+    try {
+      const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
+
+      // Create a placeholder row first so we have an account_id (UUID) to use
+      const { data: newAccount, error: insertErr } = await supabase
+        .from("trading_accounts")
+        .insert([{
+          user_id: user.id,
+          provider: 'vps',
+          name: accountName,
+          login: formData.login.replace(/\D/g, '') || formData.login,
+          server: formData.server,
+          platform: formData.platform,
+          connection_type: 'vps',
+          connection_status: 'connecting',
+          balance: 0,
+          equity: 0,
+        }])
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      const vpsRes = await fetch(
+        "https://municipal-posh-shading.ngrok-free.dev/connect",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+          },
+          signal: AbortSignal.timeout(8000),
+          body: JSON.stringify({
+            login: parseInt(formData.login.replace(/\D/g, ''), 10),
+            password: formData.password,
+            server: formData.server,
+            account_id: newAccount.id,
+          }),
+        }
+      );
+
+      const vpsJson = await vpsRes.json();
+
+      if (vpsJson?.success && vpsJson?.data) {
+        const { error: updateErr } = await supabase
+          .from("trading_accounts")
+          .update({
+            mt5_password: formData.password,
+            connection_status: 'connected',
+            balance: vpsJson.data.balance ?? 0,
+            equity: vpsJson.data.equity ?? 0,
+            broker_name: vpsJson.data.company ?? null,
+          })
+          .eq("id", newAccount.id);
+
+        if (updateErr) throw updateErr;
+
+        toast({
+          title: "Account connected!",
+          description: `${accountName} connected via our direct trading engine.`,
+        });
+        resetAndClose();
+        setIsLoading(false);
+        return;
+      }
+
+      // VPS responded but login failed — clean up placeholder and 
+      // fall through to MetaAPI below
+      await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+      console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
+
+    } catch (vpsError) {
+      console.warn("VPS unreachable, falling back to MetaAPI:", vpsError);
+    }
+
+    // ---------------------------------------------------------
+    // STEP 2: Fallback to MetaAPI (existing logic, unchanged)
+    // ---------------------------------------------------------
     try {
       type ProvisionResult = {
         success?: boolean;
@@ -162,7 +242,6 @@ export function ConnectAccountModal({
         pending?: boolean;
         code?: string;
       };
-
       const res = await invokeEdgeFunctionJson<ProvisionResult>("metaapi-provision-account", {
         login: formData.login,
         password: formData.password,
@@ -171,7 +250,6 @@ export function ConnectAccountModal({
         name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
         email: user.email,
       });
-
       if (!res.ok) {
         toast({
           title: "Connection Failed",
@@ -181,9 +259,7 @@ export function ConnectAccountModal({
         setIsLoading(false);
         return;
       }
-
       const parsed = res.data;
-
       if (parsed?.pending || parsed?.code === "PENDING") {
         toast({
           title: "MetaAPI is still processing",
@@ -193,7 +269,6 @@ export function ConnectAccountModal({
         setIsLoading(false);
         return;
       }
-
       if (!parsed?.success) {
         toast({
           title: "Connection Failed",
@@ -203,10 +278,7 @@ export function ConnectAccountModal({
         setIsLoading(false);
         return;
       }
-
       const data2 = parsed;
-
-      // Validate UUID before persisting — never store MT login numbers as MetaAPI IDs
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!data2.metaapi_account_id || !UUID_RE.test(data2.metaapi_account_id)) {
         toast({
@@ -217,7 +289,6 @@ export function ConnectAccountModal({
         setIsLoading(false);
         return;
       }
-
       const { error: insertError } = await supabase
         .from("trading_accounts")
         .insert([{
@@ -233,14 +304,11 @@ export function ConnectAccountModal({
           balance: 0,
           equity: 0,
         }]);
-
       if (insertError) throw insertError;
-
       toast({
         title: "Account connected!",
         description: `${formData.name || formData.login} has been connected successfully.`,
       });
-
       resetAndClose();
     } catch (error: any) {
       console.error('Connection error:', error);
@@ -288,7 +356,7 @@ export function ConnectAccountModal({
       <div className="bg-muted/50 rounded-lg p-3 text-sm">
         <p className="font-medium mb-1">Connect any MT4/MT5 broker</p>
         <p className="text-muted-foreground text-xs">
-          Your credentials are used once to connect via our Trading Bridge and are never stored.
+          We connect directly to your broker for the fastest execution, with a secure cloud backup if needed.
         </p>
       </div>
 
