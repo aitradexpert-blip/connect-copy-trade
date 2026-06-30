@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getDerivLoginUrl, validateDerivToken } from "@/services/derivAuth";
 import { invokeEdgeFunctionJson } from "@/lib/supabaseInvoke";
+import { primaryApi, isPrimaryConfigured } from "@/services/primaryApi";
 import { ExternalLink, Wallet, Key, Loader2, Copy, Check, AlertCircle, Eye, EyeOff, Camera, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -154,80 +155,74 @@ export function ConnectAccountModal({
 
     // ---------------------------------------------------------
     // STEP 1: Try our own VPS backend first (primary engine)
+    // Routed through primaryApi/tradingDataGateway so there is a
+    // single source of truth for the VPS base URL (VITE_API_URL),
+    // instead of a second hardcoded ngrok URL living in this file.
     // ---------------------------------------------------------
-    try {
-      const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
+    if (isPrimaryConfigured()) {
+      try {
+        const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
 
-      // Create a placeholder row first so we have an account_id (UUID) to use
-      const { data: newAccount, error: insertErr } = await supabase
-        .from("trading_accounts")
-        .insert([{
-          user_id: user.id,
-          provider: 'vps',
-          name: accountName,
-          login: formData.login.replace(/\D/g, '') || formData.login,
-          server: formData.server,
-          platform: formData.platform,
-          connection_type: 'vps',
-          connection_status: 'connecting',
-          balance: 0,
-          equity: 0,
-        }])
-        .select()
-        .single();
-
-      if (insertErr) throw insertErr;
-
-      const vpsRes = await fetch(
-        "https://municipal-posh-shading.ngrok-free.dev/connect",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "true",
-          },
-          signal: AbortSignal.timeout(8000),
-          body: JSON.stringify({
-            login: parseInt(formData.login.replace(/\D/g, ''), 10),
-            password: formData.password,
-            server: formData.server,
-            account_id: newAccount.id,
-          }),
-        }
-      );
-
-      const vpsJson = await vpsRes.json();
-
-      if (vpsJson?.success && vpsJson?.data) {
-        const { error: updateErr } = await supabase
+        // Create a placeholder row first so we have an account_id (UUID) to use
+        const { data: newAccount, error: insertErr } = await supabase
           .from("trading_accounts")
-          .update({
-            mt5_password: formData.password,
-            connection_status: 'connected',
-            balance: vpsJson.data.balance ?? 0,
-            equity: vpsJson.data.equity ?? 0,
-            broker_name: vpsJson.data.company ?? null,
-          })
-          .eq("id", newAccount.id);
+          .insert([{
+            user_id: user.id,
+            provider: 'vps',
+            name: accountName,
+            login: formData.login.replace(/\D/g, '') || formData.login,
+            server: formData.server,
+            platform: formData.platform,
+            connection_type: 'vps',
+            connection_status: 'connecting',
+            balance: 0,
+            equity: 0,
+          }])
+          .select()
+          .single();
 
-        if (updateErr) throw updateErr;
+        if (insertErr) throw insertErr;
 
-        toast({
-          title: "Account connected!",
-          description: `${accountName} connected via our direct trading engine.`,
+        const vpsJson: any = await primaryApi.connect({
+          login: parseInt(formData.login.replace(/\D/g, ''), 10),
+          password: formData.password,
+          server: formData.server,
+          account_id: newAccount.id,
         });
-        resetAndClose();
-        setIsLoading(false);
-        return;
+
+        if (vpsJson?.success && vpsJson?.data) {
+          const { error: updateErr } = await supabase
+            .from("trading_accounts")
+            .update({
+              mt5_password: formData.password,
+              connection_status: 'connected',
+              balance: vpsJson.data.balance ?? 0,
+              equity: vpsJson.data.equity ?? 0,
+              broker_name: vpsJson.data.company ?? null,
+            })
+            .eq("id", newAccount.id);
+
+          if (updateErr) throw updateErr;
+
+          toast({
+            title: "Account connected!",
+            description: `${accountName} connected via our direct trading engine.`,
+          });
+          resetAndClose();
+          setIsLoading(false);
+          return;
+        }
+
+        // VPS responded but login failed — clean up placeholder and
+        // fall through to MetaAPI below
+        await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+        console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
+
+      } catch (vpsError) {
+        console.warn("VPS unreachable, falling back to MetaAPI:", vpsError);
       }
-
-      // VPS responded but login failed — clean up placeholder and 
-      // fall through to MetaAPI below
-      await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
-      console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
-
-    } catch (vpsError) {
-      console.warn("VPS unreachable, falling back to MetaAPI:", vpsError);
+    } else {
+      console.warn("VITE_API_URL not configured — skipping VPS, using MetaAPI directly.");
     }
 
     // ---------------------------------------------------------
