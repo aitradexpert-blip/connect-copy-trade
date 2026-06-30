@@ -83,6 +83,8 @@ async function req<T = any>(
 
 export const primaryApi = {
   configured: isPrimaryConfigured,
+  connect: (payload: { login: number; password: string; server: string; account_id: string }) =>
+    req(`/connect`, { method: "POST", body: JSON.stringify(payload) }, 10000),
   getAccount: (accountId?: string) =>
     req(`/account${accountId ? `?id=${encodeURIComponent(accountId)}` : ""}`),
   getPositions: (accountId?: string) =>
