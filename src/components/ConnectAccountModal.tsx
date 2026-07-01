@@ -190,15 +190,18 @@ export function ConnectAccountModal({
           account_id: newAccount.id,
         });
 
-        if (vpsJson?.success && vpsJson?.data) {
+        const vpsSuccess = vpsJson?.success === true || vpsJson?.status === 'connected';
+        const vpsData = vpsJson?.data ?? vpsJson;
+
+        if (vpsSuccess) {
           const { error: updateErr } = await supabase
             .from("trading_accounts")
             .update({
               mt5_password: formData.password,
               connection_status: 'connected',
-              balance: vpsJson.data.balance ?? 0,
-              equity: vpsJson.data.equity ?? 0,
-              broker_name: vpsJson.data.company ?? null,
+              balance: vpsData?.balance ?? 0,
+              equity: vpsData?.equity ?? 0,
+              broker_name: vpsData?.company ?? null,
             })
             .eq("id", newAccount.id);
 

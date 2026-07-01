@@ -1,103 +1,144 @@
-## Goal
+## Scope
 
-Single cohesive build pass covering 8 phases: Notice Board, Notifications, Telegram migration, POPIA consent, EFT payments, Mentor system, Broker reorder, and Telegram bot menu — reusing existing tables/components wherever possible.
+Apply the exact edits provided, nothing else. Grouped into one build pass with commits per file group.
 
----
+## Changes
 
-### Phase 1 — Telegram Bot Menu (extend existing `telegram-webhook`)
+### 1. `src/components/ConnectAccountModal.tsx`
 
-Update `supabase/functions/telegram-webhook/index.ts` to add an inline keyboard with three brokers in order: OctaFX (with HUMI100 promo message), PrimeXBT, WelTrade. Each "Submit Proof" callback puts the user into an `awaiting_proof:<broker>` state (stored in a small `telegram_bot_sessions` table — new, minimal). When an image arrives, forward to `@mansamusafx` and group `+dFAS3vs7awAwOWJk` via `forwardMessage`, then reply with confirmation.
+- Locate `if (vpsJson?.success && vpsJson?.data) {`.
+- Add `vpsSuccess`/`vpsData` locals above it.
+- Change condition to `if (vpsSuccess) {`.
+- Replace `vpsJson.data.balance/equity/company` refs inside the update with `vpsData?.*`.
+- Ensure the success branch also stores `mt5_password: formData.password` and `connection_status: 'connected'` (per Change 1 of 3 in first block).
 
-### Phase 2 — Main Dashboard Broker Reorder
+### 2. `src/pages/CopyTradingNew.tsx`
 
-Edit `src/pages/Index.tsx` (and `OctaFxPromoCard.tsx` if applicable) so the broker registration block lists OctaFX → PrimeXBT → WelTrade at the top with min-deposit labels and the HUMI100 highlight on OctaFX. Other brokers collapse into a "More Brokers" accordion. Each card gets a "Submit Proof" button opening a small dialog that uploads to existing `payment-proofs` bucket and calls a new edge function `submit-broker-proof` that pushes a Telegram message to `@mansamusafx`.
+- Extend the `ready` const to also accept `provider === 'vps' || connection_type === 'vps'`.
+- In `createCopyFactoryStrategy`, before the "No MT4/MT5 Account" guard, detect a VPS account and, if present, flip `is_master = true` on it and return.
+- Check for any `is_virtual` filter excluding demo accounts; if present, remove and append `(Demo)` label next to the account name. If absent, leave untouched.
 
-### Phase 3 — WhatsApp → Telegram Migration
+### 3. `src/pages/MentorHub.tsx` and `src/pages/MentorCenter.tsx`
 
-Replace links in the 7 known files (`WhatsAppButton.tsx`, `Subscription.tsx`, `useSubscription.tsx`, `Pricing.tsx`, `Index.tsx`, `Install.tsx`, `About.tsx`) and `Auth.tsx`. 
+- In each `publishSignal`, after `broadcastSignal(...)` and before the success toast, invoke `copy-trade-listener` with `{ signal_id: sig.id, master_user_id: user.id }` wrapped in `.catch`.
 
-- Support/group link: `https://t.me/+dFAS3vs7awAwOWJk`
-- Personal/download link on Sign-in/Sign-up CTA: `https://t.me/mansamusafx` ("Download HuMi App")
-Rename `WhatsAppButton.tsx` usage to a new `TelegramButton.tsx` (keep WhatsApp file as deprecated shim re-exporting Telegram button to avoid breaking imports).
+### 4. `supabase/functions/copy-trade-listener/index.ts`
 
-### Phase 4 — Payment Migration (remove Yoco)
+- Before the `metaapi-execute-trade` invoke inside the follower loop, add a VPS-first branch:
+  - Read `VPS_API_URL`, detect `connection_type === 'vps' || provider === 'vps'`.
+  - POST to `${VPS_URL}/order` with `ngrok-skip-browser-warning` header.
+  - On success push result with `via: 'vps'` and `continue`. On failure fall through.
 
-- Replace Yoco UI in `Subscription.tsx` / `Pricing.tsx` with a static Capitec banking-details card (Acc 1609645411, Branch 470010) + "Upload Proof of Payment" button + "Contact Support on Telegram" button.
-- Reuse existing `payment_proofs` table and `payment-proofs` storage bucket. Add columns if missing (e.g. `reference`, `telegram_forwarded_at`) — already has user_id/plan/amount/image_url/status.
-- New edge function `submit-payment-proof` uploads file, inserts row, forwards image+caption to `@mansamusafx` via Telegram Bot gateway.
-- Delete (or leave dormant) `create-yoco-checkout`, `create-guest-checkout`, `yoco-webhook` — remove all frontend calls. Keep secrets untouched.
+### 5. `supabase/functions/auto-execute-signal/index.ts`
 
-### Phase 5 — POPIA Consent
+- Before the Deriv/MetaAPI provider branches, add the same VPS-first block using signal fields (`signal.lot_size`, `signal.direction`).
+- Extend the local `Database` interface `trading_accounts.Row` to include `connection_type: string | null` and `provider: string` (already present — verify).
+- Trade-history insert on success not required here (loop `continue`s with `results.push`), matching provided patch.
 
-- New table `user_consents` (user_id, consent_type, version, accepted_at) — reused for all checkpoints. Extend existing `user_settings` only if simpler — but separate table is cleaner for audit.
-- New static pages `/terms` and `/privacy` with POPIA-compliant text (South African data-protection language, mediator disclaimer per memory).
-- Add mandatory checkbox + link on: Sign-up (`Auth.tsx`), Copy Trading activation (`CopyTradingNew.tsx`), AI Bot activation (`AIAutoTrading.tsx`), Trade Ideas execution (`TradingIdeas.tsx`), Payment submission.
-- Block submit until checked; insert one row per acceptance.
+### 6. `src/pages/Settings.tsx`
 
-### Phase 6 — Mentor System & Execution
+- In the "Change Password" section, compute `isOAuthUser` from `user?.app_metadata?.provider === 'google'` or `providers?.includes('google')`.
+- If OAuth user, render a muted note linking to Google account security; else render existing password inputs + button.
 
-- Insert a `user_roles` row (`role='mentor'`) for `mphoforex5@gmail.com` via insert tool.
-- Ensure `mentor_profiles` row exists & `is_active=true` for that user (idempotent insert).
-- Verify the existing `enforce_master_user_id` trigger + `subscription_mentor_id` column on `ai_bot_assignments` (already added in earlier migration) — no new schema.
-- Audit `CopyTradingNew.tsx` activation flow: when follower clicks "Follow", ensure the call uses `mentor_profiles.user_id` (not profile id) and `mentor_clients` link is created. Add explicit error toasts.
-- `signalBroadcast.ts` already handles dual pathway (subscription_mentor_id) — verify and add a manual MT5 mirror trigger note (the VPS gateway already pushes manual trades via `trade_history` insert → existing `notify_trade_executed` fan-out).
+### 7. `src/App.tsx` — auth loop reverse guard
 
-### Phase 7 — Notice Board
+- `PublicRoute` already redirects authenticated users away from `/auth` to `/`. No loop present → leave `App.tsx` untouched (per "if no loop, leave").
 
-- New table `announcements` (id, title, body, audience enum: `all|mentor_hub|mentor_center`, is_active, starts_at, ends_at, created_by). Full GRANTs + RLS (admin write via `has_role`, public read of active).
-- Admin tab in `AdminPanel.tsx` → new `AnnouncementsTab.tsx` (create/edit/toggle/delete).
-- New `NoticeBoard.tsx` component embedded in `Index.tsx`, `MentorHub.tsx`, `MentorCenter.tsx`, `MentorClientDashboard.tsx`.
+### 8. WhatsApp→Support label rename
 
-### Phase 8 — Notification Centre Fix
+- Search `src/` for a Telegram (`t.me`/`telegram`) link whose visible label is "WhatsApp". If found, rename label only to "Support"; do not touch href or any `wa.me` links.
 
-- Audit `useNotifications.ts` — already filters by `user_id=eq.<auth.uid>`, so the bug is upstream. Check `notify_new_signal` trigger (correct), `notify_account_connected` (correct), `notify_trade_executed` (correct).
-- The real gap: copy-trade execution path (VPS gateway / `signalBroadcast.ts`) may not insert into `trade_history` per follower → no notification fires. Patch `signalBroadcast.ts` to insert a `trade_history` row per follower execution so triggers fan out, and to insert an explicit `notifications` row when AI bot executes.
-- Add RLS verification: `notifications` SELECT policy must be `auth.uid() = user_id` only.
+## Secrets
 
----
+Instruct user to add `VPS_API_URL = https://municipal-posh-shading.ngrok-free.dev` in Edge Function Secrets (I'll offer the add_secret call during build).
 
-### New files
+## Out of scope
 
-- `src/components/TelegramButton.tsx`
-- `src/components/NoticeBoard.tsx`
-- `src/components/admin/AnnouncementsTab.tsx`
-- `src/components/PopiaConsentCheckbox.tsx`
-- `src/components/BrokerProofUploadDialog.tsx`
-- `src/pages/Terms.tsx`, `src/pages/Privacy.tsx`
-- `supabase/functions/submit-payment-proof/index.ts`
-- `supabase/functions/submit-broker-proof/index.ts`
-
-### Edited files
-
-- Bot menu: `supabase/functions/telegram-webhook/index.ts`
-- WhatsApp→Telegram: `WhatsAppButton.tsx`, `Auth.tsx`, `Index.tsx`, `Install.tsx`, `About.tsx`, `Pricing.tsx`, `Subscription.tsx`, `useSubscription.tsx`
-- Consent: `Auth.tsx`, `CopyTradingNew.tsx`, `AIAutoTrading.tsx`, `TradingIdeas.tsx`, `Subscription.tsx`
-- Notices: `Index.tsx`, `MentorHub.tsx`, `MentorCenter.tsx`, `MentorClientDashboard.tsx`, `AdminPanel.tsx`
-- Execution fix: `services/signalBroadcast.ts`
-- Routes: `App.tsx` (Terms/Privacy)
-
-### Migrations
-
-1. `announcements` table + GRANTs + RLS + update trigger.
-2. `user_consents` table + GRANTs + RLS.
-3. `telegram_bot_sessions` table (chat_id PK, state, broker, updated_at) + GRANTs.
-4. Insert mentor role + ensure `mentor_profiles` for `mphoforex5@gmail.com` (via insert tool, not migration).
-
-### Out of scope (will not touch)
-
-- MT5 VPS gateway code (unchanged; we only adapt the client to its existing payloads).
-- Existing security policies tightened in prior pass.
-- Yoco secrets (left in place but unused).
-
-### Confirmation needed before build
-
-1. POPIA Terms/Privacy text: should I draft standard South-African POPIA text (mediator, data controller = HuMi, no financial advice) or do you have your own copy to paste? Draft it for me and use it.
-2. Bank "Account Name" was left blank in your spec — what name should display? M Maphanga  
+- No other files touched. No schema changes. No MetaAPI/Deriv logic modified.  
   
-Important change by Phases:  
-Phase 4  
-Phase 7  
-Phase 5  
-Phase 6  
-  
-Then choose which one works best to save more credits
+**POINT 1 — ConnectAccountModal.tsx**
+  Lovable's plan is correct. The `vpsSuccess`/`vpsData` fix is right. One thing to watch: it says "ensure `mt5_password` and `connection_status: 'connected'` are stored" — these are already in our version of the file we committed. So Lovable reading the current file may see them already there. If it re-adds them it could cause a duplicate field error. **Risk: low. Watch for duplicate keys in the update object.**
+  ---
+  **POINT 2 — CopyTradingNew.tsx**
+  Three sub-tasks here, each with a different risk:
+  `ready` **fix** — correct and safe.
+  **VPS master creation** — Lovable's plan says detect a VPS account and flip `is_master = true`. This is correct BUT there's a subtle race: `createCopyFactoryStrategy` also calls `loadData()` at the end only in the CopyFactory success path. The VPS branch returns early. If Lovable doesn't add `loadData()` to the VPS early return, the UI won't refresh after enabling master. **Risk: UI stays stale. Fix: ensure** `loadData()` **is called in the VPS branch before returning.**
+  **Demo account /** `is_virtual` **filter** — Lovable says "check for any `is_virtual` filter excluding demo accounts; if present remove it." I read the full `CopyTradingNew.tsx` and there is NO `is_virtual` filter in the accounts query or master list. The query is:
+  typescript
+  ```typescript
+  .eq("connection_status", "connected")
+  ```
+  No `is_virtual` filter exists. So Lovable will do nothing here — which is correct per its own instruction ("if absent, leave untouched"). **Risk: zero. But also means demo accounts are already visible — no change needed and no credit wasted.**
+  ---
+  **POINT 3 — MentorHub.tsx and MentorCenter.tsx**
+  The plan is correct — add `copy-trade-listener` call after `broadcastSignal`. But here's the argument against it: **MentorCenter.tsx's** `publishSignal` **function is actually only called when a mentor publishes from the older MentorCenter page, not MentorHub.** Looking at the codebase, `MentorHub.tsx` is the primary working dashboard (it has the `KhumoForexSessions` component, the newer UI, and is the one users actually land on). `MentorCenter.tsx` is the settings/management page — its Ideas tab exists but is less used.
+  The counter-argument for still fixing both: it costs the same whether Lovable edits 1 or 2 files in the same run, and a signal published from either page should reach followers. **Verdict: fix both, plan is correct.**
+  One risk though: both files already call `copy-trade-listener` inside `executeQuickTrade()`. Lovable might accidentally add the call there too instead of only in `publishSignal`. The prompt needs to be specific about which function. **Risk: medium. If it adds to wrong function, quick trades get double-executed.**
+  ---
+  **POINT 4 — copy-trade-listener edge function**
+  The VPS branch logic is correct. But here's a real problem Lovable's plan misses: **the follower account data fetched in this function uses a typed** `Database` **interface at the top of the file that only declares** `metaapi_account_id` **on** `trading_accounts.Row`**:**
+  typescript
+  ```typescript
+  trading_accounts: {
+    Row: {
+      id: string;
+      metaapi_account_id: string;
+      balance: number;
+      name: string;
+    };
+  };
+  ```
+  `connection_type` and `provider` are NOT in this interface. When Lovable adds `relationship.follower_account.connection_type` and `relationship.follower_account.provider`, TypeScript will throw a compile error and the edge function will fail to deploy.
+  **Fix: Lovable must also update the** `Database` **interface in** `copy-trade-listener/index.ts` **to add** `connection_type: string | null` **and** `provider: string`**.**
+  Lovable's plan mentions this for `auto-execute-signal` ("verify already present") but doesn't explicitly say to add it to `copy-trade-listener`. **Risk: HIGH. Deployment will fail with a TypeScript error.**
+  ---
+  **POINT 5 — auto-execute-signal edge function**
+  Lovable says "verify `connection_type` and `provider` already present in the Database interface." I read the actual file — the interface is:
+  typescript
+  ```typescript
+  trading_accounts: {
+    Row: {
+      id: string;
+      metaapi_account_id: string | null;
+      provider: string;          ← provider IS there ✅
+      deriv_token: string | null;
+      deriv_currency: string | null;
+      is_virtual: boolean | null;
+      name: string;
+    };
+  };
+  ```
+  `provider` is there but `connection_type` is NOT. Lovable will add the VPS check using `account.connection_type` but the interface doesn't declare it — same TypeScript error risk as Point 4. **Risk: HIGH. Must add** `connection_type: string | null` **to this interface too.**
+  Also: the VPS branch uses `signal.direction` as the `action` field in the POST body. The FastAPI `/order` endpoint likely expects `"buy"` or `"sell"` lowercase, but signals store `"BUY"` or `"SELL"` uppercase. This could cause the VPS to reject the order silently. **Fix: add** `.toLowerCase()` **→** `action: signal.direction.toLowerCase()`**.**
+  ---
+  **POINT 6 — Settings.tsx OAuth check**
+  The logic is correct but there's one subtle issue: `user?.app_metadata` in Supabase is only accessible server-side by default. On the client, `user.app_metadata` may be an empty object `{}` for security reasons depending on your Supabase JWT configuration. If `app_metadata` is empty on the client, `isOAuthUser` will always be `false` and the form will show for Google users anyway — making the fix useless.
+  **Alternative that actually works on the client:** check `user?.identities` instead:
+  typescript
+  ```typescript
+  const isOAuthUser = user?.identities?.some(i => i.provider === 'google') ?? false;
+  ```
+  `identities` IS exposed in the client-side JWT. **Risk: MEDIUM. The plan's approach may silently not work. Push back and tell Lovable to use** `user?.identities` **instead.**
+  ---
+  **POINT 7 — App.tsx auth loop**
+  Lovable correctly identified no loop exists and says leave it untouched. This is right. **No issue here.**
+  ---
+  **POINT 8 — WhatsApp label search**
+  Lovable says "search `src/` for a Telegram link whose visible label is 'WhatsApp'." The actual situation is different from what this implies. `WhatsAppButton.tsx` is a shim that renders `TelegramButton` — the label "WhatsApp" is passed as a prop from `Index.tsx`, not hardcoded in the component. So Lovable's search for a Telegram link with label "WhatsApp" in the same file won't find it — the label and the link are in different files.
+  What actually needs changing is in `Index.tsx`: the prop `label="Join WhatsApp Community"` and the CardTitle "Free WhatsApp Trading Tools." Lovable's search approach will likely find nothing and do nothing. **Risk: HIGH. This fix won't happen because Lovable is looking in the wrong place.**
+  **Fix: tell Lovable explicitly to edit** `src/pages/Index.tsx`**, find** `label="Join WhatsApp Community"` **and change it, and find the CardTitle text.**
+  ---
+  **SUMMARY — What to push back on before Lovable runs:**
+
+  | Point                                       | Risk     | Action                                                           |
+  | ------------------------------------------- | -------- | ---------------------------------------------------------------- |
+  | 1 ConnectAccountModal                       | Low      | Watch for duplicate keys                                         |
+  | 2 VPS master + `loadData()`                 | Medium   | Confirm `loadData()` is called in VPS branch                     |
+  | 2 Demo filter                               | Zero     | Correct to skip                                                  |
+  | 3 Wrong function targeted                   | Medium   | Specify `publishSignal` explicitly, not `executeQuickTrade`      |
+  | 4 Missing `connection_type` in DB interface | **HIGH** | Must add to `copy-trade-listener` interface                      |
+  | 5 Missing `connection_type` in DB interface | **HIGH** | Must add to `auto-execute-signal` interface                      |
+  | 5 Uppercase direction                       | Medium   | Add `.toLowerCase()` on `action` field                           |
+  | 6 `app_metadata` not client-accessible      | Medium   | Switch to `user?.identities?.some(i => i.provider === 'google')` |
+  | 7 No loop                                   | Zero     | Correct                                                          |
+  | 8 Label search won't find anything          | **HIGH** | Point Lovable explicitly to `src/pages/Index.ts`                 |

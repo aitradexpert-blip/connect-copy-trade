@@ -26,6 +26,7 @@ interface Database {
           deriv_currency: string | null;
           is_virtual: boolean | null;
           name: string;
+          connection_type: string | null;
         };
       };
     };
@@ -97,6 +98,37 @@ Deno.serve(async (req) => {
 
         let tradeResult;
         let tradeError;
+
+        // Try VPS first if account is VPS-connected
+        const VPS_URL = (Deno.env.get('VPS_API_URL') || '').replace(/\/+$/, '');
+        if ((account.provider === 'vps' || account.connection_type === 'vps') && VPS_URL) {
+          try {
+            const vpsRes = await fetch(`${VPS_URL}/order`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
+              },
+              body: JSON.stringify({
+                account_id: account.id,
+                symbol: signal.symbol,
+                action: String(signal.direction || '').toLowerCase(),
+                volume: signal.lot_size,
+                stop_loss: signal.stop_loss ?? null,
+                take_profit: signal.take_profit ?? null,
+              }),
+            });
+            const vpsResult = await vpsRes.json().catch(() => null);
+            if (vpsResult?.success) {
+              console.log(`VPS auto-execute success for user ${assignment.user_id}`);
+              results.push({ user_id: assignment.user_id, success: true, via: 'vps', data: vpsResult });
+              continue;
+            }
+            console.warn(`VPS auto-execute failed for ${assignment.user_id}, falling back:`, vpsResult?.error);
+          } catch (e) {
+            console.warn(`VPS unreachable for ${assignment.user_id}, falling back:`, e);
+          }
+        }
 
         // Check if this is a Deriv account
         if (account.provider === 'deriv' && account.deriv_token) {

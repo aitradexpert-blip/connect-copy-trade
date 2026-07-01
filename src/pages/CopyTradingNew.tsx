@@ -538,11 +538,32 @@ export default function CopyTradingNew() {
   // Create a CopyFactory strategy (become a provider)
   const createCopyFactoryStrategy = async () => {
     const metaApiAccount = accounts.find(acc => acc.metaapi_account_id);
-    
+
+    // VPS accounts can be masters without CopyFactory — just set is_master flag
+    const vpsAccount = accounts.find(acc =>
+      acc.provider === 'vps' || acc.connection_type === 'vps'
+    );
+    if (!metaApiAccount?.metaapi_account_id && vpsAccount) {
+      const { error } = await supabase
+        .from("trading_accounts")
+        .update({ is_master: true })
+        .eq("id", vpsAccount.id);
+      if (!error) {
+        toast({
+          title: "Master account enabled!",
+          description: "Your VPS account is now available for copy trading.",
+        });
+        loadData();
+      } else {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+      }
+      return;
+    }
+
     if (!metaApiAccount?.metaapi_account_id) {
       toast({
-        title: "No MT4/MT5 Account",
-        description: "Connect an MT4/MT5 account first to create a copy trading strategy",
+        title: "No Trading Account",
+        description: "Connect a trading account first to enable master copy trading.",
         variant: "destructive",
       });
       return;
@@ -867,7 +888,9 @@ export default function CopyTradingNew() {
                                 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
                                 const ready = !!followerAcc && (
                                   (followerAcc.provider === 'deriv' && !!followerAcc.deriv_token) ||
-                                  (followerAcc.provider === 'metaapi' && !!followerAcc.metaapi_account_id && UUID_RE.test(followerAcc.metaapi_account_id))
+                                  (followerAcc.provider === 'metaapi' && !!followerAcc.metaapi_account_id
+                                    && UUID_RE.test(followerAcc.metaapi_account_id)) ||
+                                  (followerAcc.provider === 'vps' || followerAcc.connection_type === 'vps')
                                 );
                                 return (
                                   <Button

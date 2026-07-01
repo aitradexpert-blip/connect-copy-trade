@@ -228,13 +228,13 @@ const Index = () => {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <MessageCircle className="w-5 h-5 text-profit" />
-                  Free WhatsApp Trading Tools
+                  Free Support Trading Tools
                 </CardTitle>
-                <CardDescription>Tap any button below to get started instantly via WhatsApp</CardDescription>
+                <CardDescription>Tap any button below to get started instantly via Support</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <WhatsAppButton keyword="COMMUNITY" label="Join WhatsApp Community" description="500+ traders, daily discussion & mentorship" />
+                  <WhatsAppButton keyword="COMMUNITY" label="Join Support Community" description="500+ traders, daily discussion & mentorship" />
                   <WhatsAppButton keyword="SIGNALS" label="Get Daily Signals" description="2–3 high-probability setups posted daily" />
                   <WhatsAppButton keyword="EA" label="Claim Free Expert Advisor" description="R6,000 EA free with broker account + deposit" />
                   <WhatsAppButton keyword="MENTOR" label="Join Free Mentorship" description="Weekly market previews, trade reviews & Q&A" />

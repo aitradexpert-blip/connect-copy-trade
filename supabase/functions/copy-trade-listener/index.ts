@@ -21,9 +21,12 @@ interface Database {
       trading_accounts: {
         Row: {
           id: string;
-          metaapi_account_id: string;
+          metaapi_account_id: string | null;
           balance: number;
           name: string;
+          user_id: string;
+          provider: string | null;
+          connection_type: string | null;
         };
       };
     };
@@ -96,6 +99,45 @@ Deno.serve(async (req) => {
         const adjustedVolume = Number((signal.lot_size * balanceRatio).toFixed(2));
 
         console.log(`Copying trade for follower ${relationship.follower_user_id} with adjusted volume ${adjustedVolume}`);
+
+        // Try VPS first if follower account is VPS-connected
+        const VPS_URL = (Deno.env.get('VPS_API_URL') || '').replace(/\/+$/, '');
+        const isVpsAccount = relationship.follower_account.connection_type === 'vps'
+          || relationship.follower_account.provider === 'vps';
+
+        if (isVpsAccount && VPS_URL) {
+          try {
+            const vpsRes = await fetch(`${VPS_URL}/order`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
+              },
+              body: JSON.stringify({
+                account_id: relationship.follower_account.id,
+                symbol: signal.symbol,
+                action: String(signal.direction || '').toLowerCase(),
+                volume: adjustedVolume,
+                stop_loss: signal.stop_loss ?? null,
+                take_profit: signal.take_profit ?? null,
+              }),
+            });
+            const vpsResult = await vpsRes.json().catch(() => null);
+            if (vpsResult?.success) {
+              console.log(`VPS order success for follower ${relationship.follower_user_id}`);
+              results.push({
+                follower_user_id: relationship.follower_user_id,
+                success: true,
+                via: 'vps',
+                data: vpsResult,
+              });
+              continue;
+            }
+            console.warn(`VPS order failed for follower ${relationship.follower_user_id}, falling back:`, vpsResult?.error);
+          } catch (vpsErr) {
+            console.warn(`VPS unreachable for follower ${relationship.follower_user_id}, falling back to MetaAPI:`, vpsErr);
+          }
+        }
 
         // Call metaapi-execute-trade edge function
         const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('metaapi-execute-trade', {
