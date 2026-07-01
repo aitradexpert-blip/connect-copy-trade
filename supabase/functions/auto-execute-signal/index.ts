@@ -26,6 +26,7 @@ interface Database {
           deriv_currency: string | null;
           is_virtual: boolean | null;
           name: string;
+          connection_type: string | null;
         };
       };
     };
