@@ -875,6 +875,11 @@ export default function CopyTradingNew() {
                             Deriv
                           </Badge>
                         )}
+                        {(account.provider === 'vps' || account.connection_type === 'vps') && (
+                          <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+                            VPS Direct
+                          </Badge>
+                        )}
                       </div>
                     </SelectItem>
                   ))}
@@ -1143,7 +1148,9 @@ export default function CopyTradingNew() {
                       {!accounts.some(a => a.metaapi_account_id) && (
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                           <AlertCircle className="w-4 h-4" />
-                          Connect an MT4/MT5 account first
+                          {accounts.some(a => a.provider === 'vps' || a.connection_type === 'vps')
+                            ? 'Your VPS account will be activated as master directly'
+                            : 'Connect a trading account first'}
                         </p>
                       )}
                     </div>
