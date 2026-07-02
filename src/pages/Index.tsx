@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { 
-  DollarSign, TrendingUp, Activity, Users, Plus, Eye, Play, RefreshCw,
-  Building, ExternalLink, Send, ArrowDownUp, LineChart,
-  ArrowDown, ArrowUp, Clock, CreditCard, BookOpen,
-  GraduationCap, MessageCircle, Sparkles, Lock, Crown
+import {
+  DollarSign, TrendingUp, Activity, Users, Plus, RefreshCw,
+  ExternalLink, ArrowDown, ArrowUp, Clock, CreditCard,
+  MessageCircle, Sparkles, Crown, Lightbulb, Copy, Bot, Building
 } from "lucide-react";
 import EnhancedVoiceAssistant from "@/components/EnhancedVoiceAssistant";
 import EconomicCalendar from "@/components/EconomicCalendar";
@@ -11,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/MetricCard";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
 import WhatsAppButton from "@/components/WhatsAppButton";
@@ -19,13 +17,13 @@ import NoticeBoard from "@/components/NoticeBoard";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 
-
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
 import { supabase } from "@/integrations/supabase/client";
 import { authorizeDerivAccount, getDerivBalance } from "@/services/derivBroker";
 import { getSharedDerivWS } from "@/services/derivWebSocket";
+import { primaryApi, isPrimaryConfigured } from "@/services/primaryApi";
 
 interface TradeHistoryItem {
   id: string;
@@ -33,356 +31,326 @@ interface TradeHistoryItem {
   direction: string;
   profit_loss: number | null;
   executed_at: string;
-  source: 'deriv' | 'broker' | 'local';
+  source: 'deriv' | 'broker' | 'local' | 'vps';
 }
+
+interface LatestSignal {
+  id: string;
+  symbol: string;
+  direction: string;
+  open_price: number | null;
+  take_profit: number | null;
+  stop_loss: number | null;
+  created_at: string;
+}
+
+const LatestSignalCard = () => {
+  const [signal, setSignal] = useState<LatestSignal | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    supabase
+      .from('trading_signals')
+      .select('id, symbol, direction, open_price, take_profit, stop_loss, created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setSignal(data as unknown as LatestSignal); });
+
+
+    // Realtime: refresh when a new signal drops
+    const channel = supabase
+      .channel('dashboard-latest-signal')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'trading_signals' },
+        (payload) => setSignal(payload.new as LatestSignal)
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  if (!signal) return null;
+  const dir = (signal.direction || '').toUpperCase();
+
+  return (
+    <Card
+      className="bg-gradient-card border-border shadow-card cursor-pointer hover:shadow-elevated transition-shadow"
+      onClick={() => navigate('/ideas')}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Lightbulb className="w-5 h-5 text-primary" />
+            Latest Idea
+          </CardTitle>
+          <span className="text-xs text-muted-foreground">
+            {new Date(signal.created_at).toLocaleDateString()}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-lg font-semibold">{signal.symbol}</span>
+          <Badge variant={dir === 'BUY' ? 'default' : 'destructive'}>{dir}</Badge>
+        </div>
+        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+          {signal.open_price != null && <span>Entry: <b className="text-foreground">{signal.open_price}</b></span>}
+          {signal.take_profit != null && <span>TP: <b className="text-profit">{signal.take_profit}</b></span>}
+          {signal.stop_loss != null && <span>SL: <b className="text-loss">{signal.stop_loss}</b></span>}
+        </div>
+        <p className="text-xs text-primary">View all ideas →</p>
+      </CardContent>
+    </Card>
+  );
+};
 
 const Index = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isFree, tierName, khumoQueriesRemaining, khumoQueryLimit } = useSubscription();
   const [referredBy, setReferredBy] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState({
-    balance: 0, equity: 0, positions: 0, dailyPnL: 0,
-  });
+  const [metrics, setMetrics] = useState({ balance: 0, equity: 0, positions: 0, dailyPnL: 0 });
   const [loading, setLoading] = useState(true);
-  const [hasDerivAccounts, setHasDerivAccounts] = useState(false);
   const [brokerAction, setBrokerAction] = useState<'deposit' | 'withdraw' | null>(null);
   const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
   const [displayName, setDisplayName] = useState('Trader');
-  
-  // PWA install is now handled globally via usePWAInstall hook in TopHeader and PWAInstallPrompt
 
-  // Load display name
   useEffect(() => {
     if (!user) return;
     supabase.from('profiles').select('display_name, referred_by').eq('user_id', user.id).single()
-      .then(({ data }) => { 
+      .then(({ data }) => {
         if (data?.display_name) setDisplayName(data.display_name);
         if (data?.referred_by) setReferredBy(data.referred_by);
       });
   }, [user]);
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user) return;
-      setLoading(true);
-      
-      try {
-        const { data: accounts, error } = await supabase
-          .from("trading_accounts")
-          .select("id,metaapi_account_id,balance,equity,provider,deriv_token")
-          .eq("user_id", user.id);
-
-        if (error) throw error;
-
-        let totalBalance = 0, totalEquity = 0, totalPositions = 0;
-        let hasDeriv = false;
-        const allTrades: TradeHistoryItem[] = [];
-
-        for (const account of accounts || []) {
-          try {
-            if (account.provider === 'deriv' && account.deriv_token) {
-              hasDeriv = true;
-              const ws = getSharedDerivWS();
-              await ws.connect();
-              await authorizeDerivAccount(account.deriv_token, ws);
-              const balanceResponse = await getDerivBalance(ws);
-              const balance = Number(balanceResponse.balance?.balance || 0);
-              totalBalance += balance; totalEquity += balance;
-              await supabase.from("trading_accounts").update({ balance, equity: balance }).eq("id", account.id);
-
-              try {
-                const profitResponse = await ws.send({ profit_table: 1, limit: 10, description: 1, sort: 'DESC' });
-                if (profitResponse.profit_table?.transactions) {
-                  allTrades.push(...profitResponse.profit_table.transactions.map((tx: any) => ({
-                    id: `deriv-${tx.transaction_id}`,
-                    symbol: tx.shortcode?.split('_')[0] || 'Options',
-                    direction: tx.buy_price > 0 ? 'BUY' : 'SELL',
-                    profit_loss: tx.sell_price - tx.buy_price,
-                    executed_at: new Date(tx.purchase_time * 1000).toISOString(),
-                    source: 'deriv' as const
-                  })));
-                }
-              } catch (err) { console.error('Error fetching Deriv profit table:', err); }
-            } else if (account.metaapi_account_id) {
-              const { data: info, error: fnError } = await supabase.functions.invoke("metaapi-account-info", { body: { accountId: account.metaapi_account_id } });
-              if (!fnError && info) {
-                const balance = Number(info.balance || 0), equity = Number(info.equity || 0);
-                const { data: positionsData } = await supabase.functions.invoke("metaapi-get-positions", { body: { accountId: account.metaapi_account_id } });
-                totalBalance += balance; totalEquity += equity;
-                totalPositions += Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
-                await supabase.from("trading_accounts").update({ balance, equity }).eq("id", account.id);
-              } else {
-                totalBalance += Number(account.balance || 0); totalEquity += Number(account.equity || 0);
-              }
-            } else {
-              totalBalance += Number(account.balance || 0); totalEquity += Number(account.equity || 0);
-            }
-          } catch (err) {
-            totalBalance += Number(account.balance || 0); totalEquity += Number(account.equity || 0);
-          }
-        }
-
-        const { data: localTrades } = await supabase
-          .from('trade_history').select('id, symbol, direction, profit_loss, executed_at')
-          .eq('user_id', user.id).order('executed_at', { ascending: false }).limit(10);
-        if (localTrades) allTrades.push(...localTrades.map(t => ({ ...t, source: 'local' as const })));
-
-        allTrades.sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
-        setTradeHistory(allTrades.slice(0, 10));
-        setHasDerivAccounts(hasDeriv);
-        setMetrics({ balance: totalBalance, equity: totalEquity, positions: totalPositions, dailyPnL: totalEquity - totalBalance });
-      } catch (error) {
-        console.error("Error loading dashboard data:", error);
-      } finally { setLoading(false); }
-    };
-    load();
-  }, [user]);
-
-  const refreshData = async () => {
+  const loadAccountsAndMetrics = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { data: accounts, error } = await supabase.from("trading_accounts")
-        .select("id,metaapi_account_id,balance,equity,provider,deriv_token").eq("user_id", user.id);
+      const { data: accounts, error } = await supabase
+        .from("trading_accounts")
+        .select("id,metaapi_account_id,balance,equity,provider,connection_type,deriv_token")
+        .eq("user_id", user.id);
       if (error) throw error;
+
       let totalBalance = 0, totalEquity = 0, totalPositions = 0;
+      const allTrades: TradeHistoryItem[] = [];
+
       for (const account of accounts || []) {
         try {
+          // ── VPS first ────────────────────────────────────────────────
+          if ((account.provider === 'vps' || account.connection_type === 'vps') && isPrimaryConfigured()) {
+            try {
+              const vpsAccount: any = await primaryApi.getAccount(account.id);
+              const balance = Number(vpsAccount?.balance ?? account.balance ?? 0);
+              const equity = Number(vpsAccount?.equity ?? account.equity ?? 0);
+              let positions = 0;
+              try {
+                const vpsPositions: any = await primaryApi.getPositions(account.id);
+                positions = Array.isArray(vpsPositions) ? vpsPositions.length
+                  : Array.isArray(vpsPositions?.positions) ? vpsPositions.positions.length : 0;
+              } catch { /* ignore */ }
+              totalBalance += balance; totalEquity += equity; totalPositions += positions;
+              await supabase.from('trading_accounts').update({ balance, equity }).eq('id', account.id);
+
+              // VPS history
+              try {
+                const vpsHistory: any = await primaryApi.getHistory(account.id);
+                const historyArr: any[] = Array.isArray(vpsHistory) ? vpsHistory
+                  : Array.isArray(vpsHistory?.history) ? vpsHistory.history : [];
+                allTrades.push(...historyArr.slice(0, 10).map((tx: any) => ({
+                  id: `vps-${tx.ticket || tx.id || Math.random()}`,
+                  symbol: tx.symbol || 'Unknown',
+                  direction: (tx.type || tx.action || 'BUY').toString().toUpperCase().includes('BUY') ? 'BUY' : 'SELL',
+                  profit_loss: Number(tx.profit ?? tx.profit_loss ?? 0),
+                  executed_at: tx.open_time || tx.executed_at || new Date().toISOString(),
+                  source: 'vps' as const,
+                })));
+              } catch { /* fall back to local */ }
+              continue;
+            } catch (vpsErr) {
+              console.warn('VPS unavailable, using stored balance', vpsErr);
+              totalBalance += Number(account.balance || 0);
+              totalEquity += Number(account.equity || 0);
+              continue;
+            }
+          }
+
+          // ── Deriv ────────────────────────────────────────────────────
           if (account.provider === 'deriv' && account.deriv_token) {
-            const ws = getSharedDerivWS(); await ws.connect();
+            const ws = getSharedDerivWS();
+            await ws.connect();
             await authorizeDerivAccount(account.deriv_token, ws);
             const balanceResponse = await getDerivBalance(ws);
             const balance = Number(balanceResponse.balance?.balance || 0);
             totalBalance += balance; totalEquity += balance;
             await supabase.from("trading_accounts").update({ balance, equity: balance }).eq("id", account.id);
-          } else if (account.metaapi_account_id) {
-            const { data: info, error: fnError } = await supabase.functions.invoke("metaapi-account-info", { body: { accountId: account.metaapi_account_id } });
+            try {
+              const profitResponse = await ws.send({ profit_table: 1, limit: 10, description: 1, sort: 'DESC' });
+              if (profitResponse.profit_table?.transactions) {
+                allTrades.push(...profitResponse.profit_table.transactions.map((tx: any) => ({
+                  id: `deriv-${tx.transaction_id}`,
+                  symbol: tx.shortcode?.split('_')[0] || 'Options',
+                  direction: tx.buy_price > 0 ? 'BUY' : 'SELL',
+                  profit_loss: tx.sell_price - tx.buy_price,
+                  executed_at: new Date(tx.purchase_time * 1000).toISOString(),
+                  source: 'deriv' as const,
+                })));
+              }
+            } catch (err) { console.error('Deriv profit table:', err); }
+            continue;
+          }
+
+          // ── MetaAPI account info (history removed — 502s from edge fn) ─
+          if (account.metaapi_account_id) {
+            const { data: info, error: fnError } = await supabase.functions.invoke(
+              "metaapi-account-info", { body: { accountId: account.metaapi_account_id } }
+            );
             if (!fnError && info) {
               const balance = Number(info.balance || 0), equity = Number(info.equity || 0);
-              const { data: positionsData } = await supabase.functions.invoke("metaapi-get-positions", { body: { accountId: account.metaapi_account_id } });
+              const { data: positionsData } = await supabase.functions.invoke(
+                "metaapi-get-positions", { body: { accountId: account.metaapi_account_id } }
+              );
               totalBalance += balance; totalEquity += equity;
               totalPositions += Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
               await supabase.from("trading_accounts").update({ balance, equity }).eq("id", account.id);
-            } else { totalBalance += Number(account.balance || 0); totalEquity += Number(account.equity || 0); }
-          } else { totalBalance += Number(account.balance || 0); totalEquity += Number(account.equity || 0); }
-        } catch (err) { totalBalance += Number(account.balance || 0); totalEquity += Number(account.equity || 0); }
+            } else {
+              totalBalance += Number(account.balance || 0);
+              totalEquity += Number(account.equity || 0);
+            }
+            continue;
+          }
+
+          totalBalance += Number(account.balance || 0);
+          totalEquity += Number(account.equity || 0);
+        } catch (err) {
+          console.warn('account load failed', err);
+          totalBalance += Number(account.balance || 0);
+          totalEquity += Number(account.equity || 0);
+        }
       }
-      setMetrics({ balance: totalBalance, equity: totalEquity, positions: totalPositions, dailyPnL: totalEquity - totalBalance });
-    } catch (error) { console.error("Error refreshing data:", error); }
-    finally { setLoading(false); }
+
+      const { data: localTrades } = await supabase
+        .from('trade_history')
+        .select('id, symbol, direction, profit_loss, executed_at')
+        .eq('user_id', user.id).order('executed_at', { ascending: false }).limit(10);
+      if (localTrades) allTrades.push(...localTrades.map(t => ({ ...t, source: 'local' as const })));
+
+      allTrades.sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
+      setTradeHistory(allTrades.slice(0, 10));
+      setMetrics({
+        balance: totalBalance, equity: totalEquity,
+        positions: totalPositions, dailyPnL: totalEquity - totalBalance,
+      });
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => { loadAccountsAndMetrics(); /* eslint-disable-next-line */ }, [user]);
 
   const dailyPnLType = metrics.dailyPnL >= 0 ? "profit" : "loss";
   const dailyPnLChange = `${metrics.dailyPnL >= 0 ? '+' : ''}${metrics.dailyPnL.toFixed(2)} USD today`;
 
   return (
     <AppLayout>
-      <div className="space-y-6 max-w-full overflow-x-hidden">
+      <div className="space-y-6 max-w-full overflow-x-hidden pb-20 md:pb-0">
         <NoticeBoard audience="all" />
-        {/* Welcome Banner */}
+
+        {/* Section A — Welcome */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              Welcome back, {displayName}! 👋
-            </h1>
+            <h1 className="text-3xl font-bold text-foreground">Welcome back, {displayName}! 👋</h1>
             <p className="text-muted-foreground">
-              {isFree 
+              {isFree
                 ? "You're on the Free plan — explore your trading tools below."
                 : `${tierName.charAt(0).toUpperCase() + tierName.slice(1)} plan active`}
             </p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={refreshData} variant="outline" className="flex items-center gap-2" disabled={loading}>
+            <Button onClick={loadAccountsAndMetrics} variant="outline" className="flex items-center gap-2" disabled={loading}>
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
           </div>
         </div>
 
+        {/* Section B — Quick Actions */}
+        <div className="grid grid-cols-3 gap-3">
+          <Button
+            variant="outline"
+            className="flex flex-col items-center gap-2 h-auto py-4"
+            onClick={() => navigate('/accounts?connect=1')}
+          >
+            <Plus className="w-5 h-5" />
+            <span className="text-xs">Add Account</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="flex flex-col items-center gap-2 h-auto py-4"
+            onClick={() => navigate('/copy-trading')}
+          >
+            <Copy className="w-5 h-5" />
+            <span className="text-xs">Copy Trade</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="flex flex-col items-center gap-2 h-auto py-4"
+            onClick={() => navigate('/ai-trading')}
+          >
+            <Bot className="w-5 h-5" />
+            <span className="text-xs">Khumo AI</span>
+          </Button>
+        </div>
 
-        {/* Tabbed Dashboard Sections */}
-        <Tabs defaultValue="tools" className="space-y-4">
-          <TabsList className="w-full overflow-x-auto flex-nowrap justify-start">
-            <TabsTrigger value="tools" className="whitespace-nowrap">
-              <MessageCircle className="w-4 h-4 mr-1" /> Trading Tools
-            </TabsTrigger>
-            <TabsTrigger value="charts" className="whitespace-nowrap">
-              <LineChart className="w-4 h-4 mr-1" /> Market Charts
-            </TabsTrigger>
-            <TabsTrigger value="brokers" className="whitespace-nowrap">
-              <Building className="w-4 h-4 mr-1" /> Brokers
-            </TabsTrigger>
-            <TabsTrigger value="actions" className="whitespace-nowrap">
-              <Activity className="w-4 h-4 mr-1" /> Quick Actions
-            </TabsTrigger>
-            {(referredBy || tierName === 'mentor') && (
-              <TabsTrigger value="mentor" className="whitespace-nowrap">
-                <Crown className="w-4 h-4 mr-1" /> {tierName === 'mentor' ? 'Mentor Hub' : 'Mentor Center'}
-              </TabsTrigger>
-            )}
-          </TabsList>
+        {/* Section C — Latest Idea */}
+        <LatestSignalCard />
 
-          <TabsContent value="tools" className="space-y-4">
-            <Card className="bg-gradient-card border-border shadow-card">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <MessageCircle className="w-5 h-5 text-profit" />
-                  Free Support Trading Tools
-                </CardTitle>
-                <CardDescription>Tap any button below to get started instantly via Support</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <WhatsAppButton keyword="COMMUNITY" label="Join Support Community" description="500+ traders, daily discussion & mentorship" />
-                  <WhatsAppButton keyword="SIGNALS" label="Get Daily Signals" description="2–3 high-probability setups posted daily" />
-                  <WhatsAppButton keyword="EA" label="Claim Free Expert Advisor" description="R6,000 EA free with broker account + deposit" />
-                  <WhatsAppButton keyword="MENTOR" label="Join Free Mentorship" description="Weekly market previews, trade reviews & Q&A" />
-                </div>
-              </CardContent>
-            </Card>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:shadow-elevated transition-shadow" onClick={() => navigate('/journal')}>
-                <CardContent className="p-4 text-center">
-                  <BookOpen className="h-8 w-8 mx-auto text-primary mb-2" />
-                  <h3 className="font-semibold text-sm">Trade Journal</h3>
-                  <p className="text-xs text-muted-foreground mt-1">Log & analyse trades</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:shadow-elevated transition-shadow" onClick={() => navigate('/training')}>
-                <CardContent className="p-4 text-center">
-                  <GraduationCap className="h-8 w-8 mx-auto text-primary mb-2" />
-                  <h3 className="font-semibold text-sm">Training Center</h3>
-                  <p className="text-xs text-muted-foreground mt-1">Learn to trade</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:shadow-elevated transition-shadow" onClick={() => navigate('/charts')}>
-                <CardContent className="p-4 text-center">
-                  <LineChart className="h-8 w-8 mx-auto text-primary mb-2" />
-                  <h3 className="font-semibold text-sm">Live Charts</h3>
-                  <p className="text-xs text-muted-foreground mt-1">170+ instruments</p>
-                </CardContent>
-              </Card>
-              <Card className="bg-gradient-card border-border shadow-card cursor-pointer hover:shadow-elevated transition-shadow" onClick={() => {}}>
-                <CardContent className="p-4 text-center">
-                  <Sparkles className="h-8 w-8 mx-auto text-primary mb-2" />
-                  <h3 className="font-semibold text-sm">Khumo AI</h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {isFree ? `${khumoQueriesRemaining}/${khumoQueryLimit} free` : 'Unlimited'}
-                  </p>
-</CardContent>
-            </Card>
-          </div>
-          
-          {/* Khumo AI Forex Session Intelligence */}
-          {!isFree && (
-            <KhumoForexSessions 
-              compact 
-              onPublishIdea={(suggestion) => {
-                navigate('/ideas', { state: { prefill: suggestion } });
-              }}
-            />
-          )}
-          </TabsContent>
-          
-          <TabsContent value="charts">
-            <Card className="bg-gradient-card border-border shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><LineChart className="w-5 h-5" /> Market Charts</CardTitle>
-                <CardDescription>View live market data for 170+ instruments</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-3">
-                  <Button onClick={() => navigate('/charts?symbol=EUR/USD')} variant="outline" size="sm">EUR/USD</Button>
-                  <Button onClick={() => navigate('/charts?symbol=XAU/USD')} variant="outline" size="sm">Gold</Button>
-                  <Button onClick={() => navigate('/charts?symbol=BTC/USD')} variant="outline" size="sm">Bitcoin</Button>
-                  <Button onClick={() => navigate('/charts?symbol=US30')} variant="outline" size="sm">US30</Button>
-                  <Button onClick={() => navigate('/charts')} className="bg-gradient-primary">
-                    <LineChart className="w-4 h-4 mr-2" /> Open Charts
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="brokers">
-            <Card className="bg-gradient-card border-border shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Building className="w-5 h-5" /> Broker Operations</CardTitle>
-                <CardDescription>Open accounts with our affiliated brokers</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <Button variant="outline" onClick={() => window.open('https://track.deriv.com/_8yTvQnk19iB0QQMXeD9If2Nd7ZgqdRLk/1/', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Deriv</Button>
-                  <Button variant="outline" onClick={() => window.open('https://octa.click/b3gtWBN3fii?ib=44960573', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />OctaFx</Button>
-                  <Button variant="outline" onClick={() => window.open('https://my.trade245.com/live_signup/?sidc=7A86688F-3777-49CD-8E69-ADBEA58A6220', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Trade245</Button>
-                  <Button variant="outline" onClick={() => window.open('https://one.exnesstrack.com/a/8gbs5isoe8', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Exness</Button>
-                  <Button variant="outline" onClick={() => window.open('https://secure.cwg-vu.com/#/signup/90105/F0/B0', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />CWG Markets</Button>
-                  <Button variant="outline" onClick={() => window.open('https://www.hfm.com/za/?refid=10377190', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />HFM</Button>
-                  <Button variant="outline" onClick={() => window.open('https://direct-fxpro.com/en/partner/NUN98hUc', '_blank')} className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />FXPro</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="actions" className="space-y-4">
-            {!isFree ? (
-              <>
-                <Card className="bg-gradient-card border-border shadow-card">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Activity className="w-5 h-5" /> Quick Actions</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-4">
-                      <Button onClick={() => navigate('/accounts?connect=1')} className="flex items-center gap-2 bg-gradient-primary"><Plus className="w-4 h-4" />Add Account</Button>
-                      <Button onClick={() => navigate('/accounts')} variant="outline" className="flex items-center gap-2"><CreditCard className="w-4 h-4" />Trading Accounts</Button>
-                      <Button onClick={() => setBrokerAction('deposit')} variant="secondary" className="flex items-center gap-2"><ArrowDown className="w-4 h-4" />Deposit</Button>
-                      <Button onClick={() => setBrokerAction('withdraw')} variant="secondary" className="flex items-center gap-2"><ArrowUp className="w-4 h-4" />Withdraw</Button>
-                      <Button onClick={() => navigate('/ideas')} variant="outline" className="flex items-center gap-2"><Eye className="w-4 h-4" />View Ideas</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-                <BrokerActionModal open={!!brokerAction} onOpenChange={(open) => !open && setBrokerAction(null)} action={brokerAction || 'deposit'} />
-              </>
-            ) : (
-              <Card className="bg-gradient-card border-border shadow-card">
-                <CardContent className="p-6 text-center">
-                  <Lock className="w-8 h-8 mx-auto text-primary mb-3" />
-                  <h3 className="font-semibold mb-2">Upgrade to Access Quick Actions</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Connect accounts, execute trades, deposit and withdraw with a paid plan.</p>
-                  <Button onClick={() => navigate('/subscription')} size="sm"><CreditCard className="w-4 h-4 mr-2" /> View Plans</Button>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          {(referredBy || tierName === 'mentor') && (
-            <TabsContent value="mentor">
-              <Card className="bg-gradient-card border-border shadow-card">
-                <CardContent className="p-8 text-center">
-                  <Crown className="w-12 h-12 mx-auto text-primary mb-4" />
-                  <h3 className="text-lg font-bold mb-2">
+        {/* Mentor shortcut */}
+        {(referredBy || tierName === 'mentor') && (
+          <Card className="bg-gradient-card border-border shadow-card">
+            <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <Crown className="w-6 h-6 text-primary" />
+                <div>
+                  <p className="font-semibold text-sm">
                     {tierName === 'mentor' ? 'Your Mentor Hub' : 'Your Mentor Center'}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {tierName === 'mentor' 
-                      ? 'Manage your clients, publish ideas, and control copy trading from your branded hub.'
-                      : "Access your mentor's branded trading dashboard with ideas, copy trading, and more."}
                   </p>
-                  <Button 
-                    onClick={() => navigate(tierName === 'mentor' ? '/mentor-hub' : '/mentor-dashboard')} 
-                    className="bg-gradient-primary"
-                  >
-                    <Crown className="w-4 h-4 mr-2" /> 
-                    {tierName === 'mentor' ? 'Open Mentor Hub' : 'Open Mentor Center'}
-                  </Button>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-        </Tabs>
+                  <p className="text-xs text-muted-foreground">
+                    {tierName === 'mentor' ? 'Manage clients, publish ideas' : "Access your mentor's dashboard"}
+                  </p>
+                </div>
+              </div>
+              <Button size="sm" onClick={() => navigate(tierName === 'mentor' ? '/mentor-hub' : '/mentor-dashboard')}>
+                Open
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Metrics & Activity (paid) or Khumo Demo (free) */}
+        {/* Section D — Community & Support */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-profit" />
+              Community & Support
+            </CardTitle>
+            <CardDescription>Connect with our trading community</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <WhatsAppButton keyword="COMMUNITY" label="Join Support Community" description="500+ traders, daily discussion & mentorship" />
+              <WhatsAppButton keyword="SIGNALS" label="Get Daily Signals" description="2–3 high-probability setups posted daily" />
+              <WhatsAppButton keyword="EA" label="Claim Free Expert Advisor" description="R6,000 EA free with broker account + deposit" />
+              <WhatsAppButton keyword="MENTOR" label="Join Free Mentorship" description="Weekly market previews, trade reviews & Q&A" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section E — Metrics + Voice + History (paid) or Khumo demo (free) */}
         {!isFree ? (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
@@ -464,6 +432,57 @@ const Index = () => {
           </>
         )}
 
+        {/* Section F — Khumo Forex Sessions */}
+        {!isFree && (
+          <KhumoForexSessions
+            compact
+            onPublishIdea={(suggestion) => navigate('/ideas', { state: { prefill: suggestion } })}
+          />
+        )}
+
+        {/* Section G — Deposit / Withdraw quick access (paid) */}
+        {!isFree && (
+          <Card className="bg-gradient-card border-border shadow-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base"><Activity className="w-5 h-5" /> Broker Actions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => setBrokerAction('deposit')} variant="secondary" className="flex items-center gap-2"><ArrowDown className="w-4 h-4" />Deposit</Button>
+                <Button onClick={() => setBrokerAction('withdraw')} variant="secondary" className="flex items-center gap-2"><ArrowUp className="w-4 h-4" />Withdraw</Button>
+              </div>
+              <BrokerActionModal open={!!brokerAction} onOpenChange={(open) => !open && setBrokerAction(null)} action={brokerAction || 'deposit'} />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Section H — Open a Broker Account */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building className="w-5 h-5" /> Open a Broker Account
+            </CardTitle>
+            <CardDescription>Start with as little as $25 (about R500)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <Button variant="outline" onClick={() => window.open('https://go.primexbt.direct/visit/?bta=52274&brand=primexbt', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" /> PrimeXBT ★
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://octa.click/b3gtWBN3fii?ib=44960573', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" /> OctaFX
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://track.gowt.me/visit/?bta=70148&brand=weltrade', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" /> WelTrade
+              </Button>
+              <Button variant="outline" onClick={() => window.open('https://track.deriv.com/_8yTvQnk19iB0QQMXeD9If2Nd7ZgqdRLk/1/', '_blank')} className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" /> Deriv
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section I — Economic Calendar */}
         <EconomicCalendar compact={false} className="bg-gradient-card border-border shadow-card" />
       </div>
       <WelcomeModal />

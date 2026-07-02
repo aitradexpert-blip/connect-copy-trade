@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap, Layers, RefreshCw, Shield, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap, Layers, RefreshCw, Shield, AlertCircle, CheckCircle2, StopCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -78,6 +78,7 @@ export default function CopyTradingNew() {
   const [copyFactoryStrategies, setCopyFactoryStrategies] = useState<CopyFactoryStrategy[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [copyStats, setCopyStats] = useState<Record<string, CopyStats>>({});
+  const [activeRelationships, setActiveRelationships] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDeriv, setLoadingDeriv] = useState(false);
   const [loadingCopyFactory, setLoadingCopyFactory] = useState(false);
@@ -117,8 +118,25 @@ export default function CopyTradingNew() {
     return () => { supabase.removeChannel(channel); };
   };
 
+  const stopAllCopying = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('copy_trading_relationships')
+      .update({ status: 'inactive' })
+      .eq('follower_user_id', user.id)
+      .eq('status', 'active');
+    if (!error) {
+      toast({ title: "Copy trading stopped", description: "All active copy relationships have been paused." });
+      setActiveRelationships([]);
+      loadData();
+    } else {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
   const loadData = async () => {
     if (!user) return;
+
     
     try {
       // Load user's trading accounts with provider info
@@ -188,6 +206,8 @@ export default function CopyTradingNew() {
         .select("id, master_account_id")
         .eq("follower_user_id", user.id)
         .eq("status", "active");
+
+      setActiveRelationships(relationships || []);
 
       if (relationships && relationships.length > 0) {
         const stats: Record<string, CopyStats> = {};
@@ -741,6 +761,29 @@ export default function CopyTradingNew() {
           </p>
         </div>
 
+        {/* Active Copy Trading Status Banner */}
+        {activeRelationships.length > 0 && (
+          <Card className="border-profit/30 bg-profit/10">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-profit animate-pulse" />
+                  <div>
+                    <p className="font-semibold text-profit">Copy Trading Active</p>
+                    <p className="text-sm text-muted-foreground">
+                      Your mentor's trades are being copied to your account
+                    </p>
+                  </div>
+                </div>
+                <Button variant="destructive" size="sm" onClick={stopAllCopying} className="flex items-center gap-2">
+                  <StopCircle className="w-4 h-4" />
+                  Stop Copy Trading
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* User's Trading Accounts */}
         <Card className="bg-gradient-card border-border shadow-card">
           <CardHeader>
@@ -830,6 +873,11 @@ export default function CopyTradingNew() {
                           <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
                             <Zap className="w-3 h-3 mr-1" />
                             Deriv
+                          </Badge>
+                        )}
+                        {(account.provider === 'vps' || account.connection_type === 'vps') && (
+                          <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+                            VPS Direct
                           </Badge>
                         )}
                       </div>
@@ -1100,7 +1148,9 @@ export default function CopyTradingNew() {
                       {!accounts.some(a => a.metaapi_account_id) && (
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                           <AlertCircle className="w-4 h-4" />
-                          Connect an MT4/MT5 account first
+                          {accounts.some(a => a.provider === 'vps' || a.connection_type === 'vps')
+                            ? 'Your VPS account will be activated as master directly'
+                            : 'Connect a trading account first'}
                         </p>
                       )}
                     </div>
