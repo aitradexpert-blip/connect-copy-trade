@@ -38,7 +38,7 @@ interface LatestSignal {
   id: string;
   symbol: string;
   direction: string;
-  entry_price: number | null;
+  open_price: number | null;
   take_profit: number | null;
   stop_loss: number | null;
   created_at: string;
@@ -51,13 +51,12 @@ const LatestSignalCard = () => {
   useEffect(() => {
     supabase
       .from('trading_signals')
-      .select('id, symbol, direction, entry_price, take_profit, stop_loss, created_at')
+      .select('id, symbol, direction, open_price, take_profit, stop_loss, created_at')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-      .then(({ data }) => { if (data) setSignal(data as LatestSignal); })
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      .then(() => {}, () => {});
+      .then(({ data }) => { if (data) setSignal(data as unknown as LatestSignal); });
+
 
     // Realtime: refresh when a new signal drops
     const channel = supabase
@@ -95,7 +94,7 @@ const LatestSignalCard = () => {
           <Badge variant={dir === 'BUY' ? 'default' : 'destructive'}>{dir}</Badge>
         </div>
         <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-          {signal.entry_price != null && <span>Entry: <b className="text-foreground">{signal.entry_price}</b></span>}
+          {signal.open_price != null && <span>Entry: <b className="text-foreground">{signal.open_price}</b></span>}
           {signal.take_profit != null && <span>TP: <b className="text-profit">{signal.take_profit}</b></span>}
           {signal.stop_loss != null && <span>SL: <b className="text-loss">{signal.stop_loss}</b></span>}
         </div>
