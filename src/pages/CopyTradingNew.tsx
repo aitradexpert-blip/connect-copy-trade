@@ -118,8 +118,25 @@ export default function CopyTradingNew() {
     return () => { supabase.removeChannel(channel); };
   };
 
+  const stopAllCopying = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('copy_trading_relationships')
+      .update({ status: 'inactive' })
+      .eq('follower_user_id', user.id)
+      .eq('status', 'active');
+    if (!error) {
+      toast({ title: "Copy trading stopped", description: "All active copy relationships have been paused." });
+      setActiveRelationships([]);
+      loadData();
+    } else {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
+
   const loadData = async () => {
     if (!user) return;
+
     
     try {
       // Load user's trading accounts with provider info
@@ -743,6 +760,29 @@ export default function CopyTradingNew() {
             Follow successful traders and copy their trades automatically with real-time statistics
           </p>
         </div>
+
+        {/* Active Copy Trading Status Banner */}
+        {activeRelationships.length > 0 && (
+          <Card className="border-profit/30 bg-profit/10">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-profit animate-pulse" />
+                  <div>
+                    <p className="font-semibold text-profit">Copy Trading Active</p>
+                    <p className="text-sm text-muted-foreground">
+                      Your mentor's trades are being copied to your account
+                    </p>
+                  </div>
+                </div>
+                <Button variant="destructive" size="sm" onClick={stopAllCopying} className="flex items-center gap-2">
+                  <StopCircle className="w-4 h-4" />
+                  Stop Copy Trading
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* User's Trading Accounts */}
         <Card className="bg-gradient-card border-border shadow-card">
