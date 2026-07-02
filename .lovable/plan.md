@@ -1,144 +1,80 @@
-## Scope
+# HuMi Stabilization Plan — Sessions 1-4 + Core Flows + Notifications
 
-Apply the exact edits provided, nothing else. Grouped into one build pass with commits per file group.
+This plan executes the four Lovable sessions you drafted, then closes the outstanding functional gaps in Ideas, Account Connect, Copy Trading (Dashboard + Mentor Hub/Center parity), AI Bot, and the Notification Center (in-app + phone push).
 
-## Changes
+## Part A — Your 4 sessions (as specified)
 
-### 1. `src/components/ConnectAccountModal.tsx`
+1. **Session 1 — `src/pages/Index.tsx**`: remove horizontal `Tabs`, ship the single-column mobile layout (Welcome → Quick Actions → LatestSignalCard → Community & Support → Metrics/Voice/History → Khumo Sessions → Broker links → Economic Calendar). Add `LatestSignalCard` inline.
+2. **Session 2 — `src/pages/Index.tsx**`: VPS-first `load()` / `refreshData()` using `primaryApi.getAccount/getPositions/getHistory` with silent fallback; drop the failing `metaapi-get-history` call.
+3. **Session 3 — `src/pages/CopyTradingNew.tsx**`: active-copy status banner + `stopAllCopying`, VPS badges in account picker, VPS-aware mentor messaging.
+4. **Session 4 — Security**: `vercel.json` headers + CSP, new `public/robots.txt`, Settings OAuth password guard via `user.identities`.
 
-- Locate `if (vpsJson?.success && vpsJson?.data) {`.
-- Add `vpsSuccess`/`vpsData` locals above it.
-- Change condition to `if (vpsSuccess) {`.
-- Replace `vpsJson.data.balance/equity/company` refs inside the update with `vpsData?.*`.
-- Ensure the success branch also stores `mt5_password: formData.password` and `connection_status: 'connected'` (per Change 1 of 3 in first block).
+## Part B — Ideas pipeline (make Trading Ideas reliably deliver)
 
-### 2. `src/pages/CopyTradingNew.tsx`
+- Verify `MentorHub.publishSignal` and `MentorCenter.publishSignal` both:
+a) insert into `trading_signals` with `mentor_id` (trigger `attach_default_mentor_to_signal` handles admin), b) call `broadcastSignal(..., { toAiBot: true, toCopyFactory: true })`, c) invoke `copy-trade-listener`.
+- `TradingIdeas.tsx`: ensure realtime subscription on `trading_signals` (INSERT) with proper cleanup, and "Copy to my account" button routes through `signalBroadcast` so a single idea fans to CopyTrading + AI Bot followers.
+- Add DB index `idx_trading_signals_created_at` for fast "latest" queries used by `LatestSignalCard`.
 
-- Extend the `ready` const to also accept `provider === 'vps' || connection_type === 'vps'`.
-- In `createCopyFactoryStrategy`, before the "No MT4/MT5 Account" guard, detect a VPS account and, if present, flip `is_master = true` on it and return.
-- Check for any `is_virtual` filter excluding demo accounts; if present, remove and append `(Demo)` label next to the account name. If absent, leave untouched.
+## Part C — Add Trading Account (VPS-first, MetaAPI fallback)
 
-### 3. `src/pages/MentorHub.tsx` and `src/pages/MentorCenter.tsx`
+- `ConnectAccountModal.tsx`: keep VPS `/connect` path; on success write `provider='vps'`, `connection_type='vps'`, `connection_status='connected'`, `mt5_password` (temporary — see security note), `balance/equity/company` from VPS response.
+- On VPS failure, fall back to `metaapi-provision-account` and surface the exact broker error (server unresolved, IPC timeout, invalid creds).
+- Ensure the Weltrade + PrimeXBT + OctaFX server dropdowns render above other z-indices (fixes prior overlay bug).
+- Guarded UX: block "Start Copying" / "Activate Bot" until `connection_status === 'connected'`.
 
-- In each `publishSignal`, after `broadcastSignal(...)` and before the success toast, invoke `copy-trade-listener` with `{ signal_id: sig.id, master_user_id: user.id }` wrapped in `.catch`.
+## Part D — Copy Trading parity (Dashboard ⇄ Mentor Hub/Center)
 
-### 4. `supabase/functions/copy-trade-listener/index.ts`
+- Consolidate the follow → execute flow behind a single service (`signalBroadcast.fanOutDirect`) called from:
+  - `CopyTradingNew` "Follow / Self-Copy" buttons
+  - Mentor Hub / Mentor Center "Publish Signal"
+  - `copy-trade-listener` edge function
+- Enforce master resolution via existing `enforce_master_user_id` trigger; backfill any `master_user_id` gaps.
+- In `copy-trade-listener` and `auto-execute-signal`: VPS branch first (`VPS_API_URL` + optional `VPS_API_SECRET` header), MetaAPI fallback, Deriv WebSocket for Deriv accounts. Log every attempt to `trade_history` with `source` = `vps|metaapi|deriv`.
+- Show unified "Copy Trading Active" banner on both Dashboard (compact) and CopyTradingNew (from Session 3).
 
-- Before the `metaapi-execute-trade` invoke inside the follower loop, add a VPS-first branch:
-  - Read `VPS_API_URL`, detect `connection_type === 'vps' || provider === 'vps'`.
-  - POST to `${VPS_URL}/order` with `ngrok-skip-browser-warning` header.
-  - On success push result with `via: 'vps'` and `continue`. On failure fall through.
+## Part E — AI Bot end-to-end
 
-### 5. `supabase/functions/auto-execute-signal/index.ts`
+- On "Activate Khumo Bot" in `AIAutoTrading.tsx`: upsert row into `ai_bot_assignments` with `subscription_mentor_id`, `trading_account_id`, `user_id`, `active=true` (fixes empty-table issue).
+- `auto-execute-signal` queries assignments by `subscription_mentor_id` matching the signal's `mentor_id`, then executes via VPS → MetaAPI → Deriv in that order.
+- Emit a `notifications` row per execution so users see it in the Notification Center.
 
-- Before the Deriv/MetaAPI provider branches, add the same VPS-first block using signal fields (`signal.lot_size`, `signal.direction`).
-- Extend the local `Database` interface `trading_accounts.Row` to include `connection_type: string | null` and `provider: string` (already present — verify).
-- Trade-history insert on success not required here (loop `continue`s with `results.push`), matching provided patch.
+## Part F — Notification Center + Phone Push
 
-### 6. `src/pages/Settings.tsx`
+- **In-app**: audit `useNotifications` hook — ensure Supabase Realtime subscription on `notifications` uses `useEffect` + `removeChannel` cleanup (prevents the silent drop from re-render leaks). Verify DB triggers `notify_new_signal`, `notify_trade_executed`, `notify_bot_assignment`, `notify_account_connected`, `notify_subscription_change` all fire (they exist — will smoke-test).
+- **Phone push (Web Push via VAPID, PWA)**: since the app is installed via Median/PWA:
+  1. Add a `push_subscriptions` table (`user_id`, `endpoint`, `p256dh`, `auth`, `user_agent`) + RLS.
+  2. Add `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` secrets (I'll generate these).
+  3. Extend `public/sw.js` with `push` + `notificationclick` handlers routing to `data.link`.
+  4. New `src/hooks/usePushNotifications.ts` that requests permission and registers the subscription.
+  5. New edge function `send-push-notification` invoked by a DB trigger on `notifications` INSERT (via `pg_net`) — delivers to every subscription for that user.
+  6. Add opt-in toggle in `Settings.tsx` under Notifications.
+- Note: iOS requires the PWA to be installed to the home screen for push; Android/desktop work in-browser. Median APK inherits the service worker.
 
-- In the "Change Password" section, compute `isOAuthUser` from `user?.app_metadata?.provider === 'google'` or `providers?.includes('google')`.
-- If OAuth user, render a muted note linking to Google account security; else render existing password inputs + button.
+## Part G — Housekeeping (from your audit)
 
-### 7. `src/App.tsx` — auth loop reverse guard
+- Add the three `ai_bot_assignments` indexes + `REVOKE EXECUTE` statements via one migration.
+- Delete dead code: `src/pages/CopyTrading.tsx` (old), redirect `/mentor-dashboard` → `/mentor-hub` (keep MentorCenter for client-facing mentor page — clarify below).
+- Add `VPS_API_SECRET` secret + header check documented for the FastAPI side.
 
-- `PublicRoute` already redirects authenticated users away from `/auth` to `/`. No loop present → leave `App.tsx` untouched (per "if no loop, leave").
+## Technical details (for reference)
 
-### 8. WhatsApp→Support label rename
+```text
+Signal fan-out (target)
+ Mentor publishes ─► trading_signals INSERT
+   │
+   ├─► broadcastSignal()
+   │     ├─► fanOutDirect() ──► [VPS /order | metaapi-execute-trade | deriv WS] per follower
+   │     ├─► auto-execute-signal ──► ai_bot_assignments (by subscription_mentor_id)
+   │     └─► copyfactory-send-signal (if master has strategy_id)
+   │
+   └─► DB triggers ──► notifications INSERT ──► pg_net ──► send-push-notification ──► Web Push
+```
 
-- Search `src/` for a Telegram (`t.me`/`telegram`) link whose visible label is "WhatsApp". If found, rename label only to "Support"; do not touch href or any `wa.me` links.
+## Open questions before I build
 
-## Secrets
+1. **MentorCenter vs MentorHub**: keep MentorCenter as the *client-facing* branded landing (per `render-mentor-landing`) and MentorHub as the mentor workspace? Or fully consolidate?  - Keep them seperate for now, tell me what works best but keep them separate for now.
+2. **VPS auth**: do you want me to add the `VPS_API_SECRET` header now (I'll generate the value) so edge functions send it — you then add matching check on the FastAPI side? Yes please
+3. **Push scope**: enable push for signals + trade executions + account events by default, with per-category toggles in Settings - yes
 
-Instruct user to add `VPS_API_URL = https://municipal-posh-shading.ngrok-free.dev` in Edge Function Secrets (I'll offer the add_secret call during build).
-
-## Out of scope
-
-- No other files touched. No schema changes. No MetaAPI/Deriv logic modified.  
-  
-**POINT 1 — ConnectAccountModal.tsx**
-  Lovable's plan is correct. The `vpsSuccess`/`vpsData` fix is right. One thing to watch: it says "ensure `mt5_password` and `connection_status: 'connected'` are stored" — these are already in our version of the file we committed. So Lovable reading the current file may see them already there. If it re-adds them it could cause a duplicate field error. **Risk: low. Watch for duplicate keys in the update object.**
-  ---
-  **POINT 2 — CopyTradingNew.tsx**
-  Three sub-tasks here, each with a different risk:
-  `ready` **fix** — correct and safe.
-  **VPS master creation** — Lovable's plan says detect a VPS account and flip `is_master = true`. This is correct BUT there's a subtle race: `createCopyFactoryStrategy` also calls `loadData()` at the end only in the CopyFactory success path. The VPS branch returns early. If Lovable doesn't add `loadData()` to the VPS early return, the UI won't refresh after enabling master. **Risk: UI stays stale. Fix: ensure** `loadData()` **is called in the VPS branch before returning.**
-  **Demo account /** `is_virtual` **filter** — Lovable says "check for any `is_virtual` filter excluding demo accounts; if present remove it." I read the full `CopyTradingNew.tsx` and there is NO `is_virtual` filter in the accounts query or master list. The query is:
-  typescript
-  ```typescript
-  .eq("connection_status", "connected")
-  ```
-  No `is_virtual` filter exists. So Lovable will do nothing here — which is correct per its own instruction ("if absent, leave untouched"). **Risk: zero. But also means demo accounts are already visible — no change needed and no credit wasted.**
-  ---
-  **POINT 3 — MentorHub.tsx and MentorCenter.tsx**
-  The plan is correct — add `copy-trade-listener` call after `broadcastSignal`. But here's the argument against it: **MentorCenter.tsx's** `publishSignal` **function is actually only called when a mentor publishes from the older MentorCenter page, not MentorHub.** Looking at the codebase, `MentorHub.tsx` is the primary working dashboard (it has the `KhumoForexSessions` component, the newer UI, and is the one users actually land on). `MentorCenter.tsx` is the settings/management page — its Ideas tab exists but is less used.
-  The counter-argument for still fixing both: it costs the same whether Lovable edits 1 or 2 files in the same run, and a signal published from either page should reach followers. **Verdict: fix both, plan is correct.**
-  One risk though: both files already call `copy-trade-listener` inside `executeQuickTrade()`. Lovable might accidentally add the call there too instead of only in `publishSignal`. The prompt needs to be specific about which function. **Risk: medium. If it adds to wrong function, quick trades get double-executed.**
-  ---
-  **POINT 4 — copy-trade-listener edge function**
-  The VPS branch logic is correct. But here's a real problem Lovable's plan misses: **the follower account data fetched in this function uses a typed** `Database` **interface at the top of the file that only declares** `metaapi_account_id` **on** `trading_accounts.Row`**:**
-  typescript
-  ```typescript
-  trading_accounts: {
-    Row: {
-      id: string;
-      metaapi_account_id: string;
-      balance: number;
-      name: string;
-    };
-  };
-  ```
-  `connection_type` and `provider` are NOT in this interface. When Lovable adds `relationship.follower_account.connection_type` and `relationship.follower_account.provider`, TypeScript will throw a compile error and the edge function will fail to deploy.
-  **Fix: Lovable must also update the** `Database` **interface in** `copy-trade-listener/index.ts` **to add** `connection_type: string | null` **and** `provider: string`**.**
-  Lovable's plan mentions this for `auto-execute-signal` ("verify already present") but doesn't explicitly say to add it to `copy-trade-listener`. **Risk: HIGH. Deployment will fail with a TypeScript error.**
-  ---
-  **POINT 5 — auto-execute-signal edge function**
-  Lovable says "verify `connection_type` and `provider` already present in the Database interface." I read the actual file — the interface is:
-  typescript
-  ```typescript
-  trading_accounts: {
-    Row: {
-      id: string;
-      metaapi_account_id: string | null;
-      provider: string;          ← provider IS there ✅
-      deriv_token: string | null;
-      deriv_currency: string | null;
-      is_virtual: boolean | null;
-      name: string;
-    };
-  };
-  ```
-  `provider` is there but `connection_type` is NOT. Lovable will add the VPS check using `account.connection_type` but the interface doesn't declare it — same TypeScript error risk as Point 4. **Risk: HIGH. Must add** `connection_type: string | null` **to this interface too.**
-  Also: the VPS branch uses `signal.direction` as the `action` field in the POST body. The FastAPI `/order` endpoint likely expects `"buy"` or `"sell"` lowercase, but signals store `"BUY"` or `"SELL"` uppercase. This could cause the VPS to reject the order silently. **Fix: add** `.toLowerCase()` **→** `action: signal.direction.toLowerCase()`**.**
-  ---
-  **POINT 6 — Settings.tsx OAuth check**
-  The logic is correct but there's one subtle issue: `user?.app_metadata` in Supabase is only accessible server-side by default. On the client, `user.app_metadata` may be an empty object `{}` for security reasons depending on your Supabase JWT configuration. If `app_metadata` is empty on the client, `isOAuthUser` will always be `false` and the form will show for Google users anyway — making the fix useless.
-  **Alternative that actually works on the client:** check `user?.identities` instead:
-  typescript
-  ```typescript
-  const isOAuthUser = user?.identities?.some(i => i.provider === 'google') ?? false;
-  ```
-  `identities` IS exposed in the client-side JWT. **Risk: MEDIUM. The plan's approach may silently not work. Push back and tell Lovable to use** `user?.identities` **instead.**
-  ---
-  **POINT 7 — App.tsx auth loop**
-  Lovable correctly identified no loop exists and says leave it untouched. This is right. **No issue here.**
-  ---
-  **POINT 8 — WhatsApp label search**
-  Lovable says "search `src/` for a Telegram link whose visible label is 'WhatsApp'." The actual situation is different from what this implies. `WhatsAppButton.tsx` is a shim that renders `TelegramButton` — the label "WhatsApp" is passed as a prop from `Index.tsx`, not hardcoded in the component. So Lovable's search for a Telegram link with label "WhatsApp" in the same file won't find it — the label and the link are in different files.
-  What actually needs changing is in `Index.tsx`: the prop `label="Join WhatsApp Community"` and the CardTitle "Free WhatsApp Trading Tools." Lovable's search approach will likely find nothing and do nothing. **Risk: HIGH. This fix won't happen because Lovable is looking in the wrong place.**
-  **Fix: tell Lovable explicitly to edit** `src/pages/Index.tsx`**, find** `label="Join WhatsApp Community"` **and change it, and find the CardTitle text.**
-  ---
-  **SUMMARY — What to push back on before Lovable runs:**
-
-  | Point                                       | Risk     | Action                                                           |
-  | ------------------------------------------- | -------- | ---------------------------------------------------------------- |
-  | 1 ConnectAccountModal                       | Low      | Watch for duplicate keys                                         |
-  | 2 VPS master + `loadData()`                 | Medium   | Confirm `loadData()` is called in VPS branch                     |
-  | 2 Demo filter                               | Zero     | Correct to skip                                                  |
-  | 3 Wrong function targeted                   | Medium   | Specify `publishSignal` explicitly, not `executeQuickTrade`      |
-  | 4 Missing `connection_type` in DB interface | **HIGH** | Must add to `copy-trade-listener` interface                      |
-  | 5 Missing `connection_type` in DB interface | **HIGH** | Must add to `auto-execute-signal` interface                      |
-  | 5 Uppercase direction                       | Medium   | Add `.toLowerCase()` on `action` field                           |
-  | 6 `app_metadata` not client-accessible      | Medium   | Switch to `user?.identities?.some(i => i.provider === 'google')` |
-  | 7 No loop                                   | Zero     | Correct                                                          |
-  | 8 Label search won't find anything          | **HIGH** | Point Lovable explicitly to `src/pages/Index.ts`                 |
+Once you confirm, I'll switch to build mode and ship Parts A→G in that order.
