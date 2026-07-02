@@ -15,6 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
 import { SupportWidget } from "@/components/SupportWidget";
 import DerivDiagnostic from "@/components/DerivDiagnostic";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 interface UserSettings {
   email_notifications: { trading_signals: boolean; trade_execution: boolean; weekly_reports: boolean; };
@@ -46,6 +47,8 @@ export default function Settings() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const isOAuthUser = user?.identities?.some((i: { provider: string }) => i.provider === 'google') ?? false;
+  const push = usePushNotifications();
 
   const VOICE_IDS = {
     female: { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah (Female, South African)' },
@@ -262,18 +265,21 @@ export default function Settings() {
               </div>
             </div>
             <Separator />
-            <div className="space-y-4">
-              <h4 className="font-medium">Push Notifications</h4>
-              <div className="space-y-3">
-                {(['trading_signals', 'trade_updates'] as const).map(key => (
-                  <div key={key} className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</p>
-                    </div>
-                    <Switch checked={settings.push_notifications[key]} onCheckedChange={v => updatePushNotification(key, v)} />
-                  </div>
-                ))}
-              </div>
+            <div className="space-y-3">
+              <h4 className="font-medium">Phone Push Notifications</h4>
+              {!push.supported ? (
+                <p className="text-sm text-muted-foreground">This browser doesn't support push notifications. On iOS, install the app to your Home Screen first.</p>
+              ) : push.subscribed ? (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">Push is enabled — you'll be notified about new ideas, trades, and account events.</p>
+                  <Button variant="outline" size="sm" onClick={push.disable} disabled={push.loading}>Disable</Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">Get notified on your phone when a new idea drops or a trade fires.</p>
+                  <Button size="sm" onClick={async () => { const r = await push.enable(); if (!r.ok) toast({ title: 'Push not enabled', description: r.error, variant: 'destructive' }); else toast({ title: 'Push enabled' }); }} disabled={push.loading}>Enable</Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -321,30 +327,42 @@ export default function Settings() {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <h4 className="font-medium">Change Password</h4>
-              <div className="space-y-3 max-w-md">
-                <div className="space-y-2">
-                  <Label>New Password</Label>
-                  <div className="relative">
-                    <Input type={showNewPw ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 6 characters" minLength={6} />
-                    <button type="button" onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
+              {isOAuthUser ? (
+                <div className="p-4 bg-muted/50 rounded-lg max-w-md">
+                  <p className="text-sm font-medium mb-1">Password managed by Google</p>
+                  <p className="text-sm text-muted-foreground">
+                    Your account uses Google Sign-In.{' '}
+                    <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                      Manage your security settings here
+                    </a>.
+                  </p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Confirm New Password</Label>
-                  <div className="relative">
-                    <Input type={showConfirmPw ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter new password" />
-                    <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      {showConfirmPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
+              ) : (
+                <div className="space-y-3 max-w-md">
+                  <div className="space-y-2">
+                    <Label>New Password</Label>
+                    <div className="relative">
+                      <Input type={showNewPw ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 6 characters" minLength={6} />
+                      <button type="button" onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label>Confirm New Password</Label>
+                    <div className="relative">
+                      <Input type={showConfirmPw ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter new password" />
+                      <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        {showConfirmPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <Button onClick={handleChangePassword} disabled={changingPassword || !newPassword || !confirmPassword}>
+                    {changingPassword && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Update Password
+                  </Button>
                 </div>
-                <Button onClick={handleChangePassword} disabled={changingPassword || !newPassword || !confirmPassword}>
-                  {changingPassword && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Update Password
-                </Button>
-              </div>
+              )}
             </div>
             <Separator />
             <div className="space-y-3">
