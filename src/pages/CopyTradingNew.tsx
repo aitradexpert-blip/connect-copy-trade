@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap, Layers, RefreshCw, Shield, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Users, TrendingUp, Copy, Settings, Play, Activity, Zap, Layers, RefreshCw, Shield, AlertCircle, CheckCircle2, StopCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -78,6 +78,7 @@ export default function CopyTradingNew() {
   const [copyFactoryStrategies, setCopyFactoryStrategies] = useState<CopyFactoryStrategy[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [copyStats, setCopyStats] = useState<Record<string, CopyStats>>({});
+  const [activeRelationships, setActiveRelationships] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDeriv, setLoadingDeriv] = useState(false);
   const [loadingCopyFactory, setLoadingCopyFactory] = useState(false);
@@ -188,6 +189,8 @@ export default function CopyTradingNew() {
         .select("id, master_account_id")
         .eq("follower_user_id", user.id)
         .eq("status", "active");
+
+      setActiveRelationships(relationships || []);
 
       if (relationships && relationships.length > 0) {
         const stats: Record<string, CopyStats> = {};
