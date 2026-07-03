@@ -21,6 +21,7 @@ import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { OctaFxPromoCard } from "@/components/OctaFxPromoCard";
 import { broadcastSignal } from "@/services/signalBroadcast";
 import NoticeBoard from "@/components/NoticeBoard";
+import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
 
 interface MentorProfile {
   id: string;
