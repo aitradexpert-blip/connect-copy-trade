@@ -8,7 +8,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { primaryApi } from './primaryApi';
+import { primaryApi, isPrimaryConfigured } from './primaryApi';
 import { withFailover } from './tradingDataGateway';
 
 // ============ Interfaces ============
@@ -141,11 +141,39 @@ export async function executeOnAccount(
 ): Promise<ExecuteTradeResult> {
   console.log(`[BrokerExecution] Executing trade on ${account.provider} account:`, account.name);
   console.log(`[BrokerExecution] Signal:`, signal);
-  console.log(`[BrokerExecution] Connection type:`, getConnectionType(account));
-  
-  // Route based on connection_type (not just provider)
+
+  // VPS-first middleware — routes directly to self-hosted FastAPI when the
+  // account was connected via the VPS bridge. Only falls through on unavailable.
+  if (
+    (account.provider === 'vps' || account.connection_type === 'vps') &&
+    isPrimaryConfigured()
+  ) {
+    try {
+      const result: any = await primaryApi.sendOrder({
+        account_id: account.id,
+        symbol: signal.symbol,
+        action: signal.direction.toLowerCase(),
+        volume: signal.volume,
+        stop_loss: signal.stopLoss ?? null,
+        take_profit: signal.takeProfit ?? null,
+        comment: signal.comment ?? null,
+      });
+      if (result?.success || result?.ticket || result?.order) {
+        return {
+          success: true,
+          tradeId: result?.ticket || result?.order || 'vps-order',
+          provider: 'vps',
+        };
+      }
+      console.warn('[BrokerExecution] VPS order rejected, trying MetaAPI:', result?.error);
+    } catch (vpsErr) {
+      console.warn('[BrokerExecution] VPS unreachable, trying MetaAPI:', vpsErr);
+    }
+  }
+
   const connectionType = getConnectionType(account);
-  
+  console.log(`[BrokerExecution] Connection type:`, connectionType);
+
   if (connectionType === 'deriv_api') {
     return executeDerivTrade(account, signal);
   } else {
