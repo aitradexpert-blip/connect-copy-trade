@@ -13,6 +13,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import AppLayout from "@/components/AppLayout";
+import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
+import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { getSharedDerivWS } from "@/services/derivWebSocket";
 import { getCopyTradingList, getCopyTradingStats, startCopying, stopCopying } from "@/services/derivCopyTrading";
 
@@ -761,28 +763,8 @@ export default function CopyTradingNew() {
           </p>
         </div>
 
-        {/* Active Copy Trading Status Banner */}
-        {activeRelationships.length > 0 && (
-          <Card className="border-profit/30 bg-profit/10">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-profit animate-pulse" />
-                  <div>
-                    <p className="font-semibold text-profit">Copy Trading Active</p>
-                    <p className="text-sm text-muted-foreground">
-                      Your mentor's trades are being copied to your account
-                    </p>
-                  </div>
-                </div>
-                <Button variant="destructive" size="sm" onClick={stopAllCopying} className="flex items-center gap-2">
-                  <StopCircle className="w-4 h-4" />
-                  Stop Copy Trading
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Always-visible active copy status — shared across dashboards */}
+        <CopyTradingActiveBanner />
 
         {/* User's Trading Accounts */}
         <Card className="bg-gradient-card border-border shadow-card">
