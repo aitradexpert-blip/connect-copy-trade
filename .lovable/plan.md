@@ -1,80 +1,170 @@
-# HuMi Stabilization Plan — Sessions 1-4 + Core Flows + Notifications
+## HuMi Stabilization — Consolidated Execution Plan
 
-This plan executes the four Lovable sessions you drafted, then closes the outstanding functional gaps in Ideas, Account Connect, Copy Trading (Dashboard + Mentor Hub/Center parity), AI Bot, and the Notification Center (in-app + phone push).
+Executing the sessions in the order you specified. Each session is a self-contained commit; I will not touch files outside those listed per session.
 
-## Part A — Your 4 sessions (as specified)
+---
 
-1. **Session 1 — `src/pages/Index.tsx**`: remove horizontal `Tabs`, ship the single-column mobile layout (Welcome → Quick Actions → LatestSignalCard → Community & Support → Metrics/Voice/History → Khumo Sessions → Broker links → Economic Calendar). Add `LatestSignalCard` inline.
-2. **Session 2 — `src/pages/Index.tsx**`: VPS-first `load()` / `refreshData()` using `primaryApi.getAccount/getPositions/getHistory` with silent fallback; drop the failing `metaapi-get-history` call.
-3. **Session 3 — `src/pages/CopyTradingNew.tsx**`: active-copy status banner + `stopAllCopying`, VPS badges in account picker, VPS-aware mentor messaging.
-4. **Session 4 — Security**: `vercel.json` headers + CSP, new `public/robots.txt`, Settings OAuth password guard via `user.identities`.
+### Session 0 — Secret rotation
 
-## Part B — Ideas pipeline (make Trading Ideas reliably deliver)
+- Save the new `VPS_API_SECRET = b27c87581e27d989c23a64d41831ab696f7dfa7820a2146f29ca2201` via `set_secret` (overwrites the current value in Supabase Edge Function secrets).
+- Reminder to you: paste the same value into your FastAPI `main.py` env / `.env` on the VPS so header checks match. Lovable cannot edit the VPS host.
 
-- Verify `MentorHub.publishSignal` and `MentorCenter.publishSignal` both:
-a) insert into `trading_signals` with `mentor_id` (trigger `attach_default_mentor_to_signal` handles admin), b) call `broadcastSignal(..., { toAiBot: true, toCopyFactory: true })`, c) invoke `copy-trade-listener`.
-- `TradingIdeas.tsx`: ensure realtime subscription on `trading_signals` (INSERT) with proper cleanup, and "Copy to my account" button routes through `signalBroadcast` so a single idea fans to CopyTrading + AI Bot followers.
-- Add DB index `idx_trading_signals_created_at` for fast "latest" queries used by `LatestSignalCard`.
+---
 
-## Part C — Add Trading Account (VPS-first, MetaAPI fallback)
+### Session 1 — Cleanup (isolated, no logic risk)
 
-- `ConnectAccountModal.tsx`: keep VPS `/connect` path; on success write `provider='vps'`, `connection_type='vps'`, `connection_status='connected'`, `mt5_password` (temporary — see security note), `balance/equity/company` from VPS response.
-- On VPS failure, fall back to `metaapi-provision-account` and surface the exact broker error (server unresolved, IPC timeout, invalid creds).
-- Ensure the Weltrade + PrimeXBT + OctaFX server dropdowns render above other z-indices (fixes prior overlay bug).
-- Guarded UX: block "Start Copying" / "Activate Bot" until `connection_status === 'connected'`.
+Files:
 
-## Part D — Copy Trading parity (Dashboard ⇄ Mentor Hub/Center)
+- `src/App.tsx` — verify import points to `CopyTradingNew` (no edit expected).
+- `src/pages/CopyTrading.tsx` — **delete** (dead placeholder).
+- `src/components/WhatsAppButton.tsx` — after migrating callers, **delete**.
+- Any file under `src/` importing `WhatsAppButton` — rewrite import to `TelegramButton`, replace `<WhatsAppButton …>` → `<TelegramButton …>`, drop `keyword` prop, keep all other props.
+- `src/pages/MentorHub.tsx` — add ghost "Brand Settings" button next to the title, `navigate('/mentor-center')`, import `Settings` icon.
+- `src/pages/MentorCenter.tsx` — verify Dashboard tab has `onClick={() => navigate('/mentor-hub')}`; add if missing. No other changes.
 
-- Consolidate the follow → execute flow behind a single service (`signalBroadcast.fanOutDirect`) called from:
-  - `CopyTradingNew` "Follow / Self-Copy" buttons
-  - Mentor Hub / Mentor Center "Publish Signal"
-  - `copy-trade-listener` edge function
-- Enforce master resolution via existing `enforce_master_user_id` trigger; backfill any `master_user_id` gaps.
-- In `copy-trade-listener` and `auto-execute-signal`: VPS branch first (`VPS_API_URL` + optional `VPS_API_SECRET` header), MetaAPI fallback, Deriv WebSocket for Deriv accounts. Log every attempt to `trade_history` with `source` = `vps|metaapi|deriv`.
-- Show unified "Copy Trading Active" banner on both Dashboard (compact) and CopyTradingNew (from Session 3).
+Commit: `Cleanup: delete old CopyTrading.tsx, migrate WhatsAppButton to TelegramButton, add MentorHub↔MentorCenter links`
 
-## Part E — AI Bot end-to-end
+---
 
-- On "Activate Khumo Bot" in `AIAutoTrading.tsx`: upsert row into `ai_bot_assignments` with `subscription_mentor_id`, `trading_account_id`, `user_id`, `active=true` (fixes empty-table issue).
-- `auto-execute-signal` queries assignments by `subscription_mentor_id` matching the signal's `mentor_id`, then executes via VPS → MetaAPI → Deriv in that order.
-- Emit a `notifications` row per execution so users see it in the Notification Center.
+### Session 2 — Phase 1: copy-trade-listener parallel fan-out
 
-## Part F — Notification Center + Phone Push
+File: `supabase/functions/copy-trade-listener/index.ts`
 
-- **In-app**: audit `useNotifications` hook — ensure Supabase Realtime subscription on `notifications` uses `useEffect` + `removeChannel` cleanup (prevents the silent drop from re-render leaks). Verify DB triggers `notify_new_signal`, `notify_trade_executed`, `notify_bot_assignment`, `notify_account_connected`, `notify_subscription_change` all fire (they exist — will smoke-test).
-- **Phone push (Web Push via VAPID, PWA)**: since the app is installed via Median/PWA:
-  1. Add a `push_subscriptions` table (`user_id`, `endpoint`, `p256dh`, `auth`, `user_agent`) + RLS.
-  2. Add `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` secrets (I'll generate these).
-  3. Extend `public/sw.js` with `push` + `notificationclick` handlers routing to `data.link`.
-  4. New `src/hooks/usePushNotifications.ts` that requests permission and registers the subscription.
-  5. New edge function `send-push-notification` invoked by a DB trigger on `notifications` INSERT (via `pg_net`) — delivers to every subscription for that user.
-  6. Add opt-in toggle in `Settings.tsx` under Notifications.
-- Note: iOS requires the PWA to be installed to the home screen for push; Android/desktop work in-browser. Median APK inherits the service worker.
+- Refactor sequential `for (const relationship …)` loop to `Promise.allSettled(relationships.map(async rel => { … }))`.
+- Keep the existing VPS-first branch (already in place) and MetaAPI fallback inside each mapped async function.
+- On any per-follower throw: `console.error` + push a failed result entry; never let one failure abort the batch.
+- Insert failed executions into `trade_history` with error text so failures are auditable (per your validation requirement).
 
-## Part G — Housekeeping (from your audit)
+Commit: `copy-trade-listener: parallel Promise.allSettled fan-out + per-follower error logging`
 
-- Add the three `ai_bot_assignments` indexes + `REVOKE EXECUTE` statements via one migration.
-- Delete dead code: `src/pages/CopyTrading.tsx` (old), redirect `/mentor-dashboard` → `/mentor-hub` (keep MentorCenter for client-facing mentor page — clarify below).
-- Add `VPS_API_SECRET` secret + header check documented for the FastAPI side.
+---
 
-## Technical details (for reference)
+### Session 3 — Phase 1: MetaAPI cost & timeout fixes
 
-```text
-Signal fan-out (target)
- Mentor publishes ─► trading_signals INSERT
-   │
-   ├─► broadcastSignal()
-   │     ├─► fanOutDirect() ──► [VPS /order | metaapi-execute-trade | deriv WS] per follower
-   │     ├─► auto-execute-signal ──► ai_bot_assignments (by subscription_mentor_id)
-   │     └─► copyfactory-send-signal (if master has strategy_id)
-   │
-   └─► DB triggers ──► notifications INSERT ──► pg_net ──► send-push-notification ──► Web Push
-```
+Files:
 
-## Open questions before I build
+- `supabase/functions/metaapi-provision-account/index.ts`
+  - **Governance:** Query `user_subscriptions` for tier. If `basic` AND `trading_accounts` count for user ≥ 1 → return `403 {"error":"Subscription Limit Exceeded: Basic tier is limited to 1 trading account."}`.
+  - **Reuse:** Before calling provisioning API, `SELECT id, metaapi_account_id FROM trading_accounts WHERE user_id=… AND login=… AND provider='metaapi' AND metaapi_account_id IS NOT NULL`. If found → return early with `{success:true, metaapi_account_id, reused:true}`.
+- `supabase/functions/metaapi-account-info/index.ts`
+  - Wrap the client-API `fetch` in `AbortController` with 5000ms timeout; existing 504 redeploy-and-retry logic stays but uses the same controller pattern on the retry.
 
-1. **MentorCenter vs MentorHub**: keep MentorCenter as the *client-facing* branded landing (per `render-mentor-landing`) and MentorHub as the mentor workspace? Or fully consolidate?  - Keep them seperate for now, tell me what works best but keep them separate for now.
-2. **VPS auth**: do you want me to add the `VPS_API_SECRET` header now (I'll generate the value) so edge functions send it — you then add matching check on the FastAPI side? Yes please
-3. **Push scope**: enable push for signals + trade executions + account events by default, with per-category toggles in Settings - yes
+Commit: `MetaAPI: basic-tier limit, reuse existing account, 5s AbortController timeout`
 
-Once you confirm, I'll switch to build mode and ship Parts A→G in that order.
+---
+
+### Session 4 — Phase 2: AI Bot activation for VPS
+
+File: `src/pages/AIAutoTrading.tsx` — three surgical edits exactly as you specified:
+
+1. `ready` check adds `provider === 'vps' || connection_type === 'vps'`.
+2. Account selector `SelectItem` shows "VPS Direct" badge for VPS accounts.
+3. Active Bots list badge branch shows `VPS Direct` when `provider === 'vps'`.
+
+Commit: `Fix AI bot: VPS accounts can now activate Khumo bot`
+
+---
+
+### Session 5 — Phase 2: Trading Ideas realtime + VPS badge
+
+File: `src/pages/TradingIdeas.tsx`
+
+1. Add Supabase realtime channel on `trading_signals` INSERT inside the existing `useEffect`, with `removeChannel` cleanup.
+2. Replace `getProviderBadge` to return VPS Direct / Deriv / MT4-MT5 badges as specified. Import `Zap` if missing.
+
+Commit: `Trading Ideas: realtime signals + VPS account badge`
+
+---
+
+### Session 6 — Phase 2: brokerExecution VPS-first
+
+File: `src/services/brokerExecution.ts`
+
+- Add VPS-first branch at the top of `executeOnAccount` using `primaryApi.sendOrder` when `provider==='vps'` (or `connection_type==='vps'`) and `isPrimaryConfigured()`. On timeout/failure → fall through to existing MetaAPI/Deriv paths (which remain untouched).
+
+Commit: `Broker execution: VPS-first path for VPS-connected accounts`
+
+---
+
+### Session 7 — Phase 3: Copy Trading UI banner + parity
+
+Files:
+
+- `src/pages/CopyTradingNew.tsx` — hoist "Copy Trading Active" card to the FIRST child inside the main content wrapper, above all tabs. Confirm `stopAllCopying` exists (add if missing) and `StopCircle` is imported.
+- `src/pages/MentorHub.tsx` and `src/pages/MentorCenter.tsx` — mirror the same active-copy banner at the top of the client-facing area so the UI is consistent across dashboards (this addresses the inconsistency you flagged).
+
+Commit: `Copy trading: active banner hoisted + mirrored to Mentor Hub/Center`
+
+---
+
+### Session 8 — Smoke test scaffolding
+
+Files:
+
+- `src/components/ConnectAccountModal.tsx` (or account settings surface) — add a small "Test VPS Connection" button visible for VPS-provider accounts. It calls `GET ${VITE_API_URL}/health` with the `ngrok-skip-browser-warning` header and toasts online/offline + latency.
+- Confirm no legacy MetaAPI-only execution paths run for VPS accounts in `CopyTradingNew.tsx`/`MentorHub.tsx` (route all publish/execute through `signalBroadcast.fanOutDirect` + `brokerExecution.executeOnAccount`, which now branches VPS-first from Session 6).
+
+Commit: `VPS smoke test button + fan-out unification via signalBroadcast`
+
+---
+
+### Verification checklist (run after each session)
+
+1. Basic tier: try adding a 2nd account → expect 403.
+2. Publish a signal with N followers → logs show concurrent per-follower entries in the same second.
+3. Re-link an existing MT5 login → no provisioning charge; response has `reused:true`.
+4. Publish a signal from MentorHub → appears live in Trading Ideas via realtime; VPS follower receives order via `/order`.
+5. Copy Trading Active banner visible at top of CopyTradingNew, MentorHub, MentorCenter.
+6. `/health` VPS button returns 200.
+7. Send-push-notification: insert a test row in `notifications` → device receives push (requires the app_settings rows + VAPID keys already configured).
+
+---
+
+### Not touched
+
+- `vercel.json`, `robots.txt`, `sw.js`, `usePushNotifications.ts`, `send-push-notification` function, `Index.tsx` mobile layout, `BottomNav.tsx`, `AppLayout.tsx`, `ConnectAccountModal` VPS routing logic (only adds the Test button), Deriv/MetaAPI execution internals.
+
+Once you approve, I will execute Sessions 0→8 in order.  
+  
+Check this below before you implemet and reiterate your plan accordingly:  
+**QUANTUM ARCHITECT EXECUTION: FINAL STABILIZATION & GOVERNANCE PROXY**
+
+**Task 1: Concurrent Governance (copy-trade-listener)**
+
+- **File:** `supabase/functions/copy-trade-listener/index.ts`
+- **Logic:** Use `Promise.allSettled` with a batching utility (process max 5 trades concurrently) to prevent broker rate-limiting.
+- **Audit:** Each promise must write to `trade_history` with `status: 'failed'` or `'success'`, including the `error_message` for auditable troubleshooting.
+
+**Task 2: Atomic Subscription Governance**
+
+- **File:** `supabase/functions/metaapi-provision-account/index.ts`
+- **Logic:** Perform an atomic check. Use a Supabase Transaction:
+  1. `SELECT count(*)` from `trading_accounts` for `user_id`.
+  2. If `tier == 'basic'` AND `count >= 1`, `ROLLBACK` and return `403`.
+  3. If safe, `SELECT ... FOR UPDATE` (or unique check) to see if `login` already exists.
+  4. Only if not found, proceed to `provision`.
+
+**Task 3: Execution Funnel Consolidation**
+
+- **File:** `src/services/brokerExecution.ts`
+- **Logic:** Establish this as the **sole authority**. All UI components (MentorHub, CopyTradingNew) must route signals exclusively through `executeOnAccount`.
+- **VPS-First Middleware:** Implementation must check `provider === 'vps'`. If `isPrimaryConfigured()`, execute `primaryApi.sendOrder`. If this returns `503` or timeout, catch and attempt secondary `MetaAPI` route.
+
+**Task 4: Shared Lifecycle Hooks**
+
+- **File:** `src/hooks/useCopyTrading.ts` (Create this)
+- **Logic:** Encapsulate `stopAllCopying` and `activeBannerState`. Import this hook in `CopyTradingNew.tsx`, `MentorHub.tsx`, and `MentorCenter.tsx` to ensure uniform UI behavior and state consistency across the dashboard.
+
+**Task 5: Resilience & Timeout**
+
+- **File:** `supabase/functions/metaapi-account-info/index.ts`
+- **Logic:** Implement `AbortController` (5000ms) + `exponential backoff` (max 2 retries) for external API fetch calls.
+
+**Commit Messages:**
+
+1. 'Governance: Atomic provisioning with 403 enforcement'
+2. 'Reliability: Batched concurrent execution with error auditing'
+3. 'Architecture: Consolidated execution funnel in brokerExecution'
+4. 'UX: Shared useCopyTrading hook for unified banner state'"
+
+**Final Logic Check:** By moving to a `useCopyTrading` hook, we solve the code-duplication problem; by using transactional SQL, we solve the race-condition problem; by using batching, we solve the API-rate-limit problem.
