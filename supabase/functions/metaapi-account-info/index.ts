@@ -82,22 +82,39 @@ Deno.serve(async (req) => {
 
     const clientApiUrl = `https://mt-client-api-v1.${region}.agiliumtrade.ai`
 
-    // Attempt to fetch account info
-    let resp = await fetch(`${clientApiUrl}/users/current/accounts/${accountId}/account-information`, {
-      headers: { 'auth-token': token, 'Accept': 'application/json' },
+    const fetchWithTimeout = async (url: string, init: RequestInit, ms: number) => {
+      const ctl = new AbortController()
+      const t = setTimeout(() => ctl.abort(), ms)
+      try {
+        return await fetch(url, { ...init, signal: ctl.signal })
+      } finally {
+        clearTimeout(t)
+      }
+    }
+
+    // Attempt to fetch account info with a 5s cap so we never block the event loop
+    let resp = await fetchWithTimeout(
+      `${clientApiUrl}/users/current/accounts/${accountId}/account-information`,
+      { headers: { 'auth-token': token, 'Accept': 'application/json' } },
+      5000,
+    ).catch((e) => {
+      console.warn('account-info fetch aborted/failed:', e?.message || e)
+      return new Response('timeout', { status: 504 })
     })
 
-    // On 504/502 timeout, redeploy and retry once
+    // On 504/502 timeout, redeploy and retry once (also under 5s cap)
     if (!resp.ok && (resp.status === 504 || resp.status === 502)) {
       console.warn(`Account info got ${resp.status}, redeploying and retrying...`)
       await fetch(`${PROVISIONING_API_URL}/users/current/accounts/${accountId}/redeploy`, {
         method: 'POST',
         headers: { 'auth-token': token, 'Accept': 'application/json' },
-      })
+      }).catch(() => {})
       await sleep(5000)
-      resp = await fetch(`${clientApiUrl}/users/current/accounts/${accountId}/account-information`, {
-        headers: { 'auth-token': token, 'Accept': 'application/json' },
-      })
+      resp = await fetchWithTimeout(
+        `${clientApiUrl}/users/current/accounts/${accountId}/account-information`,
+        { headers: { 'auth-token': token, 'Accept': 'application/json' } },
+        5000,
+      ).catch(() => new Response('timeout', { status: 504 }))
     }
 
     if (!resp.ok) {
