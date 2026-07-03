@@ -481,6 +481,7 @@ export default function MentorHub() {
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-6 overflow-x-hidden">
+        <CopyTradingActiveBanner className="mb-6" />
         <NoticeBoard audience="mentor_hub" className="mb-6" />
         <Tabs defaultValue="home" className="space-y-6">
           <TabsList className="w-full overflow-x-auto flex-nowrap justify-start md:grid md:grid-cols-4 md:max-w-lg bg-muted/50 p-1 rounded-full">

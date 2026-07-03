@@ -530,6 +530,7 @@ export default function MentorCenter() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-full overflow-x-hidden">
+        <CopyTradingActiveBanner />
         <NoticeBoard audience="mentor_center" />
         <OctaFxPromoCard />
         <div className="flex items-center justify-between">
