@@ -1,7 +1,8 @@
 // Supabase Edge Function: metaapi-provision-account
-// Purpose: Provision MT4/MT5 accounts via MetaAPI Provisioning API with validation
+// Purpose: Provision MT4/MT5 accounts via MetaAPI with tier limits + reuse
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,6 +83,65 @@ Deno.serve(async (req) => {
 
     const transactionId = generateTransactionId()
     console.log(`Provisioning account: login=${loginDigits}, server=${server}, platform=${platform}`)
+
+    // ---- Governance + Reuse (skip when we can identify caller) ---------
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const authHeader = req.headers.get('Authorization') || ''
+    let callerUserId: string | null = null
+    if (supabaseUrl && serviceKey && authHeader.startsWith('Bearer ')) {
+      try {
+        const admin = createClient(supabaseUrl, serviceKey)
+        const { data: userData } = await admin.auth.getUser(authHeader.replace('Bearer ', ''))
+        callerUserId = userData?.user?.id || null
+      } catch (e) {
+        console.warn('auth.getUser failed:', e)
+      }
+    }
+
+    if (callerUserId && supabaseUrl && serviceKey) {
+      const admin = createClient(supabaseUrl, serviceKey)
+
+      // Reuse existing MetaAPI account for the same login (prevents $2.10 re-charges)
+      const { data: existing } = await admin
+        .from('trading_accounts')
+        .select('id, metaapi_account_id')
+        .eq('user_id', callerUserId)
+        .eq('login', loginDigits)
+        .eq('provider', 'metaapi')
+        .not('metaapi_account_id', 'is', null)
+        .maybeSingle()
+      if (existing?.metaapi_account_id) {
+        console.log('Reusing existing MetaAPI account:', existing.metaapi_account_id)
+        return new Response(JSON.stringify({
+          success: true,
+          metaapi_account_id: existing.metaapi_account_id,
+          reused: true,
+        }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } })
+      }
+
+      // Enforce Basic-tier limit: max 1 trading account
+      const { data: sub } = await admin
+        .from('user_subscriptions')
+        .select('plan_name, status')
+        .eq('user_id', callerUserId)
+        .eq('status', 'active')
+        .maybeSingle()
+      const tier = String(sub?.plan_name || 'free').toLowerCase()
+      if (tier === 'basic') {
+        const { count } = await admin
+          .from('trading_accounts')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', callerUserId)
+        if ((count || 0) >= 1) {
+          return new Response(JSON.stringify({
+            error: 'Subscription Limit Exceeded: Basic tier is limited to 1 trading account.',
+            code: 'TIER_LIMIT',
+          }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } })
+        }
+      }
+    }
+    // --------------------------------------------------------------------
 
     // Heuristic broker keywords help MetaAPI route to the correct broker pool
     const serverLower = String(server).toLowerCase()

@@ -134,6 +134,36 @@ export function ConnectAccountModal({
     window.location.href = loginUrl;
   };
 
+  const testVpsConnection = async () => {
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+    if (!base) {
+      toast({ title: "VPS not configured", description: "VITE_API_URL is empty.", variant: "destructive" });
+      return;
+    }
+    const started = performance.now();
+    try {
+      const res = await fetch(`${base}/health`, {
+        headers: { Accept: "application/json", "ngrok-skip-browser-warning": "true" },
+      });
+      const ms = Math.round(performance.now() - started);
+      if (res.ok) {
+        toast({ title: "VPS online", description: `/health responded in ${ms}ms` });
+      } else {
+        toast({
+          title: `VPS returned ${res.status}`,
+          description: "Check the FastAPI server and VPS_API_SECRET.",
+          variant: "destructive",
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: "VPS unreachable",
+        description: e?.message || "Could not connect to the VPS bridge.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleMetaApiSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -352,10 +382,25 @@ export function ConnectAccountModal({
       )}
 
       <div className="bg-muted/50 rounded-lg p-3 text-sm">
-        <p className="font-medium mb-1">Connect any MT4/MT5 broker</p>
-        <p className="text-muted-foreground text-xs">
-          We connect directly to your broker for the fastest execution, with a secure cloud backup if needed.
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-medium mb-1">Connect any MT4/MT5 broker</p>
+            <p className="text-muted-foreground text-xs">
+              We connect directly to your broker for the fastest execution, with a secure cloud backup if needed.
+            </p>
+          </div>
+          {isPrimaryConfigured() && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={testVpsConnection}
+              className="shrink-0 text-xs"
+            >
+              Test VPS
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">

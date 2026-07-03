@@ -24,6 +24,7 @@ import { broadcastSignal } from "@/services/signalBroadcast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import NoticeBoard from "@/components/NoticeBoard";
+import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
 
 interface MentorProfile {
   id: string;
@@ -430,9 +431,20 @@ export default function MentorHub() {
         <div className="absolute inset-0 bg-black/50" />
         <div className="relative z-10 h-full flex items-end p-6">
           <div className="flex-1">
-            <h1 className="text-2xl md:text-4xl font-black text-white uppercase tracking-wide">
-              {profile.brand_name}
-            </h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl md:text-4xl font-black text-white uppercase tracking-wide">
+                {profile.brand_name}
+              </h1>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/mentor-center')}
+                className="text-xs text-white/80 hover:text-white hover:bg-white/10"
+              >
+                <Settings className="w-3 h-3 mr-1" />
+                Brand Settings
+              </Button>
+            </div>
             <p className="text-white/70 mt-1 text-sm md:text-base">{welcomeText}</p>
           </div>
           <DropdownMenu>
@@ -469,6 +481,7 @@ export default function MentorHub() {
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-6 overflow-x-hidden">
+        <CopyTradingActiveBanner className="mb-6" />
         <NoticeBoard audience="mentor_hub" className="mb-6" />
         <Tabs defaultValue="home" className="space-y-6">
           <TabsList className="w-full overflow-x-auto flex-nowrap justify-start md:grid md:grid-cols-4 md:max-w-lg bg-muted/50 p-1 rounded-full">

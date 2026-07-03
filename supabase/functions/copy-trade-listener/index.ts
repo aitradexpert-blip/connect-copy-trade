@@ -33,6 +33,31 @@ interface Database {
   };
 }
 
+// Simple concurrency-limited runner — caps parallel MetaAPI calls at 5
+// to respect broker/provider rate limits while staying well under the
+// 150s edge-function envelope.
+async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      try {
+        results[i] = { status: 'fulfilled', value: await worker(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -54,7 +79,6 @@ Deno.serve(async (req) => {
 
     console.log('Copy trading triggered for signal:', signal_id, 'by master:', master_user_id);
 
-    // Get signal details
     const { data: signal, error: signalError } = await supabase
       .from('trading_signals')
       .select('*')
@@ -69,7 +93,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get all active copy relationships where this user is the master
     const { data: relationships, error: relationshipsError } = await supabase
       .from('copy_trading_relationships')
       .select('*, follower_account:trading_accounts!follower_account_id(*), master_account:trading_accounts!master_account_id(*)')
@@ -84,114 +107,112 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Found ${relationships?.length || 0} active copy relationships`);
+    const rels = relationships || [];
+    console.log(`Found ${rels.length} active copy relationships — dispatching in parallel (max 5 concurrent)`);
 
-    const results = [];
+    const VPS_URL = (Deno.env.get('VPS_API_URL') || '').replace(/\/+$/, '');
+    const VPS_SECRET = Deno.env.get('VPS_API_SECRET') || '';
 
-    // Execute trade for each follower
-    for (const relationship of relationships || []) {
+    const auditFailure = async (relationship: any, message: string, via: string) => {
       try {
-        const masterBalance = relationship.master_account.balance || 10000;
-        const followerBalance = relationship.follower_account.balance || 10000;
-        
-        // Calculate proportional volume based on balance ratio
-        const balanceRatio = followerBalance / masterBalance;
-        const adjustedVolume = Number((signal.lot_size * balanceRatio).toFixed(2));
-
-        console.log(`Copying trade for follower ${relationship.follower_user_id} with adjusted volume ${adjustedVolume}`);
-
-        // Try VPS first if follower account is VPS-connected
-        const VPS_URL = (Deno.env.get('VPS_API_URL') || '').replace(/\/+$/, '');
-        const isVpsAccount = relationship.follower_account.connection_type === 'vps'
-          || relationship.follower_account.provider === 'vps';
-
-        if (isVpsAccount && VPS_URL) {
-          try {
-            const vpsRes = await fetch(`${VPS_URL}/order`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true',
-              },
-              body: JSON.stringify({
-                account_id: relationship.follower_account.id,
-                symbol: signal.symbol,
-                action: String(signal.direction || '').toLowerCase(),
-                volume: adjustedVolume,
-                stop_loss: signal.stop_loss ?? null,
-                take_profit: signal.take_profit ?? null,
-              }),
-            });
-            const vpsResult = await vpsRes.json().catch(() => null);
-            if (vpsResult?.success) {
-              console.log(`VPS order success for follower ${relationship.follower_user_id}`);
-              results.push({
-                follower_user_id: relationship.follower_user_id,
-                success: true,
-                via: 'vps',
-                data: vpsResult,
-              });
-              continue;
-            }
-            console.warn(`VPS order failed for follower ${relationship.follower_user_id}, falling back:`, vpsResult?.error);
-          } catch (vpsErr) {
-            console.warn(`VPS unreachable for follower ${relationship.follower_user_id}, falling back to MetaAPI:`, vpsErr);
-          }
-        }
-
-        // Call metaapi-execute-trade edge function
-        const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('metaapi-execute-trade', {
-          body: {
-            accountId: relationship.follower_account.metaapi_account_id,
-            trade: {
-              symbol: signal.symbol,
-              direction: signal.direction,
-              volume: adjustedVolume,
-              stopLoss: signal.stop_loss,
-              takeProfit: signal.take_profit,
-              comment: `Copy from ${relationship.master_account.name}`,
-              signal_id: signal_id,
-              user_id: relationship.follower_user_id
-            }
-          }
-        });
-
-        if (tradeError) {
-          console.error(`Copy trade failed for follower ${relationship.follower_user_id}:`, tradeError);
-          results.push({
-            follower_user_id: relationship.follower_user_id,
-            success: false,
-            error: tradeError.message
-          });
-        } else {
-          console.log(`Copy trade executed successfully for follower ${relationship.follower_user_id}`);
-          results.push({
-            follower_user_id: relationship.follower_user_id,
-            success: true,
-            data: tradeResult
-          });
-        }
-      } catch (error) {
-        console.error(`Exception copying trade for follower ${relationship.follower_user_id}:`, error);
-        results.push({
-          follower_user_id: relationship.follower_user_id,
-          success: false,
-          error: error.message
-        });
+        await supabase.from('trade_history').insert({
+          user_id: relationship.follower_user_id,
+          trading_account_id: relationship.follower_account_id,
+          symbol: signal.symbol,
+          direction: signal.direction,
+          volume: 0,
+          status: 'failed',
+          error_message: `[${via}] ${message}`.slice(0, 500),
+          copied_from_relationship_id: relationship.id,
+          signal_id,
+        } as any);
+      } catch (auditErr) {
+        console.error('Failed to write audit row:', auditErr);
       }
-    }
+    };
+
+    const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
+      const masterBalance = relationship.master_account?.balance || 10000;
+      const followerBalance = relationship.follower_account?.balance || 10000;
+      const balanceRatio = followerBalance / masterBalance;
+      const adjustedVolume = Number((signal.lot_size * balanceRatio).toFixed(2));
+
+      console.log(`[fan-out] follower=${relationship.follower_user_id} vol=${adjustedVolume}`);
+
+      const isVpsAccount = relationship.follower_account?.connection_type === 'vps'
+        || relationship.follower_account?.provider === 'vps';
+
+      if (isVpsAccount && VPS_URL) {
+        try {
+          const vpsRes = await fetch(`${VPS_URL}/order`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+              ...(VPS_SECRET ? { 'X-VPS-Secret': VPS_SECRET } : {}),
+            },
+            body: JSON.stringify({
+              account_id: relationship.follower_account.id,
+              symbol: signal.symbol,
+              action: String(signal.direction || '').toLowerCase(),
+              volume: adjustedVolume,
+              stop_loss: signal.stop_loss ?? null,
+              take_profit: signal.take_profit ?? null,
+            }),
+          });
+          const vpsResult = await vpsRes.json().catch(() => null);
+          if (vpsResult?.success) {
+            return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: vpsResult };
+          }
+          const msg = vpsResult?.error || `VPS HTTP ${vpsRes.status}`;
+          console.warn(`[fan-out] VPS rejected for ${relationship.follower_user_id}: ${msg}`);
+          await auditFailure(relationship, msg, 'vps');
+          // fall through to MetaAPI
+        } catch (vpsErr: any) {
+          console.warn(`[fan-out] VPS unreachable for ${relationship.follower_user_id}:`, vpsErr?.message || vpsErr);
+          await auditFailure(relationship, vpsErr?.message || String(vpsErr), 'vps-network');
+        }
+      }
+
+      // MetaAPI fallback
+      const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('metaapi-execute-trade', {
+        body: {
+          accountId: relationship.follower_account?.metaapi_account_id,
+          trade: {
+            symbol: signal.symbol,
+            direction: signal.direction,
+            volume: adjustedVolume,
+            stopLoss: signal.stop_loss,
+            takeProfit: signal.take_profit,
+            comment: `Copy from ${relationship.master_account?.name || 'master'}`,
+            signal_id,
+            user_id: relationship.follower_user_id,
+          },
+        },
+      });
+
+      if (tradeError) {
+        console.error(`[fan-out] MetaAPI failed for ${relationship.follower_user_id}:`, tradeError.message);
+        await auditFailure(relationship, tradeError.message, 'metaapi');
+        throw new Error(tradeError.message);
+      }
+      return { follower_user_id: relationship.follower_user_id, success: true, via: 'metaapi', data: tradeResult };
+    });
+
+    const results = settled.map((s, i) =>
+      s.status === 'fulfilled'
+        ? s.value
+        : { follower_user_id: rels[i]?.follower_user_id, success: false, error: String((s as any).reason?.message || (s as any).reason) },
+    );
+
+    const copied_count = results.filter((r: any) => r.success).length;
+    const failed_count = results.length - copied_count;
 
     return new Response(
-      JSON.stringify({ 
-        success: true,
-        signal_id,
-        copied_count: results.filter(r => r.success).length,
-        failed_count: results.filter(r => !r.success).length,
-        results 
-      }),
+      JSON.stringify({ success: true, signal_id, copied_count, failed_count, results }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error('Copy trade listener error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),

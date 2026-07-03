@@ -21,6 +21,7 @@ import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { OctaFxPromoCard } from "@/components/OctaFxPromoCard";
 import { broadcastSignal } from "@/services/signalBroadcast";
 import NoticeBoard from "@/components/NoticeBoard";
+import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
 
 interface MentorProfile {
   id: string;
@@ -530,6 +531,7 @@ export default function MentorCenter() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-full overflow-x-hidden">
+        <CopyTradingActiveBanner />
         <NoticeBoard audience="mentor_center" />
         <OctaFxPromoCard />
         <div className="flex items-center justify-between">

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/MetricCard";
 import AppLayout from "@/components/AppLayout";
 import { BrokerActionModal } from "@/components/BrokerActionModal";
-import WhatsAppButton from "@/components/WhatsAppButton";
+import TelegramButton from "@/components/TelegramButton";
 import NoticeBoard from "@/components/NoticeBoard";
 import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
@@ -342,10 +342,10 @@ const Index = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <WhatsAppButton keyword="COMMUNITY" label="Join Support Community" description="500+ traders, daily discussion & mentorship" />
-              <WhatsAppButton keyword="SIGNALS" label="Get Daily Signals" description="2–3 high-probability setups posted daily" />
-              <WhatsAppButton keyword="EA" label="Claim Free Expert Advisor" description="R6,000 EA free with broker account + deposit" />
-              <WhatsAppButton keyword="MENTOR" label="Join Free Mentorship" description="Weekly market previews, trade reviews & Q&A" />
+              <TelegramButton label="Join Support Community" description="500+ traders, daily discussion & mentorship" />
+              <TelegramButton label="Get Daily Signals" description="2–3 high-probability setups posted daily" />
+              <TelegramButton label="Claim Free Expert Advisor" description="R6,000 EA free with broker account + deposit" />
+              <TelegramButton label="Join Free Mentorship" description="Weekly market previews, trade reviews & Q&A" />
             </div>
           </CardContent>
         </Card>

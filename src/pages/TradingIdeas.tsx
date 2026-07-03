@@ -38,6 +38,7 @@ interface TradingAccount {
   deriv_currency: string | null;
   is_virtual: boolean | null;
   login: string;
+  connection_type?: string | null;
 }
 
 export default function TradingIdeas() {
@@ -120,7 +121,7 @@ export default function TradingIdeas() {
         // Load user's trading accounts with provider info
         const { data: accountsData, error: accountsError } = await supabase
           .from('trading_accounts')
-          .select('id,name,balance,metaapi_account_id,provider,deriv_token,deriv_currency,is_virtual,login')
+          .select('id,name,balance,metaapi_account_id,provider,deriv_token,deriv_currency,is_virtual,login,connection_type')
           .eq('user_id', user.id);
 
         if (accountsError) throw accountsError;
@@ -133,6 +134,18 @@ export default function TradingIdeas() {
       }
     };
     load();
+
+    // Realtime: show new signals the moment a mentor publishes
+    const channel = supabase
+      .channel('trading-signals-live')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'trading_signals',
+      }, () => { load(); })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user, toast]);
 
   const requirePaid = useFreeTierGuard();
@@ -211,8 +224,22 @@ export default function TradingIdeas() {
     }
   };
 
-  // Get provider badge for account (white-label: only show MT4/MT5 badge)
+  // Get provider badge for account
   const getProviderBadge = (account: TradingAccount) => {
+    if (account.provider === 'vps' || account.connection_type === 'vps') {
+      return (
+        <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+          VPS Direct
+        </Badge>
+      );
+    }
+    if (account.provider === 'deriv') {
+      return (
+        <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600 border-yellow-500/30">
+          <Zap className="w-3 h-3 mr-1" />Deriv
+        </Badge>
+      );
+    }
     if (account.metaapi_account_id || ['metaapi','mt4','mt5'].includes((account.provider || '').toLowerCase())) {
       return (
         <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/30">
