@@ -32,6 +32,7 @@ interface TradingAccount {
   provider: string;
   deriv_token: string | null;
   is_virtual: boolean | null;
+  connection_type?: string | null;
 }
 
 interface AIBot {
@@ -98,7 +99,7 @@ export default function AIAutoTrading() {
         // Load user's trading accounts with provider info
         const { data: accountsData, error: accountsError } = await supabase
           .from("trading_accounts")
-          .select("id,name,platform,metaapi_account_id,provider,deriv_token,is_virtual")
+          .select("id,name,platform,metaapi_account_id,provider,deriv_token,is_virtual,connection_type")
           .eq("user_id", user.id);
 
         if (accountsError) throw accountsError;
@@ -357,6 +358,8 @@ export default function AIAutoTrading() {
                         <Badge variant="outline" className="text-xs">
                           {assignment.trading_accounts?.provider === 'deriv' ? (
                             <><Zap className="w-3 h-3 mr-1" />Deriv</>
+                          ) : assignment.trading_accounts?.provider === 'vps' ? (
+                            'VPS Direct'
                           ) : 'MetaAPI'}
                         </Badge>
                         <span>•</span>
@@ -469,6 +472,11 @@ export default function AIAutoTrading() {
                             <Badge variant="outline" className="text-xs">
                               <Zap className="w-3 h-3 mr-1" />
                               Deriv
+                            </Badge>
+                          )}
+                          {(account.provider === 'vps' || account.connection_type === 'vps') && (
+                            <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+                              VPS Direct
                             </Badge>
                           )}
                         </div>
