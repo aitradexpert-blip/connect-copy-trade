@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Bell, Shield, Globe, Palette, Database, Mic, Wrench, Code, Loader2, Eye, EyeOff, Volume2 } from "lucide-react";
+import { Bell, Shield, Globe, Palette, Database, Mic, Wrench, Code, Loader2, Eye, EyeOff, Volume2, ExternalLink, ScrollText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
