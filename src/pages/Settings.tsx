@@ -412,6 +412,35 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        {/* Legal & Privacy */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ScrollText className="w-5 h-5" /> Legal & Privacy</CardTitle>
+            <CardDescription>South African POPIA compliance and platform policies</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {([
+              ["Privacy Policy", "How we collect and protect your personal information (POPIA)"],
+              ["Terms of Service", "Platform usage terms and conditions"],
+              ["Risk Disclosure", "Trading risks — read before you trade"],
+              ["POPIA Notice", "Your rights under the Protection of Personal Information Act"],
+              ["Cookie Policy", "How we use cookies and similar technologies"],
+            ] as [string, string][]).map(([label, desc]) => (
+              <button
+                key={label}
+                onClick={() => navigate(`/legal/${label.toLowerCase().replace(/\s+/g, '-')}`)}
+                className="w-full flex items-center justify-between p-3 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left"
+              >
+                <div>
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </div>
+                <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
         {/* Save All */}
         <Button onClick={saveSettings} disabled={saving} className="w-full md:w-auto">
           {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
