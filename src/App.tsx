@@ -175,6 +175,7 @@ const App = () => (
 
                 {/* Special routes */}
                 <Route path="/deriv-callback" element={<DerivCallbackRoute><DerivCallback /></DerivCallbackRoute>} />
+                <Route path="/legal/:page" element={<LegalPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
