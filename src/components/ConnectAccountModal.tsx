@@ -293,9 +293,14 @@ export function ConnectAccountModal({
         email: user.email,
       });
       if (!res.ok) {
+        const rawMsg = res.errorMessage || "";
+        const isQuotaError =
+          /quota|limit|exceeded/i.test(rawMsg);
         toast({
-          title: "Connection Failed",
-          description: res.errorMessage || "Could not reach Trading Bridge. Deploy `metaapi-provision-account` and set METAAPI_TOKEN.",
+          title: isQuotaError ? "Account Limit Reached" : "Connection Failed",
+          description: isQuotaError
+            ? "Your current plan allows 1 trading account. Please upgrade your subscription or remove an existing account before adding a new one."
+            : rawMsg || "Could not connect your account. Check your credentials and try again.",
           variant: "destructive",
         });
         setIsLoading(false);
