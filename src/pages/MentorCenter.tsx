@@ -531,7 +531,27 @@ export default function MentorCenter() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-full overflow-x-hidden">
-        <CopyTradingActiveBanner />
+        {/* Mentor master-side banner — CopyTradingActiveBanner filters
+            follower_user_id and always returns 0 for mentors. We show the
+            mentor's active-follower count from already-loaded state instead. */}
+        {copyRelationships.filter(r => r.status === 'active').length > 0 && (
+          <Card className="border-profit/30 bg-profit/10">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-profit animate-pulse flex-shrink-0" />
+                <div>
+                  <p className="font-semibold text-profit">
+                    Copy Trading Active — {copyRelationships.filter(r => r.status === 'active').length} follower
+                    {copyRelationships.filter(r => r.status === 'active').length !== 1 ? 's' : ''} copying you
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Your published trades are being automatically mirrored to your followers' accounts
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <NoticeBoard audience="mentor_center" />
         <OctaFxPromoCard />
         <div className="flex items-center justify-between">
