@@ -44,6 +44,12 @@ interface LatestSignal {
   created_at: string;
 }
 
+// Module-level cache — prevents duplicate MetaAPI calls when multiple
+// component instances mount simultaneously (live logs showed metaapi-account-info
+// and metaapi-get-positions firing 3-4x per render cycle).
+let _lastMetaApiFetch = 0;
+const META_FETCH_COOLDOWN = 60_000;
+
 const LatestSignalCard = () => {
   const [signal, setSignal] = useState<LatestSignal | null>(null);
   const navigate = useNavigate();
