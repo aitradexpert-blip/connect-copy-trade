@@ -40,6 +40,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Install from "./pages/Install";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
+import LegalPage from "./pages/LegalPage";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const queryClient = new QueryClient();
