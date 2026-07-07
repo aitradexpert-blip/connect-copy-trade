@@ -251,8 +251,22 @@ export function ConnectAccountModal({
         await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
         console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
 
-      } catch (vpsError) {
-        console.warn("VPS unreachable, falling back to MetaAPI:", vpsError);
+      } catch (vpsNetworkError: any) {
+        console.error('[VPS] Network error, falling through to MetaAPI:', vpsNetworkError?.message);
+        // Clean up any ghost placeholder row from the failed VPS attempt so it
+        // does not consume the user's account quota on retry.
+        try {
+          const { data: ghost } = await supabase
+            .from('trading_accounts')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('login', formData.login.replace(/\D/g, '') || formData.login)
+            .eq('connection_status', 'connecting')
+            .maybeSingle();
+          if (ghost?.id) {
+            await supabase.from('trading_accounts').delete().eq('id', ghost.id);
+          }
+        } catch { /* ignore cleanup error */ }
       }
     } else {
       console.warn("VITE_API_URL not configured — skipping VPS, using MetaAPI directly.");
