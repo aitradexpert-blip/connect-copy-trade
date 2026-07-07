@@ -336,6 +336,36 @@ export function ConnectAccountModal({
         setIsLoading(false);
         return;
       }
+      // Guard against duplicate insert — a ghost row from a previous VPS
+      // attempt (or from a partial MetaAPI retry) would otherwise trip the
+      // per-user account quota trigger.
+      const normalizedLogin = formData.login.replace(/\D/g, '') || formData.login;
+      const { data: existingAcc } = await supabase
+        .from('trading_accounts')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('login', normalizedLogin)
+        .maybeSingle();
+
+      if (existingAcc?.id) {
+        await supabase.from('trading_accounts').update({
+          provider: 'metaapi',
+          connection_type: 'metaapi',
+          metaapi_account_id: data2.metaapi_account_id,
+          name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
+          server: formData.server,
+          platform: formData.platform,
+          connection_status: data2.state === 'DEPLOYED' ? 'connected' : 'provisioning',
+        }).eq('id', existingAcc.id);
+        toast({
+          title: "Account connected!",
+          description: `${formData.name || formData.login} has been connected successfully.`,
+        });
+        resetAndClose();
+        setIsLoading(false);
+        return;
+      }
+
       const { error: insertError } = await supabase
         .from("trading_accounts")
         .insert([{
@@ -343,7 +373,7 @@ export function ConnectAccountModal({
           provider: 'metaapi',
           metaapi_account_id: data2.metaapi_account_id,
           name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
-          login: formData.login.replace(/\D/g, '') || formData.login,
+          login: normalizedLogin,
           server: formData.server,
           platform: formData.platform,
           connection_type: 'metaapi',
