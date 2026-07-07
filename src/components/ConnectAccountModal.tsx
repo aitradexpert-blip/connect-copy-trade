@@ -251,8 +251,22 @@ export function ConnectAccountModal({
         await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
         console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
 
-      } catch (vpsError) {
-        console.warn("VPS unreachable, falling back to MetaAPI:", vpsError);
+      } catch (vpsNetworkError: any) {
+        console.error('[VPS] Network error, falling through to MetaAPI:', vpsNetworkError?.message);
+        // Clean up any ghost placeholder row from the failed VPS attempt so it
+        // does not consume the user's account quota on retry.
+        try {
+          const { data: ghost } = await supabase
+            .from('trading_accounts')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('login', formData.login.replace(/\D/g, '') || formData.login)
+            .eq('connection_status', 'connecting')
+            .maybeSingle();
+          if (ghost?.id) {
+            await supabase.from('trading_accounts').delete().eq('id', ghost.id);
+          }
+        } catch { /* ignore cleanup error */ }
       }
     } else {
       console.warn("VITE_API_URL not configured — skipping VPS, using MetaAPI directly.");
@@ -279,9 +293,14 @@ export function ConnectAccountModal({
         email: user.email,
       });
       if (!res.ok) {
+        const rawMsg = res.errorMessage || "";
+        const isQuotaError =
+          /quota|limit|exceeded/i.test(rawMsg);
         toast({
-          title: "Connection Failed",
-          description: res.errorMessage || "Could not reach Trading Bridge. Deploy `metaapi-provision-account` and set METAAPI_TOKEN.",
+          title: isQuotaError ? "Account Limit Reached" : "Connection Failed",
+          description: isQuotaError
+            ? "Your current plan allows 1 trading account. Please upgrade your subscription or remove an existing account before adding a new one."
+            : rawMsg || "Could not connect your account. Check your credentials and try again.",
           variant: "destructive",
         });
         setIsLoading(false);
@@ -317,6 +336,36 @@ export function ConnectAccountModal({
         setIsLoading(false);
         return;
       }
+      // Guard against duplicate insert — a ghost row from a previous VPS
+      // attempt (or from a partial MetaAPI retry) would otherwise trip the
+      // per-user account quota trigger.
+      const normalizedLogin = formData.login.replace(/\D/g, '') || formData.login;
+      const { data: existingAcc } = await supabase
+        .from('trading_accounts')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('login', normalizedLogin)
+        .maybeSingle();
+
+      if (existingAcc?.id) {
+        await supabase.from('trading_accounts').update({
+          provider: 'metaapi',
+          connection_type: 'metaapi',
+          metaapi_account_id: data2.metaapi_account_id,
+          name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
+          server: formData.server,
+          platform: formData.platform,
+          connection_status: data2.state === 'DEPLOYED' ? 'connected' : 'provisioning',
+        }).eq('id', existingAcc.id);
+        toast({
+          title: "Account connected!",
+          description: `${formData.name || formData.login} has been connected successfully.`,
+        });
+        resetAndClose();
+        setIsLoading(false);
+        return;
+      }
+
       const { error: insertError } = await supabase
         .from("trading_accounts")
         .insert([{
@@ -324,7 +373,7 @@ export function ConnectAccountModal({
           provider: 'metaapi',
           metaapi_account_id: data2.metaapi_account_id,
           name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
-          login: formData.login.replace(/\D/g, '') || formData.login,
+          login: normalizedLogin,
           server: formData.server,
           platform: formData.platform,
           connection_type: 'metaapi',

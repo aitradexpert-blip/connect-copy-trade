@@ -44,6 +44,12 @@ interface LatestSignal {
   created_at: string;
 }
 
+// Module-level cache — prevents duplicate MetaAPI calls when multiple
+// component instances mount simultaneously (live logs showed metaapi-account-info
+// and metaapi-get-positions firing 3-4x per render cycle).
+let _lastMetaApiFetch = 0;
+const META_FETCH_COOLDOWN = 60_000;
+
 const LatestSignalCard = () => {
   const [signal, setSignal] = useState<LatestSignal | null>(null);
   const navigate = useNavigate();
@@ -202,16 +208,20 @@ const Index = () => {
             continue;
           }
 
-          // ── MetaAPI account info (history removed — 502s from edge fn) ─
+          // ── MetaAPI account info (rate-gated — see module cache above) ─
           if (account.metaapi_account_id) {
-            const { data: info, error: fnError } = await supabase.functions.invoke(
-              "metaapi-account-info", { body: { accountId: account.metaapi_account_id } }
-            );
+            const now = Date.now();
+            const shouldCallMetaApi = now - _lastMetaApiFetch > META_FETCH_COOLDOWN;
+            if (shouldCallMetaApi) _lastMetaApiFetch = now;
+
+            const { data: info, error: fnError } = shouldCallMetaApi
+              ? await supabase.functions.invoke("metaapi-account-info", { body: { accountId: account.metaapi_account_id } })
+              : { data: null, error: new Error('rate-limited') as any };
             if (!fnError && info) {
               const balance = Number(info.balance || 0), equity = Number(info.equity || 0);
-              const { data: positionsData } = await supabase.functions.invoke(
-                "metaapi-get-positions", { body: { accountId: account.metaapi_account_id } }
-              );
+              const { data: positionsData } = shouldCallMetaApi
+                ? await supabase.functions.invoke("metaapi-get-positions", { body: { accountId: account.metaapi_account_id } })
+                : { data: null as any };
               totalBalance += balance; totalEquity += equity;
               totalPositions += Array.isArray(positionsData?.positions) ? positionsData.positions.length : 0;
               await supabase.from("trading_accounts").update({ balance, equity }).eq("id", account.id);

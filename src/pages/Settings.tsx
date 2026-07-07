@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Bell, Shield, Globe, Palette, Database, Mic, Wrench, Code, Loader2, Eye, EyeOff, Volume2 } from "lucide-react";
+import { Bell, Shield, Globe, Palette, Database, Mic, Wrench, Code, Loader2, Eye, EyeOff, Volume2, ExternalLink, ScrollText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -409,6 +409,35 @@ export default function Settings() {
               </Button>
             </div>
             <DerivDiagnostic />
+          </CardContent>
+        </Card>
+
+        {/* Legal & Privacy */}
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><ScrollText className="w-5 h-5" /> Legal & Privacy</CardTitle>
+            <CardDescription>South African POPIA compliance and platform policies</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {([
+              ["Privacy Policy", "How we collect and protect your personal information (POPIA)"],
+              ["Terms of Service", "Platform usage terms and conditions"],
+              ["Risk Disclosure", "Trading risks — read before you trade"],
+              ["POPIA Notice", "Your rights under the Protection of Personal Information Act"],
+              ["Cookie Policy", "How we use cookies and similar technologies"],
+            ] as [string, string][]).map(([label, desc]) => (
+              <button
+                key={label}
+                onClick={() => navigate(`/legal/${label.toLowerCase().replace(/\s+/g, '-')}`)}
+                className="w-full flex items-center justify-between p-3 bg-muted/50 hover:bg-muted rounded-lg transition-colors text-left"
+              >
+                <div>
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </div>
+                <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              </button>
+            ))}
           </CardContent>
         </Card>
 

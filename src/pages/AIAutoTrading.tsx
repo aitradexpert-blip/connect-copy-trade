@@ -521,7 +521,8 @@ export default function AIAutoTrading() {
                 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
                 const ready = !!acc && (
                   (acc.provider === 'deriv' && !!acc.deriv_token) ||
-                  (acc.provider === 'metaapi' && !!acc.metaapi_account_id && UUID_RE.test(acc.metaapi_account_id))
+                  (acc.provider === 'metaapi' && !!acc.metaapi_account_id && UUID_RE.test(acc.metaapi_account_id)) ||
+                  (acc.provider === 'vps' || (acc as any).connection_type === 'vps')
                 );
                 const disabled = !selectedAccount || !agreeTerms || !ready;
                 return (
