@@ -135,7 +135,10 @@ Deno.serve(async (req) => {
       const masterBalance = relationship.master_account?.balance || 10000;
       const followerBalance = relationship.follower_account?.balance || 10000;
       const balanceRatio = followerBalance / masterBalance;
-      const adjustedVolume = Number((signal.lot_size * balanceRatio).toFixed(2));
+      // Floor at 0.01 (min broker lot), ceiling at 10.0 (safety cap so
+      // followers with much larger accounts don't submit oversized orders).
+      const rawVolume = signal.lot_size * balanceRatio;
+      const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(2));
 
       console.log(`[fan-out] follower=${relationship.follower_user_id} vol=${adjustedVolume}`);
 
@@ -143,9 +146,12 @@ Deno.serve(async (req) => {
         || relationship.follower_account?.provider === 'vps';
 
       if (isVpsAccount && VPS_URL) {
+        const vpsCtrl = new AbortController();
+        const vpsTimeout = setTimeout(() => vpsCtrl.abort(), 8000);
         try {
           const vpsRes = await fetch(`${VPS_URL}/order`, {
             method: 'POST',
+            signal: vpsCtrl.signal,
             headers: {
               'Content-Type': 'application/json',
               'ngrok-skip-browser-warning': 'true',
@@ -159,7 +165,7 @@ Deno.serve(async (req) => {
               stop_loss: signal.stop_loss ?? null,
               take_profit: signal.take_profit ?? null,
             }),
-          });
+          }).finally(() => clearTimeout(vpsTimeout));
           const vpsResult = await vpsRes.json().catch(() => null);
           if (vpsResult?.success) {
             return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: vpsResult };
