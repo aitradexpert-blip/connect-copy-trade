@@ -163,6 +163,24 @@ const TradingAccounts = () => {
         
         toast({ title: 'Account refreshed' });
         setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, balance, equity } : a));
+      } else if (account.provider === 'vps' || (account as any).connection_type === 'vps') {
+        // Pull live balance from VPS FastAPI server
+        const { primaryApi, isPrimaryConfigured } = await import('@/services/primaryApi');
+        if (!isPrimaryConfigured()) {
+          toast({ title: 'VPS not configured', description: 'Check your deployment settings.', variant: 'destructive' });
+          setRefreshingId(null);
+          return;
+        }
+        try {
+          const vpsData: any = await primaryApi.getAccount(account.id);
+          const balance = Number(vpsData?.balance ?? account.balance);
+          const equity = Number(vpsData?.equity ?? account.equity);
+          await supabase.from('trading_accounts').update({ balance, equity }).eq('id', account.id);
+          toast({ title: 'Account refreshed', description: `Balance: $${balance.toFixed(2)}` });
+          setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, balance, equity } : a));
+        } catch (vpsErr: any) {
+          toast({ title: 'VPS refresh failed', description: vpsErr.message, variant: 'destructive' });
+        }
       } else {
         toast({ title: 'Cannot refresh', description: 'No valid connection for this account', variant: 'destructive' });
       }
