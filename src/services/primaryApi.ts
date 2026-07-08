@@ -48,7 +48,6 @@ async function req<T = any>(
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...(init.headers || {}),
       },
-      },
     });
     if (!resp.ok) {
       throw new PrimaryUnavailableError(
