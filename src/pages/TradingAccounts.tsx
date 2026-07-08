@@ -208,6 +208,13 @@ const TradingAccounts = () => {
   };
 
   const getProviderBadge = (account: TradingAccount) => {
+    if (account.provider === 'vps' || (account as any).connection_type === 'vps') {
+      return (
+        <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30">
+          VPS Direct
+        </Badge>
+      );
+    }
     if (account.provider === 'deriv') {
       return (
         <Badge variant={account.is_virtual ? "secondary" : "default"} className="text-xs">
