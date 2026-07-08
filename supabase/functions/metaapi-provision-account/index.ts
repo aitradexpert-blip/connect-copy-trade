@@ -99,10 +99,11 @@ Deno.serve(async (req) => {
       }
     }
 
+    let subscriptionWarning = false
     if (callerUserId && supabaseUrl && serviceKey) {
       const admin = createClient(supabaseUrl, serviceKey)
 
-      // Reuse existing MetaAPI account for the same login (prevents $2.10 re-charges)
+      // Reuse existing MetaAPI account for the same login (prevents re-charges)
       const { data: existing } = await admin
         .from('trading_accounts')
         .select('id, metaapi_account_id')
@@ -120,22 +121,32 @@ Deno.serve(async (req) => {
         }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } })
       }
 
-      // Enforce Basic-tier limit: max 1 trading account
+      // Grace-period aware: active mentors are never blocked by subscription state.
+      const { data: mentorProfile } = await admin
+        .from('mentor_profiles')
+        .select('id, is_active')
+        .eq('user_id', callerUserId)
+        .maybeSingle()
+      const isMentor = !!mentorProfile?.is_active
+
       const { data: sub } = await admin
         .from('user_subscriptions')
-        .select('plan_name, status')
+        .select('plan_name, status, expires_at')
         .eq('user_id', callerUserId)
         .eq('status', 'active')
         .maybeSingle()
       const tier = String(sub?.plan_name || 'free').toLowerCase()
-      if (tier === 'basic') {
+      if (sub?.expires_at && new Date(sub.expires_at as string) < new Date()) {
+        subscriptionWarning = true
+      }
+      if (!isMentor && tier === 'basic') {
         const { count } = await admin
           .from('trading_accounts')
           .select('id', { count: 'exact', head: true })
           .eq('user_id', callerUserId)
-        if ((count || 0) >= 1) {
+        if ((count || 0) >= 2) {
           return new Response(JSON.stringify({
-            error: 'Subscription Limit Exceeded: Basic tier is limited to 1 trading account.',
+            error: 'Subscription Limit Exceeded: Basic tier is limited to 2 trading accounts.',
             code: 'TIER_LIMIT',
           }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } })
         }
@@ -291,11 +302,34 @@ Deno.serve(async (req) => {
 
       console.error(`Error: code=${errorCode}, message=${errorData.message}`)
 
+      // Detect MetaAPI quota / high-reliability depletion so the client can
+      // silently fall back to the VPS bridge instead of surfacing a scary
+      // "top up your account" error.
+      const rawMsg = String(errorData.message || '') + ' ' + String(detailStr || '')
+      const isQuotaDepletion =
+        response.status === 402 ||
+        response.status === 403 ||
+        response.status === 429 ||
+        /high reliability|top up|quota|resource slot|E_RESOURCE_SLOTS/i.test(rawMsg)
+
+      if (isQuotaDepletion) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Trading Bridge capacity is temporarily exhausted. Please retry — the app will attempt the VPS bridge automatically.',
+          code: 'METAAPI_QUOTA',
+          fallback: 'vps',
+          subscriptionWarning,
+        }), {
+          status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
       return new Response(JSON.stringify({
         success: false,
         error: userMessage,
         code: errorCode,
         details: errorData.message,
+        subscriptionWarning,
       }), {
         status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })

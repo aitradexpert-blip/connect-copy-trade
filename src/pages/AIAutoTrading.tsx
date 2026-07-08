@@ -484,6 +484,41 @@ export default function AIAutoTrading() {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedAccount && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7 px-2"
+                    onClick={async () => {
+                      const acc = accounts.find(a => a.id === selectedAccount);
+                      if (!acc) return;
+                      toast({ title: "Broker debugger", description: `Pinging ${acc.name}...` });
+                      try {
+                        if (acc.provider === 'vps' || acc.connection_type === 'vps') {
+                          const { primaryApi, isPrimaryConfigured } = await import('@/services/primaryApi');
+                          if (!isPrimaryConfigured()) throw new Error('VPS bridge not configured');
+                          const info: any = await primaryApi.getAccount(acc.id);
+                          await supabase.from('trading_accounts').update({
+                            balance: info?.balance ?? 0, equity: info?.equity ?? 0,
+                            connection_status: 'connected',
+                          }).eq('id', acc.id);
+                          toast({ title: "VPS reachable", description: `Balance: ${info?.balance ?? 0} ${info?.currency ?? ''}` });
+                        } else if (acc.provider === 'metaapi' && acc.metaapi_account_id) {
+                          const { data, error } = await supabase.functions.invoke('metaapi-account-info', { body: { accountId: acc.metaapi_account_id } });
+                          if (error) throw error;
+                          toast({ title: "Trading Bridge reachable", description: `Balance: ${(data as any)?.balance ?? 0}` });
+                        } else {
+                          toast({ title: "Nothing to debug", description: "Account has no live bridge connection." });
+                        }
+                      } catch (e: any) {
+                        toast({ title: "Broker unreachable", description: e?.message || 'Attempting reconnect...', variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    Run Broker Debugger
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-3">
