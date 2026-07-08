@@ -224,7 +224,10 @@ export function ConnectAccountModal({
         const vpsData = vpsJson?.data ?? vpsJson;
 
        if (vpsSuccess) {
-  const { error: updateErr } = await supabase
+  console.log("Updating Supabase row with ID:", newAccount.id);
+  console.log("VPS data being applied:", vpsData);
+
+  const { data: updated, error: updateErr } = await supabase
     .from("trading_accounts")
     .update({
       mt5_password: formData.password,
@@ -233,11 +236,13 @@ export function ConnectAccountModal({
       equity: vpsData?.equity ?? 0,
       broker_name: vpsData?.company ?? null,
     })
-    .eq("id", newAccount.id);
+    .eq("id", newAccount.id)
+    .select("*"); // 👈 this makes Supabase return the updated row
 
   if (updateErr) {
     console.error("Supabase update error:", updateErr);
-    throw updateErr;
+  } else {
+    console.log("Updated row:", updated);
   }
 
   toast({
@@ -247,6 +252,9 @@ export function ConnectAccountModal({
 
   resetAndClose();
   setIsLoading(false);
+  return;
+}
+
 
   // Debug: confirm update
   const { data: updated } = await supabase
