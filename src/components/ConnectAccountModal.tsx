@@ -405,7 +405,10 @@ export function ConnectAccountModal({
     setAgreedToTerms(false);
     onOpenChange(false);
     onAccountConnected?.();
-    navigate('/accounts');
+    // Force accounts page to reload even if already on /accounts
+    // by navigating away first then back (avoids stale cache from useEffect [user])
+    navigate('/');
+    setTimeout(() => navigate('/accounts'), 100);
   };
 
   const handleBack = () => {
