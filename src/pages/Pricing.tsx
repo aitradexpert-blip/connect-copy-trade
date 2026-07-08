@@ -86,9 +86,9 @@ export default function Pricing() {
       const { error } = await supabase.from('pending_subscriptions').insert({
         email: email.toLowerCase().trim(),
         plan_name: selectedPlan.tier,
-        amount_zar: selectedPlan.priceZar,
-        status: 'awaiting_payment',
-      } as any);
+        amount_cents: Math.round(selectedPlan.priceZar * 100),
+        status: 'awaiting_bank_transfer',
+      });
       if (error) throw error;
       toast({
         title: "Payment instructions saved",
