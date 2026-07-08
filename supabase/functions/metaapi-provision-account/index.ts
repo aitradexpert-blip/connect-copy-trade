@@ -302,11 +302,34 @@ Deno.serve(async (req) => {
 
       console.error(`Error: code=${errorCode}, message=${errorData.message}`)
 
+      // Detect MetaAPI quota / high-reliability depletion so the client can
+      // silently fall back to the VPS bridge instead of surfacing a scary
+      // "top up your account" error.
+      const rawMsg = String(errorData.message || '') + ' ' + String(detailStr || '')
+      const isQuotaDepletion =
+        response.status === 402 ||
+        response.status === 403 ||
+        response.status === 429 ||
+        /high reliability|top up|quota|resource slot|E_RESOURCE_SLOTS/i.test(rawMsg)
+
+      if (isQuotaDepletion) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Trading Bridge capacity is temporarily exhausted. Please retry — the app will attempt the VPS bridge automatically.',
+          code: 'METAAPI_QUOTA',
+          fallback: 'vps',
+          subscriptionWarning,
+        }), {
+          status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
       return new Response(JSON.stringify({
         success: false,
         error: userMessage,
         code: errorCode,
         details: errorData.message,
+        subscriptionWarning,
       }), {
         status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
