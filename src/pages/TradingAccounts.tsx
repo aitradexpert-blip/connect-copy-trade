@@ -97,6 +97,8 @@ const TradingAccounts = () => {
   }, [user]);
 
   const handleAccountConnected = async () => {
+    // Small delay to ensure DB write from ConnectAccountModal has committed
+    await new Promise(resolve => setTimeout(resolve, 800));
     await loadAccounts();
     setIsModalOpen(false);
   };
