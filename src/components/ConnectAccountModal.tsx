@@ -183,11 +183,12 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
   // STEP 1: Try VPS Backend
   // ---------------------------------------------------------
   if (isPrimaryConfigured()) {
+    let newAccount: any = null;
     try {
       const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
 
-      // Create placeholder
-      const { data: newAccount, error: insertErr } = await supabase
+      // Create placeholder row first so we have an ID to pass to the VPS
+      const { data: newAccountData, error: insertErr } = await supabase
         .from("trading_accounts")
         .insert([{
           user_id: user.id,
@@ -206,6 +207,9 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
 
       if (insertErr) throw insertErr;
 
+      // Store in outer variable so catch block can clean it up
+      newAccount = newAccountData;
+
       const vpsJson: any = await primaryApi.connect({
         login: parseInt(formData.login.replace(/\D/g, ''), 10),
         password: formData.password,
@@ -213,8 +217,15 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
         account_id: newAccount.id,
       });
 
-      const vpsSuccess = vpsJson?.success === true || vpsJson?.status === 'connected';
-      const vpsData = vpsJson?.data ?? vpsJson;
+      // primaryApi.req() unwraps { source, data } and returns data directly.
+      // So vpsJson IS the data object — check balance/login to confirm success,
+      // not vpsJson.success (that flag was on the outer wrapper already consumed).
+      const vpsSuccess =
+        vpsJson?.success === true ||
+        vpsJson?.status === 'connected' ||
+        (typeof vpsJson?.balance === 'number' && typeof vpsJson?.login === 'number');
+
+      const vpsData = vpsJson;
 
       if (vpsSuccess) {
         const { error: updateErr } = await supabase
@@ -237,16 +248,22 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
 
         resetAndClose();
         setIsLoading(false);
-        return; // Success! Exit flow.
+        return;
       }
 
-      // VPS failed login: delete placeholder and proceed to MetaAPI
+      // VPS responded but broker rejected the credentials —
+      // delete the placeholder row so it does not count against quota on retry
       await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
-      console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
+      newAccount = null;
+      console.warn("VPS broker rejected credentials, falling back to MetaAPI:", vpsJson?.error);
 
     } catch (vpsNetworkError: any) {
-      console.error('[VPS] Error:', vpsNetworkError?.message);
-      // Cleanup cleanup logic here...
+      console.error('[VPS] Network error, cleaning up:', vpsNetworkError?.message);
+      // Clean up ghost row so quota is not consumed on retry
+      if (newAccount?.id) {
+        await supabase.from("trading_accounts").delete().eq("id", newAccount.id).catch(() => {});
+        newAccount = null;
+      }
     }
   } else {
     console.warn("VITE_API_URL not configured — skipping VPS.");
