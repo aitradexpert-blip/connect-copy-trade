@@ -63,6 +63,9 @@ async function req<T = any>(
         `Primary engine returned empty body on ${path}`,
       );
     }
+      const data = await resp.json();   // <-- parse JSON here
+      return data;
+    
     if (typeof body === "object" && !Array.isArray(body) && "data" in body) {
       return (body as { data: T }).data;
     }
@@ -88,7 +91,10 @@ export const primaryApi = {
     return req(`/connect`, { 
       method: "POST", 
       body: JSON.stringify(payload),
-      headers: { "x-vps-secret": "b27c87581e27d989c23a64d41831ab696f7dfa7820a2146f29ca2201" }
+      headers: { 
+  "Content-Type": "application/json",
+  "x-vps-secret": "b27c87581e27d989c23a64d41831ab696f7dfa7820a2146f29ca2201"
+              }
     }, 15000); // Increased timeout to 15s for MT5 login
   },
 
