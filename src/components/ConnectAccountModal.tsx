@@ -705,6 +705,24 @@ export function ConnectAccountModal({
               </TabsList>
               
               <TabsContent value="oauth" className="space-y-4 pt-4">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <p className="text-xs text-foreground">
+                      If your Deriv account was recently disabled or deactivated, the connection will fail. Please check your account status at{' '}
+                      <a
+                        href="https://app.deriv.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline font-medium"
+                      >
+                        app.deriv.com
+                      </a>{' '}
+                      first.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="bg-muted/50 rounded-lg p-4 space-y-3">
                   <h4 className="font-medium">How it works:</h4>
                   <ol className="text-sm text-muted-foreground space-y-2">
