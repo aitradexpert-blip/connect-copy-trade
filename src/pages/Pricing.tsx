@@ -75,31 +75,28 @@ export default function Pricing() {
   };
 
   const handlePayment = async () => {
-    if (!email || !selectedPlan) {
-      toast({ title: "Please enter your email", variant: "destructive" });
-      return;
-    }
+    if (!selectedPlan) return;
+    if (!email) { toast({ title: "Please enter your email", variant: "destructive" }); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast({ title: "Please enter a valid email", variant: "destructive" });
-      return;
-    }
+    if (!emailRegex.test(email)) { toast({ title: "Please enter a valid email", variant: "destructive" }); return; }
     setLoading(selectedPlan.tier);
-    setShowEmailDialog(false);
     try {
-      sessionStorage.setItem('pending_subscription', JSON.stringify({ plan: selectedPlan.tier, email, timestamp: Date.now() }));
-      const { data, error } = await supabase.functions.invoke('create-guest-checkout', {
-        body: {
-          tier: selectedPlan.tier, email,
-          successUrl: `${window.location.origin}/auth?plan=${selectedPlan.tier}&payment_success=true&email=${encodeURIComponent(email)}`,
-          cancelUrl: `${window.location.origin}/pricing?cancelled=true`,
-        }
-      });
+      // Record a pending subscription so the admin can activate it once the
+      // manual EFT clears. Guest checkout — matched to the user on signup.
+      const { error } = await supabase.from('pending_subscriptions').insert({
+        email: email.toLowerCase().trim(),
+        plan_name: selectedPlan.tier,
+        amount_zar: selectedPlan.priceZar,
+        status: 'awaiting_payment',
+      } as any);
       if (error) throw error;
-      if (data?.redirectUrl) window.location.href = data.redirectUrl;
-      else throw new Error('No redirect URL received');
+      toast({
+        title: "Payment instructions saved",
+        description: "Please transfer the amount to the bank details shown, then register with the same email.",
+      });
+      setShowEmailDialog(false);
     } catch (error: any) {
-      toast({ title: "Payment Error", description: error.message || "Failed to create checkout session.", variant: "destructive" });
+      toast({ title: "Could not record request", description: error.message, variant: "destructive" });
     } finally { setLoading(null); }
   };
 
