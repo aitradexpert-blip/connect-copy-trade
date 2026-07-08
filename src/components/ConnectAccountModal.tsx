@@ -265,6 +265,27 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
         if (cleanupErr) console.warn("Cleanup failed:", cleanupErr.message);
         newAccount = null;
       }
+      // If VPS had a network error (not credential rejection), show user a message
+      // and stop — do not silently fall through to MetaAPI
+      if (vpsNetworkError?.name === 'PrimaryUnavailableError' &&
+          vpsNetworkError?.message?.includes('timeout')) {
+        toast({
+          title: "VPS timeout",
+          description: "Our direct engine took too long to respond. Trying backup connection...",
+        });
+        // Allow fallthrough to MetaAPI for timeout only
+      } else if (vpsNetworkError?.name === 'PrimaryUnavailableError') {
+        // Network unreachable — fall through to MetaAPI silently
+      } else {
+        // Unexpected error — stop entirely
+        toast({
+          title: "Connection error",
+          description: vpsNetworkError?.message || "Unexpected error. Please try again.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
     }
   } else {
     console.warn("VITE_API_URL not configured — skipping VPS.");
