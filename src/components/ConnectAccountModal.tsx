@@ -228,13 +228,37 @@ export function ConnectAccountModal({
     .from("trading_accounts")
     .update({
       mt5_password: formData.password,
-      connection_status: 'connected',
+      connection_status: "connected",
       balance: vpsData?.balance ?? 0,
       equity: vpsData?.equity ?? 0,
       broker_name: vpsData?.company ?? null,
     })
     .eq("id", newAccount.id);
 
+  if (updateErr) {
+    console.error("Supabase update error:", updateErr);
+    throw updateErr;
+  }
+
+  toast({
+    title: "Account connected!",
+    description: `${accountName} connected via our direct trading engine.`,
+  });
+
+  resetAndClose();
+  setIsLoading(false);
+
+  // Debug: confirm update
+  const { data: updated } = await supabase
+    .from("trading_accounts")
+    .select("*")
+    .eq("id", newAccount.id)
+    .single();
+  console.log("Updated account:", updated);
+
+  return;
+}
+        
   if (updateErr) throw updateErr;
 
   toast({
