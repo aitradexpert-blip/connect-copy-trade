@@ -39,11 +39,12 @@ const freeFeatures = [
 ];
 
 const BANK = {
-  bank: "Capitec",
-  accountName: "M Maphanga",
-  accountType: "Savings",
-  accountNumber: "1609645411",
-  branchCode: "470010",
+  bank: "Standard Bank",
+  accountName: "HUMI MOBILE (Pty) Ltd",
+  accountType: "Business Account",
+  accountNumber: "10280624016",
+  branchCode: "051001",
+  swiftCode: "SBZAZAJJXXX",
 };
 
 export default function Subscription() {
@@ -164,6 +165,7 @@ export default function Subscription() {
                 ["Account Type", BANK.accountType],
                 ["Account Number", BANK.accountNumber],
                 ["Branch Code", BANK.branchCode],
+                ["Swift Code", BANK.swiftCode],
               ].map(([label, value]) => (
                 <div
                   key={label}
