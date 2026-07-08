@@ -42,13 +42,12 @@ async function req<T = any>(
       ...init,
       signal: ctl.signal,
       headers: {
-        'X-VPS-Secret': 'b27c87581e27d989c23a64d41831ab696f7dfa7820a2146f29ca2201',
         Accept: "application/json",
-        // Free ngrok tunnels inject an HTML interstitial unless this is set,
-        // which would corrupt JSON parsing. Harmless on a custom domain.
         "ngrok-skip-browser-warning": "true",
+        "x-vps-secret": "b27c87581e27d989c23a64d41831ab696f7dfa7820a2146f29ca2201",
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...(init.headers || {}),
+      },
       },
     });
     if (!resp.ok) {
