@@ -86,6 +86,23 @@ export class DerivWS {
       
       // Handle errors
       if (message.error) {
+        const isDisabled =
+          message.error?.code === 'AccountDisabled' ||
+          String(message.error?.message || '').toLowerCase().includes('disabled');
+
+        if (isDisabled) {
+          // Suppress console noise — disabled account is not user-actionable from HuMi.
+          // Still reject the pending request so it doesn't hang for the 30s timeout.
+          if (message.req_id && this.pendingRequests.has(String(message.req_id))) {
+            const { reject } = this.pendingRequests.get(String(message.req_id))!;
+            this.pendingRequests.delete(String(message.req_id));
+            const err = new Error('AccountDisabled');
+            (err as any).code = 'AccountDisabled';
+            reject(err);
+          }
+          return;
+        }
+
         console.error('[DerivWS] API Error:', message.error.message, message.error.code);
         
         // Reject pending request if exists
