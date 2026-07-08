@@ -283,6 +283,8 @@ export function ConnectAccountModal({
         error?: string;
         pending?: boolean;
         code?: string;
+        fallback?: string;
+        subscriptionWarning?: boolean;
       };
       const res = await invokeEdgeFunctionJson<ProvisionResult>("metaapi-provision-account", {
         login: formData.login,
@@ -292,14 +294,59 @@ export function ConnectAccountModal({
         name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
         email: user.email,
       });
+
+      // MetaAPI quota depletion -> retry via VPS bridge (if configured)
+      const quotaFallback =
+        (res.data?.code === "METAAPI_QUOTA" || res.data?.fallback === "vps") &&
+        isPrimaryConfigured();
+      if (quotaFallback) {
+        try {
+          const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
+          const normalizedLogin = formData.login.replace(/\D/g, '') || formData.login;
+          const { data: newAccount, error: insertErr } = await supabase
+            .from("trading_accounts")
+            .insert([{
+              user_id: user.id, provider: 'vps', name: accountName,
+              login: normalizedLogin, server: formData.server, platform: formData.platform,
+              connection_type: 'vps', connection_status: 'connecting', balance: 0, equity: 0,
+            }]).select().single();
+          if (insertErr) throw insertErr;
+          const vpsJson: any = await primaryApi.connect({
+            login: parseInt(normalizedLogin, 10), password: formData.password,
+            server: formData.server, account_id: newAccount.id,
+          });
+          if (vpsJson?.success || vpsJson?.status === 'connected') {
+            const vpsData = vpsJson?.data ?? vpsJson;
+            await supabase.from("trading_accounts").update({
+              mt5_password: formData.password, connection_status: 'connected',
+              balance: vpsData?.balance ?? 0, equity: vpsData?.equity ?? 0,
+              broker_name: vpsData?.company ?? null,
+            }).eq("id", newAccount.id);
+            toast({ title: "Account connected via VPS", description: `${accountName} connected using our backup engine.` });
+            resetAndClose();
+            setIsLoading(false);
+            return;
+          }
+          await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+        } catch (e) {
+          console.error('[VPS fallback] failed:', e);
+        }
+        toast({
+          title: "Both trading engines unavailable",
+          description: "Our Trading Bridge is temporarily at capacity and the VPS bridge failed too. Please try again shortly.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
       if (!res.ok) {
         const rawMsg = res.errorMessage || "";
-        const isQuotaError =
-          /quota|limit|exceeded/i.test(rawMsg);
+        const isQuotaError = /quota|limit|exceeded/i.test(rawMsg);
         toast({
           title: isQuotaError ? "Account Limit Reached" : "Connection Failed",
           description: isQuotaError
-            ? "Your current plan allows 1 trading account. Please upgrade your subscription or remove an existing account before adding a new one."
+            ? "Your current plan's trading-account limit has been reached. Please upgrade your subscription or remove an existing account before adding a new one."
             : rawMsg || "Could not connect your account. Check your credentials and try again.",
           variant: "destructive",
         });
