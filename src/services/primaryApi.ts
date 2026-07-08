@@ -82,8 +82,16 @@ async function req<T = any>(
 
 export const primaryApi = {
   configured: isPrimaryConfigured,
-  connect: (payload: { login: number; password: string; server: string; account_id: string }) =>
-    req(`/connect`, { method: "POST", body: JSON.stringify(payload) }, 10000),
+  
+  // Explicitly handle headers and body for the connect route
+  connect: async (payload: { login: number; password: string; server: string; account_id: string }) => {
+    return req(`/connect`, { 
+      method: "POST", 
+      body: JSON.stringify(payload),
+      headers: { "x-vps-secret": "b27c87581e27d989c23a64d41831ab696f7dfa7820a2146f29ca2201" }
+    }, 15000); // Increased timeout to 15s for MT5 login
+  },
+
   getAccount: (accountId?: string) =>
     req(`/account${accountId ? `?id=${encodeURIComponent(accountId)}` : ""}`),
   getPositions: (accountId?: string) =>
