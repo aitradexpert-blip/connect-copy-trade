@@ -223,17 +223,29 @@ export function ConnectAccountModal({
         const vpsSuccess = vpsJson?.success === true || vpsJson?.status === 'connected';
         const vpsData = vpsJson?.data ?? vpsJson;
 
-        if (vpsSuccess) {
-          const { error: updateErr } = await supabase
-            .from("trading_accounts")
-            .update({
-              mt5_password: formData.password,
-              connection_status: 'connected',
-              balance: vpsData?.balance ?? 0,
-              equity: vpsData?.equity ?? 0,
-              broker_name: vpsData?.company ?? null,
-            })
-            .eq("id", newAccount.id);
+       if (vpsSuccess) {
+  const { error: updateErr } = await supabase
+    .from("trading_accounts")
+    .update({
+      mt5_password: formData.password,
+      connection_status: 'connected',
+      balance: vpsData?.balance ?? 0,
+      equity: vpsData?.equity ?? 0,
+      broker_name: vpsData?.company ?? null,
+    })
+    .eq("id", newAccount.id);
+
+  if (updateErr) throw updateErr;
+
+  toast({
+    title: "Account connected!",
+    description: `${accountName} connected via our direct trading engine.`,
+  });
+
+  resetAndClose();   // close modal + reset form
+  setIsLoading(false);
+  return;            // stop here, don’t fall back to MetaAPI
+}
 
           if (updateErr) throw updateErr;
 
