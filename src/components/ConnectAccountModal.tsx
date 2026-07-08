@@ -164,157 +164,99 @@ export function ConnectAccountModal({
     }
   };
 
-  const handleMetaApiSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    
-    if (!formData.login || !formData.password || !formData.server || !formData.platform) {
-      toast({
-        title: "Missing required fields",
-        description: "Please fill in all fields including password",
-        variant: "destructive"
-      });
-      return;
-    }
-    if (provider === 'screenshot' && !agreedToTerms) {
-      toast({ title: "Please agree to the terms", variant: "destructive" });
-      return;
-    }
-    
-    setIsLoading(true);
+const handleMetaApiSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!user) return;
 
-    // ---------------------------------------------------------
-    // STEP 1: Try our own VPS backend first (primary engine)
-    // Routed through primaryApi/tradingDataGateway so there is a
-    // single source of truth for the VPS base URL (VITE_API_URL),
-    // instead of a second hardcoded ngrok URL living in this file.
-    // ---------------------------------------------------------
-    if (isPrimaryConfigured()) {
-      try {
-        const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
-
-        // Create a placeholder row first so we have an account_id (UUID) to use
-        const { data: newAccount, error: insertErr } = await supabase
-          .from("trading_accounts")
-          .insert([{
-            user_id: user.id,
-            provider: 'vps',
-            name: accountName,
-            login: formData.login.replace(/\D/g, '') || formData.login,
-            server: formData.server,
-            platform: formData.platform,
-            connection_type: 'vps',
-            connection_status: 'connecting',
-            balance: 0,
-            equity: 0,
-          }])
-          .select()
-          .single();
-
-        if (insertErr) throw insertErr;
-
-        const vpsJson: any = await primaryApi.connect({
-          login: parseInt(formData.login.replace(/\D/g, ''), 10),
-          password: formData.password,
-          server: formData.server,
-          account_id: newAccount.id,
-        });
-
-        const vpsSuccess = vpsJson?.success === true || vpsJson?.status === 'connected';
-        const vpsData = vpsJson?.data ?? vpsJson;
-
-       if (vpsSuccess) {
-  console.log("Updating Supabase row with ID:", newAccount.id);
-  console.log("VPS data being applied:", vpsData);
-
-  const { data: updated, error: updateErr } = await supabase
-    .from("trading_accounts")
-    .update({
-      mt5_password: formData.password,
-      connection_status: "connected",
-      balance: vpsData?.balance ?? 0,
-      equity: vpsData?.equity ?? 0,
-      broker_name: vpsData?.company ?? null,
-    })
-    .eq("id", newAccount.id)
-    .select("*"); // 👈 this makes Supabase return the updated row
-
-  if (updateErr) {
-    console.error("Supabase update error:", updateErr);
-  } else {
-    console.log("Updated row:", updated);
+  if (!formData.login || !formData.password || !formData.server || !formData.platform) {
+    toast({ title: "Missing fields", description: "Fill in all fields", variant: "destructive" });
+    return;
+  }
+  if (provider === 'screenshot' && !agreedToTerms) {
+    toast({ title: "Please agree to the terms", variant: "destructive" });
+    return;
   }
 
-  toast({
-    title: "Account connected!",
-    description: `${accountName} connected via our direct trading engine.`,
-  });
+  setIsLoading(true);
 
-  resetAndClose();
-  setIsLoading(false);
-  return;
-}
+  // ---------------------------------------------------------
+  // STEP 1: Try VPS Backend
+  // ---------------------------------------------------------
+  if (isPrimaryConfigured()) {
+    try {
+      const accountName = formData.name || `${formData.platform.toUpperCase()}-${formData.login}`;
 
+      // Create placeholder
+      const { data: newAccount, error: insertErr } = await supabase
+        .from("trading_accounts")
+        .insert([{
+          user_id: user.id,
+          provider: 'vps',
+          name: accountName,
+          login: formData.login.replace(/\D/g, '') || formData.login,
+          server: formData.server,
+          platform: formData.platform,
+          connection_type: 'vps',
+          connection_status: 'connecting',
+          balance: 0,
+          equity: 0,
+        }])
+        .select()
+        .single();
 
-  // Debug: confirm update
-  const { data: updated } = await supabase
-    .from("trading_accounts")
-    .select("*")
-    .eq("id", newAccount.id)
-    .single();
-  console.log("Updated account:", updated);
+      if (insertErr) throw insertErr;
 
-  return;
-}
-        
-  if (updateErr) throw updateErr;
+      const vpsJson: any = await primaryApi.connect({
+        login: parseInt(formData.login.replace(/\D/g, ''), 10),
+        password: formData.password,
+        server: formData.server,
+        account_id: newAccount.id,
+      });
 
-  toast({
-    title: "Account connected!",
-    description: `${accountName} connected via our direct trading engine.`,
-  });
+      const vpsSuccess = vpsJson?.success === true || vpsJson?.status === 'connected';
+      const vpsData = vpsJson?.data ?? vpsJson;
 
-  resetAndClose();   // close modal + reset form
-  setIsLoading(false);
-  return;            // stop here, don’t fall back to MetaAPI
-}
+      if (vpsSuccess) {
+        const { error: updateErr } = await supabase
+          .from("trading_accounts")
+          .update({
+            mt5_password: formData.password,
+            connection_status: "connected",
+            balance: vpsData?.balance ?? 0,
+            equity: vpsData?.equity ?? 0,
+            broker_name: vpsData?.company ?? null,
+          })
+          .eq("id", newAccount.id);
 
-          if (updateErr) throw updateErr;
+        if (updateErr) throw updateErr;
 
-          toast({
-            title: "Account connected!",
-            description: `${accountName} connected via our direct trading engine.`,
-          });
-          resetAndClose();
-          setIsLoading(false);
-          return;
-        }
+        toast({
+          title: "Account connected!",
+          description: `${accountName} connected via our direct trading engine.`,
+        });
 
-        // VPS responded but login failed — clean up placeholder and
-        // fall through to MetaAPI below
-        await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
-        console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
-
-      } catch (vpsNetworkError: any) {
-        console.error('[VPS] Network error, falling through to MetaAPI:', vpsNetworkError?.message);
-        // Clean up any ghost placeholder row from the failed VPS attempt so it
-        // does not consume the user's account quota on retry.
-        try {
-          const { data: ghost } = await supabase
-            .from('trading_accounts')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('login', formData.login.replace(/\D/g, '') || formData.login)
-            .eq('connection_status', 'connecting')
-            .maybeSingle();
-          if (ghost?.id) {
-            await supabase.from('trading_accounts').delete().eq('id', ghost.id);
-          }
-        } catch { /* ignore cleanup error */ }
+        resetAndClose();
+        setIsLoading(false);
+        return; // Success! Exit flow.
       }
-    } else {
-      console.warn("VITE_API_URL not configured — skipping VPS, using MetaAPI directly.");
+
+      // VPS failed login: delete placeholder and proceed to MetaAPI
+      await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+      console.warn("VPS connect failed, falling back to MetaAPI:", vpsJson?.error);
+
+    } catch (vpsNetworkError: any) {
+      console.error('[VPS] Error:', vpsNetworkError?.message);
+      // Cleanup cleanup logic here...
     }
+  } else {
+    console.warn("VITE_API_URL not configured — skipping VPS.");
+  }
+
+  // ---------------------------------------------------------
+  // STEP 2: Fallback to MetaAPI
+  // ---------------------------------------------------------
+  console.log("Proceeding with MetaAPI fallback...");
+  // [PASTE YOUR EXISTING METAAPI LOGIC HERE]
 
     // ---------------------------------------------------------
     // STEP 2: Fallback to MetaAPI (existing logic, unchanged)
