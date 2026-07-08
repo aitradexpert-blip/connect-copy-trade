@@ -253,8 +253,7 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
 
       // VPS responded but broker rejected the credentials —
       // delete the placeholder row so it does not count against quota on retry
-      const { error: cleanupErr } = await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
-        if (cleanupErr) console.warn("Cleanup failed:", cleanupErr.message);
+      await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
       newAccount = null;
       console.warn("VPS broker rejected credentials, falling back to MetaAPI:", vpsJson?.error);
 
@@ -262,7 +261,8 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
       console.error('[VPS] Network error, cleaning up:', vpsNetworkError?.message);
       // Clean up ghost row so quota is not consumed on retry
       if (newAccount?.id) {
-        await supabase.from("trading_accounts").delete().eq("id", newAccount.id).catch(() => {});
+        const { error: cleanupErr } = await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+        if (cleanupErr) console.warn("Cleanup failed:", cleanupErr.message);
         newAccount = null;
       }
     }
