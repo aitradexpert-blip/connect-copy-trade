@@ -205,7 +205,7 @@ export default function Pricing() {
 
         {/* Footer */}
         <div className="text-center text-sm text-muted-foreground space-y-2">
-          <p>All payments are processed securely via Yoco. Subscriptions are billed monthly. Cancel anytime.</p>
+          <p>Subscriptions are activated after payment is confirmed by our team. Cancel anytime.</p>
           <p>
             Already have an account?{" "}
             <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/auth')}>Sign in here</Button>
@@ -213,27 +213,45 @@ export default function Pricing() {
         </div>
       </div>
 
-      {/* Email Dialog */}
+      {/* Bank Transfer Dialog */}
       <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Enter Your Email</DialogTitle>
-            <DialogDescription>We'll use this to activate your subscription after you register.</DialogDescription>
+            <DialogTitle>Bank Transfer Payment</DialogTitle>
+            <DialogDescription>
+              Transfer the plan amount to the account below, then we will activate your subscription within one business day.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <Label>Selected Plan</Label>
-              <p className="text-lg font-medium">{selectedPlan?.name} - R{selectedPlan?.priceZar.toFixed(2)}/month</p>
+          <div className="space-y-4 pt-2">
+            <div className="rounded-lg border border-border p-3 space-y-1">
+              <div className="text-sm text-muted-foreground">Selected Plan</div>
+              <div className="text-lg font-semibold">
+                {selectedPlan?.name} — R{selectedPlan?.priceZar.toFixed(2)}/month
+              </div>
             </div>
+
+            <div className="rounded-lg bg-muted/50 border border-border p-4 space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Bank</span><span className="font-medium">Standard Bank</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Account Name</span><span className="font-medium">HUMI MOBILE (Pty) Ltd</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Account Type</span><span className="font-medium">Business Account</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Account Number</span><span className="font-medium">10280624016</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Branch Code</span><span className="font-medium">051001</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Swift Code</span><span className="font-medium">SBZAZAJJXXX</span></div>
+              <div className="pt-2 text-xs text-muted-foreground">
+                Reference: your email address (used to match the payment to your account).
+              </div>
+            </div>
+
             <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
+              <Label htmlFor="email">Your Email (payment reference)</Label>
               <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handlePayment()} />
-              <p className="text-xs text-muted-foreground">Use the same email when you register to automatically activate your subscription.</p>
+              <p className="text-xs text-muted-foreground">Register with this same email so we can activate your subscription automatically once payment clears.</p>
             </div>
+
             <div className="flex gap-2 pt-2">
               <Button variant="outline" onClick={() => setShowEmailDialog(false)} className="flex-1">Cancel</Button>
               <Button onClick={handlePayment} disabled={!email || loading !== null} className="flex-1">
-                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : <><CreditCard className="w-4 h-4 mr-2" />Continue to Payment</>}
+                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : <><CreditCard className="w-4 h-4 mr-2" />I've Made the Transfer</>}
               </Button>
             </div>
           </div>
