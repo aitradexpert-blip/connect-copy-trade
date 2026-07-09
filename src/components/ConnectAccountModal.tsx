@@ -26,6 +26,7 @@ import { invokeEdgeFunctionJson } from "@/lib/supabaseInvoke";
 import { primaryApi, isPrimaryConfigured } from "@/services/primaryApi";
 import { ExternalLink, Wallet, Key, Loader2, Copy, Check, AlertCircle, Eye, EyeOff, Camera, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { ServerCombobox } from "@/components/ServerCombobox";
 
 interface ConnectAccountModalProps {
   open: boolean;
