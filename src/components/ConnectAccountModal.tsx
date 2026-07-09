@@ -220,12 +220,20 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
       // primaryApi.req() unwraps { source, data } and returns data directly.
       // So vpsJson IS the data object — check balance/login to confirm success,
       // not vpsJson.success (that flag was on the outer wrapper already consumed).
+      // VPS returns either the full wrapper { success, source, data }
+      // or req() may unwrap it to just { login, balance, ... }
+      // Handle both shapes defensively
       const vpsSuccess =
         vpsJson?.success === true ||
         vpsJson?.status === 'connected' ||
-        (typeof vpsJson?.balance === 'number' && typeof vpsJson?.login === 'number');
+        vpsJson?.data?.success === true ||
+        (typeof vpsJson?.balance === 'number') ||
+        (typeof vpsJson?.data?.balance === 'number');
 
-      const vpsData = vpsJson;
+      // Extract data regardless of whether req() unwrapped or not
+      const vpsData = (vpsJson?.data && typeof vpsJson.data === 'object')
+        ? vpsJson.data
+        : vpsJson;
 
       if (vpsSuccess) {
         const { error: updateErr } = await supabase
