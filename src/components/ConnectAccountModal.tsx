@@ -582,36 +582,11 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2 relative z-20">
           <Label htmlFor="server">Server *</Label>
-          <div className="relative z-20">
-            <Input
-              id="server"
-              placeholder="ICMarketsSC-Demo"
-              value={formData.server}
-              onChange={(e) => setFormData({ ...formData, server: e.target.value })}
-              list="server-suggestions"
-              autoComplete="off"
-              required
-              className="relative z-20 bg-background"
-            />
-            <datalist id="server-suggestions">
-              <option value="Headway-Real" />
-              <option value="Headway-Demo" />
-              <option value="Deriv-Server" />
-              <option value="Deriv-Demo" />
-              <option value="ICMarketsSC-Live" />
-              <option value="ICMarketsSC-Demo" />
-              <option value="XMGlobal-Real 3" />
-              <option value="Exness-Real" />
-              <option value="Exness-MT5Real" />
-              <option value="FBS-Real" />
-              <option value="FTMO-Demo" />
-              <option value="OctaFX-Real" />
-              <option value="Weltrade-Live" />
-              <option value="Weltrade-Demo" />
-              <option value="Weltrade-ECN" />
-            </datalist>
-          </div>
-          <p className="text-xs text-muted-foreground">Type freely if your server isn't listed.</p>
+          <ServerCombobox
+            value={formData.server}
+            onChange={(v) => setFormData({ ...formData, server: v })}
+          />
+          <p className="text-xs text-muted-foreground">Search the list or type your broker server freely.</p>
         </div>
         <div className="space-y-2 relative z-0">
           <Label htmlFor="platform">Platform *</Label>
