@@ -213,12 +213,13 @@ export default function MentorClientDashboard() {
     }
     setActivatingCopy(true);
     try {
-      // Find mentor's master account
+      // Find mentor's master account — use the public view, since a
+      // first-time follower has no copy_trading_relationships row yet
+      // and RLS on trading_accounts blocks direct visibility until they do.
       const { data: masterAcc } = await supabase
-        .from('trading_accounts')
+        .from('public_master_accounts')
         .select('id, user_id')
         .eq('user_id', mentorUserId || '')
-        .eq('is_master', true)
         .maybeSingle();
 
       if (!masterAcc) {
