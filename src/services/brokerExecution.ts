@@ -110,7 +110,8 @@ function getConnectionType(account: TradingAccount): 'deriv_api' | 'metaapi' {
   // Use explicit connection_type if set
   if (account.connection_type === 'metaapi') return 'metaapi';
   if (account.connection_type === 'deriv_api') return 'deriv_api';
-  
+  if (account.connection_type === 'vps' || account.provider === 'vps') return 'metaapi';
+
   // Fall back to platform detection
   const platform = account.platform?.toLowerCase() || '';
   if (platform.includes('mt4') || platform.includes('mt5') || platform.includes('metatrader')) {
