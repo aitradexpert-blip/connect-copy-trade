@@ -183,6 +183,7 @@ export default function TradingIdeas() {
         name: account.name,
         login: account.login,
         provider: account.provider,
+        connection_type: account.connection_type,
         metaapi_account_id: account.metaapi_account_id,
         deriv_token: account.deriv_token,
         deriv_currency: account.deriv_currency,
