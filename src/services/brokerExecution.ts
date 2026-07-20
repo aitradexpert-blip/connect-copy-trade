@@ -151,13 +151,12 @@ export async function executeOnAccount(
   ) {
     try {
       const result: any = await primaryApi.sendOrder({
-        account_id: account.id,
+        accountId: account.id,
         symbol: signal.symbol,
-        action: signal.direction.toLowerCase(),
+        order_type: signal.direction.toLowerCase(),
         volume: signal.volume,
-        stop_loss: signal.stopLoss ?? null,
-        take_profit: signal.takeProfit ?? null,
-        comment: signal.comment ?? null,
+        sl: signal.stopLoss ?? null,
+        tp: signal.takeProfit ?? null,
       });
       if (result?.success || result?.ticket || result?.order) {
         return {
@@ -268,7 +267,14 @@ async function executeMetaApiTrade(
 
   // Primary-first execution via self-hosted FastAPI; silent fallback to MetaAPI edge fn.
   try {
-    const primary = await primaryApi.sendOrder(payload);
+    const primary = await primaryApi.sendOrder({
+      accountId: account.metaapi_account_id,
+      symbol: signal.symbol,
+      order_type: signal.direction.toLowerCase(),
+      volume: signal.volume,
+      sl: signal.stopLoss ?? null,
+      tp: signal.takeProfit ?? null,
+    });
     return {
       success: true,
       tradeId: (primary as any)?.tradeId || (primary as any)?.positionId || (primary as any)?.order,
