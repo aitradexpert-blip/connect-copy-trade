@@ -33,35 +33,32 @@ Deno.serve(async (req) => {
       });
     }
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') || '',
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 300,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: media_type || 'image/jpeg', data: image_base64 } },
-            { type: 'text', text: 'This is a screenshot of a MetaTrader/broker account. Extract ONLY: login (number), server (exact string), broker/company name, and platform (mt4 or mt5 if determinable). Respond with ONLY raw JSON, no markdown, no preamble: {"login": "", "server": "", "broker_name": "", "platform": ""}. If a field is not visible, use null for it. NEVER extract or mention any password, even if one is visible in the image.' },
-          ],
-        }],
-      }),
-    });
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'This is a screenshot of a MetaTrader/broker account. Extract ONLY: login (number), server (exact string), broker/company name, and platform (mt4 or mt5 if determinable). Respond with ONLY raw JSON, no markdown, no preamble: {"login": "", "server": "", "broker_name": "", "platform": ""}. If a field is not visible, use null for it. NEVER extract or mention any password, even if one is visible in the image.' },
+        { type: 'image_url', image_url: { url: `data:${media_type || 'image/jpeg'};base64,${image_base64}` } },
+      ],
+    }],
+  }),
+});
+const data = await res.json();
+const text = data?.choices?.[0]?.message?.content || '{}';
+const clean = text.replace(/```json|```/g, '').trim();
+let extracted;
+try { extracted = JSON.parse(clean); } catch { extracted = {}; }
 
-    const data = await res.json();
-    const text = data?.content?.find((b: any) => b.type === 'text')?.text || '{}';
-    const clean = text.replace(/```json|```/g, '').trim();
-    let extracted;
-    try { extracted = JSON.parse(clean); } catch { extracted = {}; }
-
-    return new Response(JSON.stringify(extracted), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+return new Response(JSON.stringify(extracted), {
+  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+});
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || String(e) }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
