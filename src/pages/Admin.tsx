@@ -118,6 +118,22 @@ const Admin = () => {
         });
       }
 
+      // Fan out to every mentor's copy-trading followers (not just AI bots)
+      if (newSignal) {
+        const { data: masters } = await supabase
+          .from('trading_accounts')
+          .select('user_id')
+          .eq('is_master', true);
+        const distinctMasterUserIds = [...new Set((masters || []).map(m => m.user_id))];
+        await Promise.allSettled(
+          distinctMasterUserIds.map(masterUserId =>
+            supabase.functions.invoke('copy-trade-listener', {
+              body: { signal_id: newSignal.id, master_user_id: masterUserId }
+            })
+          )
+        );
+      }
+
       // Auto-execute for AI bots if enabled
       if (formData.auto_execute_for_bots && newSignal) {
         const { data: autoExecResult, error: autoExecError } = await supabase.functions.invoke('auto-execute-signal', {
