@@ -130,6 +130,41 @@ function getConnectionType(account: TradingAccount): 'deriv_api' | 'metaapi' {
   return 'deriv_api';
 }
 
+/**
+ * MT5 order_send() always returns a result object, success or failure.
+ * Never trust a truthy field alone — only retcode 10008/10009 mean the
+ * broker actually accepted and placed the order.
+ */
+function interpretVpsOrderResult(result: any): { success: boolean; error?: string; tradeId?: string | number } {
+  const data = result?.data ?? result;
+  const retcode = data?.retcode;
+  const RETCODE_MESSAGES: Record<number, string> = {
+    10004: 'Requote',
+    10006: 'Request rejected by broker',
+    10013: 'Invalid request',
+    10014: 'Invalid volume / lot size',
+    10015: 'Invalid price',
+    10016: 'Invalid stop loss / take profit',
+    10017: 'Trading is disabled',
+    10018: 'Market is closed',
+    10019: 'Not enough money to open the position',
+    10021: 'No quotes to process the request',
+    10027: 'AutoTrading disabled in the MT5 terminal',
+    10030: 'Unsupported order filling mode',
+  };
+  if (retcode === 10008 || retcode === 10009) {
+    return { success: true, tradeId: data?.order || data?.deal || data?.ticket };
+  }
+  if (retcode !== undefined) {
+    return { success: false, error: RETCODE_MESSAGES[retcode] || data?.comment || `Order rejected (retcode ${retcode})` };
+  }
+  if (result?.success === false || result?.error) {
+    return { success: false, error: result?.error || 'VPS rejected the order' };
+  }
+  // No retcode present at all — treat as inconclusive, not success.
+  return { success: false, error: 'VPS returned no confirmation — treating as failed' };
+}
+
 // ============ Main Execution Function ============
 
 /**
@@ -158,14 +193,14 @@ export async function executeOnAccount(
         sl: signal.stopLoss ?? null,
         tp: signal.takeProfit ?? null,
       });
-      if (result?.success || result?.ticket || result?.order) {
-        return {
-          success: true,
-          tradeId: result?.ticket || result?.order || 'vps-order',
-          provider: 'vps',
-        };
+      const interpreted = interpretVpsOrderResult(result);
+      if (interpreted.success) {
+        return { success: true, tradeId: interpreted.tradeId ?? 'vps-order', provider: 'vps' };
       }
-      console.warn('[BrokerExecution] VPS order rejected, trying MetaAPI:', result?.error);
+      // Real broker rejection (e.g. AutoTrading disabled, market closed) —
+      // report it honestly instead of silently trying MetaAPI as if the
+      // account were on that engine.
+      return { success: false, error: interpreted.error, provider: 'vps' };
     } catch (vpsErr) {
       console.warn('[BrokerExecution] VPS unreachable, trying MetaAPI:', vpsErr);
     }
