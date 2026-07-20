@@ -108,6 +108,7 @@ Deno.serve(async (req) => {
               headers: {
                 'Content-Type': 'application/json',
                 'ngrok-skip-browser-warning': 'true',
+                'x-vps-secret': Deno.env.get('VPS_API_SECRET') || '',
               },
               body: JSON.stringify({
                 account_id: account.id,
