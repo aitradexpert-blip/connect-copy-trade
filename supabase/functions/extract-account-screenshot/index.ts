@@ -33,29 +33,47 @@ Deno.serve(async (req) => {
       });
     }
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const gatewayKey = Deno.env.get('AI_GATEWAY_API_KEY');
+    if (!gatewayKey) {
+      return new Response(JSON.stringify({ error: 'AI_GATEWAY_API_KEY not configured' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const dataUrl = `data:${media_type || 'image/jpeg'};base64,${image_base64}`;
+    const prompt =
+      'This is a screenshot of a MetaTrader/broker account. Extract ONLY: login (number), server (exact string), broker/company name, and platform (mt4 or mt5 if determinable). Respond with ONLY raw JSON, no markdown, no preamble: {"login": "", "server": "", "broker_name": "", "platform": ""}. If a field is not visible, use null for it. NEVER extract or mention any password, even if one is visible in the image.';
+
+    // Vercel AI Gateway (OpenAI-compatible endpoint)
+    const res = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') || '',
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
+        Authorization: `Bearer ${gatewayKey}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-4.5',
         max_tokens: 300,
         messages: [{
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: media_type || 'image/jpeg', data: image_base64 } },
-            { type: 'text', text: 'This is a screenshot of a MetaTrader/broker account. Extract ONLY: login (number), server (exact string), broker/company name, and platform (mt4 or mt5 if determinable). Respond with ONLY raw JSON, no markdown, no preamble: {"login": "", "server": "", "broker_name": "", "platform": ""}. If a field is not visible, use null for it. NEVER extract or mention any password, even if one is visible in the image.' },
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: dataUrl } },
           ],
         }],
       }),
     });
 
+    if (!res.ok) {
+      const errBody = await res.text();
+      return new Response(JSON.stringify({ error: `AI Gateway error: ${res.status}`, details: errBody }), {
+        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const data = await res.json();
-    const text = data?.content?.find((b: any) => b.type === 'text')?.text || '{}';
-    const clean = text.replace(/```json|```/g, '').trim();
+    const text = data?.choices?.[0]?.message?.content || '{}';
+    const clean = String(text).replace(/```json|```/g, '').trim();
     let extracted;
     try { extracted = JSON.parse(clean); } catch { extracted = {}; }
 

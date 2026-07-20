@@ -207,6 +207,10 @@ export default function MentorClientDashboard() {
 
   const activateCopyTrading = async () => {
     if (isFree) { setShowSubscribePrompt(true); return; }
+    if (!mentorUserId) {
+      toast({ title: "Still loading", description: "Your mentor's details are still loading. Please try again in a moment.", variant: "destructive" });
+      return;
+    }
     if (accounts.length === 0) {
       setShowConnectModal(true);
       return;

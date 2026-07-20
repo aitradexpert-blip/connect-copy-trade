@@ -56,6 +56,8 @@ export function ConnectAccountModal({
   const [manualLoginId, setManualLoginId] = useState('');
   const [copied, setCopied] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractionNote, setExtractionNote] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -74,7 +76,7 @@ export function ConnectAccountModal({
     }
   };
 
-  const handleScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleScreenshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -83,6 +85,60 @@ export function ConnectAccountModal({
     }
     const url = URL.createObjectURL(file);
     setScreenshotUrl(url);
+    setExtractionNote(null);
+
+    // Read the file as base64 (strip the data URL prefix)
+    const toBase64 = (f: File) =>
+      new Promise<{ base64: string; mediaType: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || "");
+          const base64 = result.includes(",") ? result.split(",")[1] : result;
+          resolve({ base64, mediaType: f.type || "image/jpeg" });
+        };
+        reader.onerror = () => reject(new Error("Failed to read image"));
+        reader.readAsDataURL(f);
+      });
+
+    setExtracting(true);
+    try {
+      const { base64, mediaType } = await toBase64(file);
+      const res = await invokeEdgeFunctionJson<{
+        login?: string | null;
+        server?: string | null;
+        broker_name?: string | null;
+        platform?: string | null;
+        error?: string;
+      }>("extract-account-screenshot", { image_base64: base64, media_type: mediaType });
+
+      if (!res.ok || !res.data) {
+        setExtractionNote("Couldn't read the screenshot automatically. Please fill in the details manually.");
+        return;
+      }
+
+      const { login, server, broker_name, platform } = res.data;
+      const normalizedPlatform =
+        platform && ["mt4", "mt5"].includes(platform.toLowerCase()) ? platform.toLowerCase() : "";
+
+      setFormData((prev) => ({
+        ...prev,
+        login: login ? String(login) : prev.login,
+        server: server ? String(server) : prev.server,
+        platform: normalizedPlatform || prev.platform,
+        name: prev.name || (broker_name ? String(broker_name) : prev.name),
+      }));
+
+      const filled = [login && "login", server && "server", normalizedPlatform && "platform"].filter(Boolean);
+      setExtractionNote(
+        filled.length > 0
+          ? `Auto-filled ${filled.join(", ")} from your screenshot. Please verify and enter your password.`
+          : "We couldn't detect the details automatically. Please fill in the form manually.",
+      );
+    } catch (err: any) {
+      setExtractionNote("Couldn't read the screenshot automatically. Please fill in the details manually.");
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const handleManualConnect = async () => {
@@ -483,6 +539,8 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
     setManualToken('');
     setManualLoginId('');
     setScreenshotUrl(null);
+    setExtracting(false);
+    setExtractionNote(null);
     setAgreedToTerms(false);
     onOpenChange(false);
     onAccountConnected?.();
@@ -497,6 +555,8 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
     setFormData({ name: "", login: "", password: "", server: "", platform: "" });
     setShowPassword(false);
     setScreenshotUrl(null);
+    setExtracting(false);
+    setExtractionNote(null);
     setAgreedToTerms(false);
   };
 
@@ -508,9 +568,18 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           <div className="border border-border rounded-lg overflow-hidden max-h-48">
             <img src={screenshotUrl} alt="Login details" className="w-full h-full object-contain" />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Use the details from your screenshot to fill in the form below.
-          </p>
+          {extracting ? (
+            <p className="text-xs text-muted-foreground flex items-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Reading your screenshot and filling in the form...
+            </p>
+          ) : extractionNote ? (
+            <p className="text-xs text-muted-foreground">{extractionNote}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Use the details from your screenshot to fill in the form below.
+            </p>
+          )}
         </div>
       )}
 
@@ -715,7 +784,7 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
                 Upload Your Login Details
               </h4>
               <p className="text-sm text-muted-foreground">
-                Take a screenshot or photo of your broker's login details (login ID, server, password), then upload it here. The image will be shown alongside a form for easy reference.
+                Take a screenshot or photo of your broker's login details (login ID, server), then upload it here. We'll read it and auto-fill the form for you.
               </p>
             </div>
 
@@ -743,7 +812,7 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5" />
                 <p className="text-xs text-muted-foreground">
-                  Your screenshot is only displayed locally for your reference. It is <strong>never uploaded or stored</strong> on our servers.
+                  Your screenshot is used <strong>once</strong> to read your login details and is <strong>never stored</strong>. Avoid including your password in the image.
                 </p>
               </div>
             </div>
