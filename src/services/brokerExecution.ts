@@ -130,6 +130,76 @@ function getConnectionType(account: TradingAccount): 'deriv_api' | 'metaapi' {
   return 'deriv_api';
 }
 
+// ============ VPS Order Result Interpretation ============
+
+// MT5 "success" return codes: DONE (10009) and PLACED (pending, 10008).
+const MT5_SUCCESS_RETCODES = new Set([10008, 10009]);
+
+// Common MT5 rejection codes → human readable reason.
+const MT5_RETCODE_MESSAGES: Record<number, string> = {
+  10004: 'Requote',
+  10006: 'Request rejected by broker',
+  10013: 'Invalid request',
+  10014: 'Invalid volume / lot size',
+  10015: 'Invalid price',
+  10016: 'Invalid stop loss / take profit',
+  10017: 'Trading is disabled',
+  10018: 'Market is closed',
+  10019: 'Not enough money to open position',
+  10021: 'No quotes to process the request',
+  10027: 'AutoTrading disabled in the MT5 terminal',
+  10030: 'Unsupported order filling mode',
+};
+
+interface VpsOrderVerdict {
+  ok: boolean;
+  ticket?: number | string;
+  retcode?: number;
+  message?: string;
+}
+
+/**
+ * Strictly interpret a VPS /order response. The order only counts as executed
+ * when the broker confirms it — never when a field merely "exists".
+ * Digs through an optional { source, data } failover wrapper.
+ */
+function interpretVpsOrderResult(raw: any): VpsOrderVerdict {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, message: 'Empty response from VPS engine' };
+  }
+
+  // Unwrap failover.py style { source, data, error } envelope.
+  if (raw.error && !raw.retcode && !raw.success) {
+    return { ok: false, message: String(raw.error) };
+  }
+  const r = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+
+  const retcode = typeof r.retcode === 'number' ? r.retcode : undefined;
+  const ticket = r.ticket ?? r.order ?? r.deal ?? undefined;
+
+  // If the broker gave us a retcode, it is the source of truth.
+  if (retcode !== undefined) {
+    if (MT5_SUCCESS_RETCODES.has(retcode)) {
+      return { ok: true, ticket, retcode };
+    }
+    return {
+      ok: false,
+      retcode,
+      message: MT5_RETCODE_MESSAGES[retcode] || r.comment || `Order rejected (retcode ${retcode})`,
+    };
+  }
+
+  // Explicit boolean success flag.
+  if (r.success === true) return { ok: true, ticket };
+  if (r.success === false) return { ok: false, message: r.error || r.comment || 'Order rejected by VPS' };
+
+  // A real, non-zero ticket with no retcode still counts as filled.
+  if (typeof ticket === 'number' && ticket > 0) return { ok: true, ticket };
+  if (typeof ticket === 'string' && ticket && ticket !== '0') return { ok: true, ticket };
+
+  return { ok: false, message: r.error || r.comment || 'VPS engine did not confirm the order' };
+}
+
 // ============ Main Execution Function ============
 
 /**
@@ -144,13 +214,16 @@ export async function executeOnAccount(
   console.log(`[BrokerExecution] Signal:`, signal);
 
   // VPS-first middleware — routes directly to self-hosted FastAPI when the
-  // account was connected via the VPS bridge. Only falls through on unavailable.
+  // account was connected via the VPS bridge. For a VPS-native account the VPS
+  // is the source of truth: we ONLY fall through to MetaAPI when the VPS is
+  // genuinely unreachable. A broker rejection is reported as a failure, never
+  // masked as success.
   if (
     (account.provider === 'vps' || account.connection_type === 'vps') &&
     isPrimaryConfigured()
   ) {
     try {
-      const result: any = await primaryApi.sendOrder({
+      const raw: any = await primaryApi.sendOrder({
         accountId: account.id,
         symbol: signal.symbol,
         order_type: signal.direction.toLowerCase(),
@@ -158,16 +231,35 @@ export async function executeOnAccount(
         sl: signal.stopLoss ?? null,
         tp: signal.takeProfit ?? null,
       });
-      if (result?.success || result?.ticket || result?.order) {
+
+      const verdict = interpretVpsOrderResult(raw);
+      console.log('[BrokerExecution] VPS order verdict:', verdict, 'raw:', raw);
+
+      if (verdict.ok) {
         return {
           success: true,
-          tradeId: result?.ticket || result?.order || 'vps-order',
+          tradeId: verdict.ticket ?? 'vps-order',
           provider: 'vps',
         };
       }
-      console.warn('[BrokerExecution] VPS order rejected, trying MetaAPI:', result?.error);
-    } catch (vpsErr) {
-      console.warn('[BrokerExecution] VPS unreachable, trying MetaAPI:', vpsErr);
+
+      // VPS responded and rejected the order — surface the real reason.
+      return {
+        success: false,
+        error: verdict.message || 'VPS engine rejected the order',
+        provider: 'vps',
+      };
+    } catch (vpsErr: any) {
+      // Only a truly unreachable VPS should fall through to the legacy engine.
+      if (vpsErr?.name === 'PrimaryUnavailableError') {
+        console.warn('[BrokerExecution] VPS unreachable, trying MetaAPI:', vpsErr?.message);
+      } else {
+        return {
+          success: false,
+          error: vpsErr?.message || 'VPS order execution failed',
+          provider: 'vps',
+        };
+      }
     }
   }
 
@@ -267,7 +359,7 @@ async function executeMetaApiTrade(
 
   // Primary-first execution via self-hosted FastAPI; silent fallback to MetaAPI edge fn.
   try {
-    const primary = await primaryApi.sendOrder({
+    const primary: any = await primaryApi.sendOrder({
       accountId: account.metaapi_account_id,
       symbol: signal.symbol,
       order_type: signal.direction.toLowerCase(),
@@ -275,11 +367,16 @@ async function executeMetaApiTrade(
       sl: signal.stopLoss ?? null,
       tp: signal.takeProfit ?? null,
     });
-    return {
-      success: true,
-      tradeId: (primary as any)?.tradeId || (primary as any)?.positionId || (primary as any)?.order,
-      provider: 'metaapi',
-    };
+    const verdict = interpretVpsOrderResult(primary);
+    console.log('[BrokerExecution] MetaAPI primary verdict:', verdict, 'raw:', primary);
+    if (verdict.ok) {
+      return {
+        success: true,
+        tradeId: verdict.ticket ?? primary?.tradeId ?? primary?.positionId ?? primary?.order,
+        provider: 'metaapi',
+      };
+    }
+    return { success: false, error: verdict.message || 'Primary engine rejected order', provider: 'metaapi' };
   } catch (primaryErr: any) {
     // Only fall back on primary-unavailable; rethrow real broker rejections
     const isPrimaryDown = primaryErr?.name === 'PrimaryUnavailableError';
