@@ -193,14 +193,27 @@ Deno.serve(async (req) => {
           const msg = vpsResult?.error || `VPS HTTP ${vpsRes.status}`;
           console.warn(`[fan-out] VPS rejected for ${relationship.follower_user_id}: ${msg}`);
           await auditFailure(relationship, msg, 'vps');
-          // fall through to MetaAPI
+          // A VPS-only account has nowhere real to fall back to — report the
+          // real rejection instead of faking a MetaAPI "success" against an
+          // account that was never connected via MetaAPI.
+          if (!relationship.follower_account?.metaapi_account_id) {
+            return { follower_user_id: relationship.follower_user_id, success: false, via: 'vps', error: msg };
+          }
         } catch (vpsErr: any) {
           console.warn(`[fan-out] VPS unreachable for ${relationship.follower_user_id}:`, vpsErr?.message || vpsErr);
           await auditFailure(relationship, vpsErr?.message || String(vpsErr), 'vps-network');
+          if (!relationship.follower_account?.metaapi_account_id) {
+            return { follower_user_id: relationship.follower_user_id, success: false, via: 'vps', error: vpsErr?.message || String(vpsErr) };
+          }
         }
       }
 
-      // MetaAPI fallback
+      // MetaAPI fallback — only meaningful if this account actually has one.
+      if (!relationship.follower_account?.metaapi_account_id) {
+        await auditFailure(relationship, 'No VPS success and no MetaAPI account configured for this follower', 'none');
+        return { follower_user_id: relationship.follower_user_id, success: false, error: 'No real execution path available for this account' };
+      }
+
       const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('metaapi-execute-trade', {
         body: {
           accountId: relationship.follower_account?.metaapi_account_id,
