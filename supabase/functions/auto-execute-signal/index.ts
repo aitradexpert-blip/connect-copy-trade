@@ -111,12 +111,12 @@ Deno.serve(async (req) => {
                 'x-vps-secret': Deno.env.get('VPS_API_SECRET') || '',
               },
               body: JSON.stringify({
-                account_id: account.id,
+                accountId: account.id,
                 symbol: signal.symbol,
-                action: String(signal.direction || '').toLowerCase(),
+                order_type: String(signal.direction || '').toLowerCase(),
                 volume: signal.lot_size,
-                stop_loss: signal.stop_loss ?? null,
-                take_profit: signal.take_profit ?? null,
+                sl: signal.stop_loss ?? null,
+                tp: signal.take_profit ?? null,
               }),
             });
             const vpsResult = await vpsRes.json().catch(() => null);
