@@ -122,12 +122,31 @@ Deno.serve(async (req) => {
           direction: signal.direction,
           volume: 0,
           status: 'failed',
-          error_message: `[${via}] ${message}`.slice(0, 500),
-          copied_from_relationship_id: relationship.id,
+          comment: `[${via}] ${message} (relationship ${relationship.id})`.slice(0, 500),
           signal_id,
         } as any);
       } catch (auditErr) {
         console.error('Failed to write audit row:', auditErr);
+      }
+    };
+
+    const logSuccess = async (relationship: any, volume: number, via: string, entryPrice?: number | null) => {
+      try {
+        await supabase.from('trade_history').insert({
+          user_id: relationship.follower_user_id,
+          trading_account_id: relationship.follower_account_id,
+          symbol: signal.symbol,
+          direction: signal.direction,
+          volume,
+          entry_price: entryPrice ?? null,
+          stop_loss: signal.stop_loss ?? null,
+          take_profit: signal.take_profit ?? null,
+          status: 'open',
+          comment: `Copied via ${via} (relationship ${relationship.id})`,
+          signal_id,
+        } as any);
+      } catch (logErr) {
+        console.error('Failed to write success row:', logErr);
       }
     };
 
@@ -168,6 +187,7 @@ Deno.serve(async (req) => {
           }).finally(() => clearTimeout(vpsTimeout));
           const vpsResult = await vpsRes.json().catch(() => null);
           if (vpsResult?.success) {
+            await logSuccess(relationship, adjustedVolume, 'vps', vpsResult?.data?.price ?? null);
             return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: vpsResult };
           }
           const msg = vpsResult?.error || `VPS HTTP ${vpsRes.status}`;
@@ -202,6 +222,7 @@ Deno.serve(async (req) => {
         await auditFailure(relationship, tradeError.message, 'metaapi');
         throw new Error(tradeError.message);
       }
+      await logSuccess(relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null);
       return { follower_user_id: relationship.follower_user_id, success: true, via: 'metaapi', data: tradeResult };
     });
 
