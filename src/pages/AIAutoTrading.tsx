@@ -1,3 +1,4 @@
+import { useSubscription } from "@/hooks/useSubscription";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,7 @@ export default function AIAutoTrading() {
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [activeAssignments, setActiveAssignments] = useState<ActiveAssignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isFree } = useSubscription();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -141,7 +143,11 @@ export default function AIAutoTrading() {
   };
 
   const handleConfirmActivation = async () => {
-    const account = accounts.find(acc => acc.id === selectedAccount);
+  if (isFree) {
+    toast({ title: "Upgrade required", description: "The AI Trading Bot needs an active paid plan.", variant: "destructive" });
+    return;
+  }
+  const account = accounts.find(acc => acc.id === selectedAccount);
     if (!account || !agreeTerms || !bot) return;
 
     try {
