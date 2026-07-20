@@ -177,12 +177,12 @@ Deno.serve(async (req) => {
               ...(VPS_SECRET ? { 'X-VPS-Secret': VPS_SECRET } : {}),
             },
             body: JSON.stringify({
-              account_id: relationship.follower_account.id,
+              accountId: relationship.follower_account.id,
               symbol: signal.symbol,
-              action: String(signal.direction || '').toLowerCase(),
+              order_type: String(signal.direction || '').toLowerCase(),
               volume: adjustedVolume,
-              stop_loss: signal.stop_loss ?? null,
-              take_profit: signal.take_profit ?? null,
+              sl: signal.stop_loss ?? null,
+              tp: signal.take_profit ?? null,
             }),
           }).finally(() => clearTimeout(vpsTimeout));
           const vpsResult = await vpsRes.json().catch(() => null);
