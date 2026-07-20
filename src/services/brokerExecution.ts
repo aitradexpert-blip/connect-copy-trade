@@ -54,6 +54,25 @@ export interface AccountDataResult {
   history?: any[];
 }
 
+async function logExecution(account: TradingAccount, signal: TradeSignal, outcome: ExecuteTradeResult) {
+  try {
+    await supabase.from('trade_history').insert({
+      trading_account_id: account.id,
+      symbol: signal.symbol,
+      direction: signal.direction,
+      volume: signal.volume,
+      stop_loss: signal.stopLoss ?? null,
+      take_profit: signal.takeProfit ?? null,
+      status: outcome.success ? 'open' : 'failed',
+      comment: outcome.success
+        ? `Direct execute via ${outcome.provider}`
+        : `[${outcome.provider}] ${outcome.error || 'execution failed'}`.slice(0, 500),
+    } as any);
+  } catch (e) {
+    console.error('[BrokerExecution] Failed to log trade_history:', e);
+  }
+}
+
 // ============ Symbol Mapping ============
 
 const DERIV_SYMBOL_MAP: Record<string, string> = {
@@ -172,6 +191,15 @@ function interpretVpsOrderResult(result: any): { success: boolean; error?: strin
  * Automatically routes to the correct broker API based on connection_type
  */
 export async function executeOnAccount(
+  account: TradingAccount,
+  signal: TradeSignal
+): Promise<ExecuteTradeResult> {
+  const outcome = await executeOnAccountInner(account, signal);
+  await logExecution(account, signal, outcome);
+  return outcome;
+}
+
+async function executeOnAccountInner(
   account: TradingAccount,
   signal: TradeSignal
 ): Promise<ExecuteTradeResult> {
