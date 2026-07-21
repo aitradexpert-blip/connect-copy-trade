@@ -195,8 +195,12 @@ export default function MentorClientDashboard() {
         takeProfit: selectedSignal.take_profit,
         comment: selectedSignal.comment || `Signal ${selectedSignal.id.slice(0, 8)}`,
       };
-      await executeOnAccount(brokerAccount, signal);
-      toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${manualLotSize} lots` });
+      const result = await executeOnAccount(brokerAccount, signal);
+if (result.success) {
+  toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${lotSize} lots` });
+} else {
+  toast({ title: "Execution failed", description: result.error || "Unknown error", variant: "destructive" });
+}
       setShowExecuteDialog(false);
     } catch (err: any) {
       toast({ title: "Execution failed", description: err.message, variant: "destructive" });
