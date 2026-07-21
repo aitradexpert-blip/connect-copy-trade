@@ -25,10 +25,14 @@ async function callProxy<T = any>(path: string, body: Record<string, unknown>): 
   }
   const { data, error } = await supabase.functions.invoke("vps-proxy", { body: { path, body } });
   if (error) {
-    throw new PrimaryUnavailableError(`Primary engine error on ${path}: ${error.message}`, error);
+    // The proxy call itself failed to complete — genuinely unreachable.
+    throw new PrimaryUnavailableError(`Primary engine unreachable on ${path}: ${error.message}`, error);
   }
   if (data?.error) {
-    throw new PrimaryUnavailableError(`Primary engine error on ${path}: ${data.error}`);
+    // The VPS answered — this is a real, honest rejection, not unreachability.
+    // Return it as a structured failure instead of throwing, so callers don't
+    // mistake a real broker rejection for "try the fallback engine instead."
+    return { success: false, error: data.error } as T;
   }
   if (data && typeof data === "object" && "data" in data) {
     return (data as { data: T }).data;
