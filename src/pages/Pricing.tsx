@@ -80,9 +80,8 @@ export default function Pricing() {
     }));
   }, [dbPlans]);
 
-  const handleSubscribe = (plan: Plan) => {
-    setSelectedPlan(plan);
-    setShowEmailDialog(true);
+  const handleSubscribe = (_plan: Plan) => {
+    navigate('/auth');
   };
 
   const handlePayment = async () => {
