@@ -230,7 +230,10 @@ async function executeOnAccountInner(
       // account were on that engine.
       return { success: false, error: interpreted.error, provider: 'vps' };
     } catch (vpsErr) {
-      console.warn('[BrokerExecution] VPS unreachable, trying MetaAPI:', vpsErr);
+      if (!account.metaapi_fallback_approved) {
+        return { success: false, error: 'VPS unreachable. MetaAPI fallback not approved for this account — contact admin.', provider: 'vps' };
+      }
+      console.warn('[BrokerExecution] VPS unreachable, approved fallback to MetaAPI:', vpsErr);
     }
   }
 
