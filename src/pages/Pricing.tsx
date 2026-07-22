@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PayPalHostedButton } from "@/components/PayPalHostedButton";
 
 interface Plan {
   name: string;
@@ -41,6 +43,15 @@ const comparisonFeatures = [
   { label: "Custom Risk Settings", free: false, basic: false, pro: false, enterprise: true },
   { label: "Dedicated Manager", free: false, basic: false, pro: false, enterprise: true },
 ];
+
+const PAYPAL_CONFIG: Record<string, { hostedButtonId: string; qrCode: string }> = {
+  basic: { hostedButtonId: "MZNVMXGUBRKSQ", qrCode: "/qr-codes/basic.png" },
+  professional: { hostedButtonId: "ETQMRGQBSLG2Y", qrCode: "/qr-codes/professional.png" },
+  enterprise: { hostedButtonId: "U8ZAJNT797Q58", qrCode: "/qr-codes/enterprise.png" },
+  mentor: { hostedButtonId: "S7CTAQUZVG528", qrCode: "/qr-codes/mentor.png" },
+};
+
+function FeatureValue({ value }: { value: boolean | string }) {
 
 function FeatureValue({ value }: { value: boolean | string }) {
   if (value === true) return <Check className="w-5 h-5 text-profit mx-auto" />;
@@ -213,48 +224,76 @@ export default function Pricing() {
         </div>
       </div>
 
-      {/* Bank Transfer Dialog */}
+      {/* Payment Dialog — PayPal primary, Bank Transfer secondary */}
       <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Bank Transfer Payment</DialogTitle>
-            <DialogDescription>
-              Transfer the plan amount to the account below, then we will activate your subscription within one business day.
-            </DialogDescription>
+            <DialogTitle>{selectedPlan?.name} Plan</DialogTitle>
+            <DialogDescription>Choose how you'd like to pay.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div className="rounded-lg border border-border p-3 space-y-1">
-              <div className="text-sm text-muted-foreground">Selected Plan</div>
-              <div className="text-lg font-semibold">
-                {selectedPlan?.name} — R{selectedPlan?.priceZar.toFixed(2)}/month
+
+          <Tabs defaultValue="paypal" className="pt-2">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="paypal">Pay with PayPal</TabsTrigger>
+              <TabsTrigger value="bank">Bank Transfer</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="paypal" className="space-y-4 pt-4">
+              {selectedPlan && PAYPAL_CONFIG[selectedPlan.tier] && (
+                <>
+                  <div className="rounded-lg border border-border p-3 text-center">
+                    <div className="text-sm text-muted-foreground">Selected Plan</div>
+                    <div className="text-lg font-semibold">{selectedPlan.name} — ${selectedPlan.priceUsd}/month</div>
+                  </div>
+                  <div className="flex justify-center">
+                    <PayPalHostedButton hostedButtonId={PAYPAL_CONFIG[selectedPlan.tier].hostedButtonId} />
+                  </div>
+                  <div className="text-center space-y-2 pt-2 border-t border-border">
+                    <p className="text-xs text-muted-foreground">On another device? Scan to pay:</p>
+                    <img
+                      src={PAYPAL_CONFIG[selectedPlan.tier].qrCode}
+                      alt={`${selectedPlan.name} PayPal QR code`}
+                      className="w-40 h-40 mx-auto rounded-lg border border-border"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center pt-2">
+                    Your subscription activates once payment is confirmed and reviewed by our team — usually within a few hours.
+                  </p>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="bank" className="space-y-4 pt-4">
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <div className="text-sm text-muted-foreground">Selected Plan</div>
+                <div className="text-lg font-semibold">
+                  {selectedPlan?.name} — R{selectedPlan?.priceZar.toFixed(2)}/month
+                </div>
               </div>
-            </div>
 
-            <div className="rounded-lg bg-muted/50 border border-border p-4 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Bank</span><span className="font-medium">Standard Bank</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Account Name</span><span className="font-medium">HUMI MOBILE (Pty) Ltd</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Account Type</span><span className="font-medium">Business Account</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Account Number</span><span className="font-medium">10280624016</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Branch Code</span><span className="font-medium">051001</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Swift Code</span><span className="font-medium">SBZAZAJJXXX</span></div>
-              <div className="pt-2 text-xs text-muted-foreground">
-                Reference: your email address (used to match the payment to your account).
+              <div className="rounded-lg bg-muted/50 border border-border p-4 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Bank</span><span className="font-medium">Standard Bank</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Account Name</span><span className="font-medium">HUMI MOBILE (Pty) Ltd</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Account Type</span><span className="font-medium">Business Account</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Account Number</span><span className="font-medium">10280624016</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Branch Code</span><span className="font-medium">051001</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Swift Code</span><span className="font-medium">SBZAZAJJXXX</span></div>
+                <div className="pt-2 text-xs text-muted-foreground">
+                  Reference: your email address (used to match the payment to your account).
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Your Email (payment reference)</Label>
-              <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handlePayment()} />
-              <p className="text-xs text-muted-foreground">Register with this same email so we can activate your subscription automatically once payment clears.</p>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Your Email (payment reference)</Label>
+                <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handlePayment()} />
+                <p className="text-xs text-muted-foreground">Register with this same email so we can activate your subscription automatically once payment clears.</p>
+              </div>
 
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowEmailDialog(false)} className="flex-1">Cancel</Button>
-              <Button onClick={handlePayment} disabled={!email || loading !== null} className="flex-1">
+              <Button onClick={handlePayment} disabled={!email || loading !== null} className="w-full">
                 {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : <><CreditCard className="w-4 h-4 mr-2" />I've Made the Transfer</>}
               </Button>
-            </div>
-          </div>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
