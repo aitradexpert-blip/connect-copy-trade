@@ -19,6 +19,7 @@ import { notifyMakeNewSignal } from "@/lib/makeWebhook";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramLeadsTab } from "@/components/admin/TelegramLeadsTab";
+import { PendingPaymentsTab } from "@/components/admin/PendingPaymentsTab";
 
 interface TradingSignal {
   id: string;
@@ -224,6 +225,7 @@ const Admin = () => {
         <Tabs defaultValue="signals" className="space-y-6">
           <TabsList className="w-full overflow-x-auto flex-nowrap justify-start">
             <TabsTrigger value="signals">Trading Ideas</TabsTrigger>
+            <TabsTrigger value="payments">Pending Payments</TabsTrigger>
             <TabsTrigger value="telegram">Telegram Leads</TabsTrigger>
           </TabsList>
 
@@ -432,6 +434,10 @@ const Admin = () => {
           </CardContent>
         </Card>
             
+</TabsContent>
+
+<TabsContent value="payments">
+  <PendingPaymentsTab />
 </TabsContent>
 
 <TabsContent value="telegram">
