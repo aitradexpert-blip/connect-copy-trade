@@ -16,6 +16,7 @@ interface PendingSubscription {
   status: string;
   created_at: string;
   paid_at: string | null;
+  activated_user_id: string | null;
 }
 
 export function PendingPaymentsTab() {
@@ -52,7 +53,7 @@ export function PendingPaymentsTab() {
   useEffect(() => { loadData(); }, []);
 
   const approve = async (row: PendingSubscription) => {
-    const matchedUserId = emailToUserId[row.email.toLowerCase()];
+    const matchedUserId = row.activated_user_id || emailToUserId[row.email.toLowerCase()];
     if (!matchedUserId) {
       toast({
         title: "No matching account found",
@@ -155,7 +156,7 @@ export function PendingPaymentsTab() {
                   )}
                 </TableCell>
                 <TableCell>
-                  {matched ? <Badge className="bg-green-600">Found</Badge> : <Badge variant="destructive">No account yet</Badge>}
+                  {(row.activated_user_id || matched) ? <Badge className="bg-green-600">Found</Badge> : <Badge variant="destructive">No account yet</Badge>}
                 </TableCell>
                 <TableCell className="text-sm">{new Date(row.created_at).toLocaleString()}</TableCell>
                 <TableCell>
