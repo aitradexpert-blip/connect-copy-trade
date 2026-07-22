@@ -6,7 +6,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 
-const BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+const BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$", "");
 
 export class PrimaryUnavailableError extends Error {
   constructor(message: string, public cause?: unknown) {
@@ -50,7 +50,17 @@ export const primaryApi = {
   getPositions: (accountId: string) => callProxy("positions", { account_id: accountId }),
   getHistory: (accountId: string, from?: string, to?: string) =>
     callProxy("history", { account_id: accountId, from, to }),
-  sendOrder: (payload: Record<string, unknown>) => callProxy("order", payload),
+
+  // Normalize common caller shapes: accept accountId or account_id and forward server-expected keys.
+  sendOrder: (payload: Record<string, unknown>) => {
+    const normalized: Record<string, unknown> = { ...payload };
+    if ((normalized as any).accountId && !(normalized as any).account_id) {
+      normalized.account_id = (normalized as any).accountId;
+      delete (normalized as any).accountId;
+    }
+    return callProxy("order", normalized);
+  },
+
   copyTrade: (payload: { master_account_id: string; symbol: string; volume: number; order_type?: string; sl?: number; tp?: number }) =>
     callProxy("copy-trade", payload),
 };
