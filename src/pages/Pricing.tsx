@@ -52,8 +52,6 @@ const PAYPAL_CONFIG: Record<string, { hostedButtonId: string; qrCode: string }> 
 };
 
 function FeatureValue({ value }: { value: boolean | string }) {
-
-function FeatureValue({ value }: { value: boolean | string }) {
   if (value === true) return <Check className="w-5 h-5 text-profit mx-auto" />;
   if (value === false) return <X className="w-4 h-4 text-muted-foreground/40 mx-auto" />;
   return <span className="text-xs text-foreground">{value}</span>;
