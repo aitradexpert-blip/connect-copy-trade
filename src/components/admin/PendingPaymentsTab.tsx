@@ -161,7 +161,7 @@ export function PendingPaymentsTab() {
                 <TableCell className="text-sm">{new Date(row.created_at).toLocaleString()}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => approve(row)} disabled={processing === row.id || !matched} className="bg-profit text-white hover:bg-profit/80">
+                    <Button size="sm" onClick={() => approve(row)} disabled={processing === row.id || !(row.activated_user_id || matched)} className="bg-profit text-white hover:bg-profit/80">
                       {processing === row.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
                       Approve
                     </Button>
