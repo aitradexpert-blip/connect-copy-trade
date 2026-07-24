@@ -341,11 +341,11 @@ async function executeMetaApiTrade(
       sl: signal.stopLoss ?? null,
       tp: signal.takeProfit ?? null,
     });
-    return {
-      success: true,
-      tradeId: (primary as any)?.tradeId || (primary as any)?.positionId || (primary as any)?.order,
-      provider: 'metaapi',
-    };
+    const interpreted = interpretVpsOrderResult(primary);
+    if (interpreted.success) {
+      return { success: true, tradeId: interpreted.tradeId ?? 'primary-order', provider: 'metaapi' };
+    }
+    return { success: false, error: interpreted.error, provider: 'metaapi' };
   } catch (primaryErr: any) {
     // Only fall back on primary-unavailable; rethrow real broker rejections
     const isPrimaryDown = primaryErr?.name === 'PrimaryUnavailableError';
