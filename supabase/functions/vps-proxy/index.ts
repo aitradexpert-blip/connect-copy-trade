@@ -11,7 +11,7 @@ const ROUTES: Record<string, { method: 'GET' | 'POST'; ownerField?: string }> = 
   account: { method: 'GET', ownerField: 'account_id' },
   positions: { method: 'GET', ownerField: 'account_id' },
   history: { method: 'GET', ownerField: 'account_id' },
-  order: { method: 'POST', ownerField: 'account_id' },
+  order: { method: 'POST', ownerField: 'accountId' },
   'copy-trade': { method: 'POST', ownerField: 'master_account_id' },
 };
 
