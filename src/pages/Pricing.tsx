@@ -233,7 +233,7 @@ export default function Pricing() {
 
           <Tabs defaultValue="paypal" className="pt-2">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="paypal">Pay with PayPal</TabsTrigger>
+              <TabsTrigger value="paypal">Pay Online</TabsTrigger>
               <TabsTrigger value="bank">Bank Transfer</TabsTrigger>
             </TabsList>
 
