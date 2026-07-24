@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
+import { useAuth } from "@/hooks/useAuth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PayPalHostedButton } from "@/components/PayPalHostedButton";
@@ -59,6 +60,7 @@ function FeatureValue({ value }: { value: boolean | string }) {
 
 export default function Pricing() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState<string | null>(null);
   const [showEmailDialog, setShowEmailDialog] = useState(false);
@@ -79,7 +81,7 @@ export default function Pricing() {
   }, [dbPlans]);
 
   const handleSubscribe = (_plan: Plan) => {
-    navigate('/auth');
+    navigate(user ? '/subscription' : '/auth');
   };
 
   const handlePayment = async () => {
