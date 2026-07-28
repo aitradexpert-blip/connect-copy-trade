@@ -253,8 +253,6 @@ const handleVerifyConnection = async (account: TradingAccount) => {
       setVerifyingId(null);
     }
   };
-
-  const openDerivCashier = (account: TradingAccount, type: 'deposit' | 'withdraw') => {
   
   const openDerivCashier = (account: TradingAccount, type: 'deposit' | 'withdraw') => {
     setSelectedDerivAccount(account);
