@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSubscriptionPlans, getFeatureList } from "@/hooks/useSubscriptionPlans";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PayPalHostedButton } from "@/components/PayPalHostedButton";
+import { PayPalButton } from "@/components/PayPalButton";
 import { CreditCard } from "lucide-react";
 
 const PAYPAL_CONFIG: Record<string, { hostedButtonId: string; qrCode: string }> = {
@@ -304,7 +304,7 @@ export default function Subscription() {
               {selectedPlan && PAYPAL_CONFIG[selectedPlan.tier] && (
                 <>
                   <div className="flex justify-center">
-                    <PayPalHostedButton hostedButtonId={PAYPAL_CONFIG[selectedPlan.tier].hostedButtonId} />
+                    <PayPalButton hostedButtonId={PAYPAL_CONFIG[selectedPlan.tier].hostedButtonId} />
                   </div>
                   <div className="text-center space-y-2 pt-2 border-t border-border">
                     <p className="text-xs text-muted-foreground">On another device? Scan to pay:</p>
