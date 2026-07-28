@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Plus, Settings, Trash2, RefreshCw, CreditCard, Wallet, ArrowDown, ArrowUp, ArrowLeftRight, Layers, WifiOff } from "lucide-react";
+import { Plus, Settings, Trash2, RefreshCw, CreditCard, Wallet, ArrowDown, ArrowUp, ArrowLeftRight, Layers, WifiOff, ShieldCheck } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +49,11 @@ const TradingAccounts = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [credAccount, setCredAccount] = useState<TradingAccount | null>(null);
+  const [credLogin, setCredLogin] = useState("");
+  const [credPassword, setCredPassword] = useState("");
+  const [credServer, setCredServer] = useState("");
   
   // Deriv modal states
   const [derivCashierOpen, setDerivCashierOpen] = useState(false);
@@ -190,6 +198,64 @@ const TradingAccounts = () => {
     }
   };
 
+const handleVerifyConnection = async (account: TradingAccount) => {
+    setVerifyingId(account.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-vps-connection', {
+        body: { account_id: account.id },
+      });
+      if (error) throw error;
+      if (data?.needsCredentials) {
+        setCredAccount(account);
+        setCredLogin(account.login || "");
+        setCredServer("");
+        setCredPassword("");
+        toast({ title: "Reconnection needed", description: "No password on file — please re-enter your login details." });
+      } else if (data?.success) {
+        toast({ title: "Connection verified", description: `Balance: $${(data.data?.balance ?? 0).toFixed(2)}` });
+        await loadAccounts();
+      } else {
+        toast({ title: "Verification failed", description: data?.error || "Could not verify connection", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Verify failed", description: err.message, variant: "destructive" });
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const handleSubmitCredentials = async () => {
+    if (!credAccount || !credLogin || !credPassword || !credServer) return;
+    setVerifyingId(credAccount.id);
+    try {
+      const result: any = await primaryApi.connect({
+        login: parseInt(credLogin, 10),
+        password: credPassword,
+        server: credServer,
+        account_id: credAccount.id,
+      });
+      if (result?.success) {
+        await supabase.from('trading_accounts').update({
+          connection_status: 'connected',
+          server: credServer,
+          balance: result.data?.balance ?? 0,
+          equity: result.data?.equity ?? 0,
+        }).eq('id', credAccount.id);
+        toast({ title: "Reconnected", description: `Balance: $${(result.data?.balance ?? 0).toFixed(2)}` });
+        setCredAccount(null);
+        await loadAccounts();
+      } else {
+        toast({ title: "Reconnect failed", description: result?.error || "Check your credentials", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Reconnect failed", description: err.message, variant: "destructive" });
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const openDerivCashier = (account: TradingAccount, type: 'deposit' | 'withdraw') => {
+  
   const openDerivCashier = (account: TradingAccount, type: 'deposit' | 'withdraw') => {
     setSelectedDerivAccount(account);
     setDerivCashierType(type);
@@ -384,6 +450,18 @@ const TradingAccounts = () => {
                               <WifiOff className="w-4 h-4" />
                             </Button>
                           )}
+                          {(account.provider === 'vps' || (account as any).connection_type === 'vps') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleVerifyConnection(account)}
+                              disabled={verifyingId === account.id}
+                              title="Verify / Reconnect"
+                              className="text-primary hover:text-primary/80"
+                            >
+                              <ShieldCheck className={`w-4 h-4 ${verifyingId === account.id ? 'animate-pulse' : ''}`} />
+                            </Button>
+                          )}
                           <Button 
                             variant="ghost" 
                             size="sm" 
@@ -415,6 +493,33 @@ const TradingAccounts = () => {
 
         {/* Connect Account Modal */}
         <ConnectAccountModal open={isModalOpen} onOpenChange={setIsModalOpen} onAccountConnected={handleAccountConnected} />
+
+        {/* Reconnect credentials dialog — shown when a VPS account has no stored password */}
+        <Dialog open={!!credAccount} onOpenChange={(open) => !open && setCredAccount(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reconnect {credAccount?.name}</DialogTitle>
+              <DialogDescription>Re-enter your broker login details to restore this connection.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="cred-login">Login</Label>
+                <Input id="cred-login" value={credLogin} onChange={(e) => setCredLogin(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cred-server">Server</Label>
+                <Input id="cred-server" value={credServer} onChange={(e) => setCredServer(e.target.value)} placeholder="e.g. Weltrade-Real" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cred-password">Password</Label>
+                <Input id="cred-password" type="password" value={credPassword} onChange={(e) => setCredPassword(e.target.value)} />
+              </div>
+              <Button onClick={handleSubmitCredentials} disabled={verifyingId === credAccount?.id} className="w-full">
+                {verifyingId === credAccount?.id ? "Connecting..." : "Reconnect"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         
         {/* Deriv Cashier Modal */}
         {selectedDerivAccount && (
