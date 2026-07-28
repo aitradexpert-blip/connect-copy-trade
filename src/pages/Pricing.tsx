@@ -13,7 +13,7 @@ import { useSubscriptionPlans } from "@/hooks/useSubscriptionPlans";
 import { useAuth } from "@/hooks/useAuth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PayPalHostedButton } from "@/components/PayPalHostedButton";
+import { PayPalButton } from "@/components/PayPalButton";
 
 interface Plan {
   name: string;
@@ -245,7 +245,7 @@ export default function Pricing() {
                     <div className="text-lg font-semibold">{selectedPlan.name} — ${selectedPlan.priceUsd}/month</div>
                   </div>
                   <div className="flex justify-center">
-                    <PayPalHostedButton hostedButtonId={PAYPAL_CONFIG[selectedPlan.tier].hostedButtonId} />
+                    <PayPalButton hostedButtonId={PAYPAL_CONFIG[selectedPlan.tier].hostedButtonId} />
                   </div>
                   <div className="text-center space-y-2 pt-2 border-t border-border">
                     <p className="text-xs text-muted-foreground">On another device? Scan to pay:</p>
