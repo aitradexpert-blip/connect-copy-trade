@@ -297,7 +297,7 @@ export default function Subscription() {
           </DialogHeader>
           <Tabs defaultValue="paypal">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="paypal">Pay with PayPal</TabsTrigger>
+              <TabsTrigger value="paypal">Pay Here</TabsTrigger>
               <TabsTrigger value="eft">Bank Transfer</TabsTrigger>
             </TabsList>
             <TabsContent value="paypal" className="space-y-4 pt-4">
