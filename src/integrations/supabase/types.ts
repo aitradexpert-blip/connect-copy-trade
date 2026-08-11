@@ -1267,6 +1267,7 @@ export type Database = {
           is_virtual: boolean | null
           login: string
           metaapi_account_id: string | null
+          metaapi_fallback_approved: boolean
           metaapi_health_checked_at: string | null
           metaapi_health_status: string | null
           metaapi_last_error: string | null
@@ -1294,6 +1295,7 @@ export type Database = {
           is_virtual?: boolean | null
           login: string
           metaapi_account_id?: string | null
+          metaapi_fallback_approved?: boolean
           metaapi_health_checked_at?: string | null
           metaapi_health_status?: string | null
           metaapi_last_error?: string | null
@@ -1321,6 +1323,7 @@ export type Database = {
           is_virtual?: boolean | null
           login?: string
           metaapi_account_id?: string | null
+          metaapi_fallback_approved?: boolean
           metaapi_health_checked_at?: string | null
           metaapi_health_status?: string | null
           metaapi_last_error?: string | null
@@ -1666,6 +1669,7 @@ export type Database = {
         Returns: undefined
       }
       delete_expired_pending_trades: { Args: never; Returns: undefined }
+      expire_stale_subscriptions: { Args: never; Returns: undefined }
       has_role: { Args: { _role: string; _user_id: string }; Returns: boolean }
       has_subscription_access: {
         Args: { _feature: string; _user_id: string }
