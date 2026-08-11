@@ -27,6 +27,7 @@ export interface TradingAccount {
   platform?: string;
   balance?: number;
   equity?: number;
+  metaapi_fallback_approved?: boolean | null;
 }
 
 export interface TradeSignal {
