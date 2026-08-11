@@ -230,11 +230,18 @@ Deno.serve(async (req) => {
         },
       });
 
-      if (tradeError) {
-        console.error(`[fan-out] MetaAPI failed for ${relationship.follower_user_id}:`, tradeError.message);
-        await auditFailure(relationship, tradeError.message, 'metaapi');
-        throw new Error(tradeError.message);
+      // The invoke call can succeed at the HTTP level (tradeError stays
+      // null) while metaapi-execute-trade's own response body still
+      // reports a real failure (e.g. "Missing accountId", "deploying").
+      // Check the actual content, don't just trust a clean HTTP call.
+      const metaApiFailed = tradeError || tradeResult?.error || tradeResult?.success === false;
+      if (metaApiFailed) {
+        const msg = tradeError?.message || tradeResult?.error || tradeResult?.text || 'MetaAPI execution failed';
+        console.error(`[fan-out] MetaAPI failed for ${relationship.follower_user_id}:`, msg);
+        await auditFailure(relationship, msg, 'metaapi');
+        return { follower_user_id: relationship.follower_user_id, success: false, via: 'metaapi', error: msg };
       }
+
       await logSuccess(relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null);
       return { follower_user_id: relationship.follower_user_id, success: true, via: 'metaapi', data: tradeResult };
     });
