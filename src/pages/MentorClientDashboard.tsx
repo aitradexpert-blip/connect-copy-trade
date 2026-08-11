@@ -197,7 +197,7 @@ export default function MentorClientDashboard() {
       };
       const result = await executeOnAccount(brokerAccount, signal);
 if (result.success) {
-  toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${lotSize} lots` });
+  toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${manualLotSize} lots` });
 } else {
   toast({ title: "Execution failed", description: result.error || "Unknown error", variant: "destructive" });
 }
