@@ -150,9 +150,91 @@ Deno.serve(async (req) => {
       }
     };
 
+    // ---- VPS helpers -------------------------------------------------------
+    const vpsHeaders = {
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+      ...(VPS_SECRET ? { 'x-vps-secret': VPS_SECRET } : {}),
+    };
+
+    async function fetchJson(url: string, body: unknown, ms: number, label: string) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: vpsHeaders,
+          body: JSON.stringify(body),
+        });
+        const json = await res.json().catch(() => null);
+        return { ok: res.ok, status: res.status, json, error: null as string | null };
+      } catch (err: any) {
+        const aborted = err?.name === 'AbortError' || String(err?.message || '').includes('aborted');
+        return {
+          ok: false,
+          status: 0,
+          json: null,
+          error: aborted
+            ? `${label} timed out after ${ms / 1000}s — the trading bridge did not respond`
+            : `${label} unreachable: ${err?.message || String(err)}`,
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // Bridge reachability probe — done once, so a down bridge fails fast with a
+    // clear message instead of nine identical 8s aborts.
+    let vpsOnline = false;
+    if (VPS_URL) {
+      const probe = await fetchJson(`${VPS_URL}/health`, {}, 5000, 'VPS /health').catch(() => null);
+      vpsOnline = !!probe?.json || !!probe?.ok;
+      if (!vpsOnline) {
+        // /health may be GET-only; retry with GET before giving up.
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const r = await fetch(`${VPS_URL}/health`, { headers: vpsHeaders, signal: ctrl.signal }).finally(() => clearTimeout(t));
+          vpsOnline = r.ok;
+        } catch { vpsOnline = false; }
+      }
+      console.log(`[fan-out] VPS bridge online=${vpsOnline}`);
+    }
+
+    // One terminal session per account per invocation.
+    const vpsSessions = new Map<string, boolean>();
+    async function ensureVpsSession(account: any): Promise<{ ok: boolean; error?: string }> {
+      if (vpsSessions.get(account.id)) return { ok: true };
+      if (!account.login || !account.server || !account.mt5_password) {
+        return { ok: false, error: 'Follower account is missing MT5 login/server/password — reconnect the account to enable copying' };
+      }
+      const res = await fetchJson(`${VPS_URL}/connect`, {
+        login: parseInt(String(account.login), 10),
+        password: account.mt5_password,
+        server: account.server,
+        account_id: account.id,
+      }, 20000, 'VPS /connect');
+      if (res.json?.success) {
+        vpsSessions.set(account.id, true);
+        return { ok: true };
+      }
+      return { ok: false, error: res.error || res.json?.error || `VPS /connect HTTP ${res.status}` };
+    }
+
     const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
+      const follower = relationship.follower_account;
+
+      // Guard against orphaned/broken relationship rows — these previously
+      // produced null-follower rows in the result set.
+      if (!follower || !relationship.follower_user_id) {
+        const msg = 'Broken copy relationship: follower account or user is missing';
+        console.error(`[fan-out] ${msg} (relationship ${relationship.id})`);
+        return { follower_user_id: relationship.follower_user_id ?? null, success: false, via: 'none', error: msg };
+      }
+
       const masterBalance = relationship.master_account?.balance || 10000;
-      const followerBalance = relationship.follower_account?.balance || 10000;
+      const followerBalance = follower.balance || 10000;
       const balanceRatio = followerBalance / masterBalance;
       // Floor at 0.01 (min broker lot), ceiling at 10.0 (safety cap so
       // followers with much larger accounts don't submit oversized orders).
@@ -161,62 +243,66 @@ Deno.serve(async (req) => {
 
       console.log(`[fan-out] follower=${relationship.follower_user_id} vol=${adjustedVolume}`);
 
-      const isVpsAccount = relationship.follower_account?.connection_type === 'vps'
-        || relationship.follower_account?.provider === 'vps';
+      // Any account holding live MT5 credentials can execute through the bridge.
+      const vpsEligible = !!(VPS_URL && vpsOnline && follower.mt5_password && follower.login && follower.server);
+      let vpsError: string | null = null;
 
-      if (isVpsAccount && VPS_URL) {
-        const vpsCtrl = new AbortController();
-        const vpsTimeout = setTimeout(() => vpsCtrl.abort(), 8000);
-        try {
-          const vpsRes = await fetch(`${VPS_URL}/order`, {
-            method: 'POST',
-            signal: vpsCtrl.signal,
-            headers: {
-              'Content-Type': 'application/json',
-              'ngrok-skip-browser-warning': 'true',
-              ...(VPS_SECRET ? { 'X-VPS-Secret': VPS_SECRET } : {}),
-            },
-            body: JSON.stringify({
-              accountId: relationship.follower_account.id,
-              symbol: signal.symbol,
-              order_type: String(signal.direction || '').toLowerCase(),
-              volume: adjustedVolume,
-              sl: signal.stop_loss ?? null,
-              tp: signal.take_profit ?? null,
-            }),
-          }).finally(() => clearTimeout(vpsTimeout));
-          const vpsResult = await vpsRes.json().catch(() => null);
-          if (vpsResult?.success) {
-            await logSuccess(relationship, adjustedVolume, 'vps', vpsResult?.data?.price ?? null);
-            return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: vpsResult };
+      if (VPS_URL && !vpsOnline) {
+        vpsError = 'Trading bridge (VPS) is offline';
+      }
+
+      if (vpsEligible) {
+        const session = await ensureVpsSession(follower);
+        if (!session.ok) {
+          vpsError = session.error!;
+        } else {
+          const orderBody = {
+            accountId: follower.id,
+            account_id: follower.id,
+            symbol: signal.symbol,
+            order_type: String(signal.direction || '').toLowerCase(),
+            volume: adjustedVolume,
+            sl: signal.stop_loss ?? null,
+            tp: signal.take_profit ?? null,
+            comment: `Copy from ${relationship.master_account?.name || 'master'}`,
+          };
+
+          // 25s window + one retry: MT5 order_send through the bridge can be
+          // slow on first touch, which is what produced "signal has been aborted".
+          let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 25000, 'VPS /order');
+          if (!orderRes.json?.success) {
+            const firstMsg = orderRes.error || orderRes.json?.error || `VPS HTTP ${orderRes.status}`;
+            console.warn(`[fan-out] VPS attempt 1 failed for ${relationship.follower_user_id}: ${firstMsg} — retrying`);
+            vpsSessions.delete(follower.id);
+            const re = await ensureVpsSession(follower);
+            if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 25000, 'VPS /order (retry)');
+            else orderRes = { ok: false, status: 0, json: null, error: re.error! };
           }
-          const msg = vpsResult?.error || `VPS HTTP ${vpsRes.status}`;
-          console.warn(`[fan-out] VPS rejected for ${relationship.follower_user_id}: ${msg}`);
-          await auditFailure(relationship, msg, 'vps');
-          // A VPS-only account has nowhere real to fall back to — report the
-          // real rejection instead of faking a MetaAPI "success" against an
-          // account that was never connected via MetaAPI.
-          if (!relationship.follower_account?.metaapi_account_id) {
-            return { follower_user_id: relationship.follower_user_id, success: false, via: 'vps', error: msg };
+
+          if (orderRes.json?.success) {
+            await logSuccess(relationship, adjustedVolume, 'vps', orderRes.json?.data?.price ?? null);
+            return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: orderRes.json };
           }
-        } catch (vpsErr: any) {
-          console.warn(`[fan-out] VPS unreachable for ${relationship.follower_user_id}:`, vpsErr?.message || vpsErr);
-          await auditFailure(relationship, vpsErr?.message || String(vpsErr), 'vps-network');
-          if (!relationship.follower_account?.metaapi_account_id) {
-            return { follower_user_id: relationship.follower_user_id, success: false, via: 'vps', error: vpsErr?.message || String(vpsErr) };
-          }
+
+          vpsError = orderRes.error || orderRes.json?.error || `VPS HTTP ${orderRes.status}`;
         }
       }
 
-      // MetaAPI fallback — only meaningful if this account actually has one.
-      if (!relationship.follower_account?.metaapi_account_id) {
-        await auditFailure(relationship, 'No VPS success and no MetaAPI account configured for this follower', 'none');
-        return { follower_user_id: relationship.follower_user_id, success: false, error: 'No real execution path available for this account' };
+      if (vpsError) {
+        console.warn(`[fan-out] VPS path failed for ${relationship.follower_user_id}: ${vpsError}`);
+        await auditFailure(relationship, vpsError, 'vps');
       }
 
-      const { data: tradeResult, error: tradeError } = await supabase.functions.invoke('metaapi-execute-trade', {
+      // MetaAPI fallback — only meaningful if this account actually has one.
+      if (!follower.metaapi_account_id) {
+        const msg = vpsError || 'No execution path available: account has neither live MT5 credentials nor a MetaAPI account';
+        await auditFailure(relationship, msg, 'none');
+        return { follower_user_id: relationship.follower_user_id, success: false, via: vpsError ? 'vps' : 'none', error: msg };
+      }
+
+      const invokeMetaApi = async () => await supabase.functions.invoke('metaapi-execute-trade', {
         body: {
-          accountId: relationship.follower_account?.metaapi_account_id,
+          accountId: follower.metaapi_account_id,
           trade: {
             symbol: signal.symbol,
             direction: signal.direction,
@@ -230,21 +316,45 @@ Deno.serve(async (req) => {
         },
       });
 
+      let { data: tradeResult, error: tradeError } = await invokeMetaApi();
+
       // The invoke call can succeed at the HTTP level (tradeError stays
       // null) while metaapi-execute-trade's own response body still
       // reports a real failure (e.g. "Missing accountId", "deploying").
       // Check the actual content, don't just trust a clean HTTP call.
-      const metaApiFailed = tradeError || tradeResult?.error || tradeResult?.success === false;
-      if (metaApiFailed) {
-        const msg = tradeError?.message || tradeResult?.error || tradeResult?.text || 'MetaAPI execution failed';
-        console.error(`[fan-out] MetaAPI failed for ${relationship.follower_user_id}:`, msg);
-        await auditFailure(relationship, msg, 'metaapi');
-        return { follower_user_id: relationship.follower_user_id, success: false, via: 'metaapi', error: msg };
+      let failMsg = tradeError?.message || tradeResult?.error || (tradeResult?.success === false ? (tradeResult?.text || 'MetaAPI execution failed') : null);
+
+      // "Account not deployed" is recoverable: deploy the account, wait for
+      // the broker terminal, then retry the order once.
+      if (failMsg && /not deployed|undeployed|deploying|DEPLOY/i.test(failMsg)) {
+        console.log(`[fan-out] Deploying MetaAPI account ${follower.metaapi_account_id} then retrying`);
+        try {
+          await supabase.functions.invoke('metaapi-redeploy-account', {
+            body: { accountId: follower.metaapi_account_id, account_id: follower.id },
+          });
+        } catch (deployErr: any) {
+          console.warn('[fan-out] redeploy invoke failed:', deployErr?.message || deployErr);
+        }
+        await new Promise((r) => setTimeout(r, 12000));
+        const retry = await invokeMetaApi();
+        tradeResult = retry.data;
+        tradeError = retry.error;
+        failMsg = tradeError?.message || tradeResult?.error || (tradeResult?.success === false ? (tradeResult?.text || 'MetaAPI execution failed') : null);
+        if (failMsg && /not deployed|deploying/i.test(failMsg)) {
+          failMsg = 'Broker terminal is still starting up (account deploying) — retry in ~1 minute';
+        }
+      }
+
+      if (failMsg) {
+        console.error(`[fan-out] MetaAPI failed for ${relationship.follower_user_id}:`, failMsg);
+        await auditFailure(relationship, failMsg, 'metaapi');
+        return { follower_user_id: relationship.follower_user_id, success: false, via: 'metaapi', error: failMsg };
       }
 
       await logSuccess(relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null);
       return { follower_user_id: relationship.follower_user_id, success: true, via: 'metaapi', data: tradeResult };
     });
+
 
     const results = settled.map((s, i) =>
       s.status === 'fulfilled'
