@@ -625,13 +625,16 @@ export default function MentorHub() {
                     auto_to_copyfactory: true,
                   }).select('id').single();
                   if (error) throw error;
+                  let broadcast: any = null;
                   if (sig) {
-                    await broadcastSignal(
+                    broadcast = await broadcastSignal(
                       { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: suggestion.analysis, mentor_id: profile.id },
                       { toAiBot: true, toCopyFactory: true },
                     );
                   }
-                  toast({ title: "Idea Published — AI Bot + Copy broadcast!" });
+                  const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;
+                  const report = describeFanOut(fanOut, broadcast);
+                  toast({ title: report.title, description: report.description, variant: report.destructive ? "destructive" : undefined });
                   loadData();
                 } catch (err: any) {
                   toast({ title: "Error", description: err.message, variant: "destructive" });
