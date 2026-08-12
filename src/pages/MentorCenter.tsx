@@ -343,23 +343,21 @@ export default function MentorCenter() {
         comment: newComment || null,
         mentor_id: profile.id,
         status: 'active',
-        auto_to_ai_bot: true,
-        auto_to_copyfactory: true,
+        auto_to_ai_bot: broadcastToBot,
+        auto_to_copyfactory: broadcastToCopy,
       }).select('id').single();
       if (error) throw error;
+      let broadcast: any = null;
       if (sig) {
-        await broadcastSignal(
+        broadcast = await broadcastSignal(
           { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
-          { toAiBot: true, toCopyFactory: true },
+          { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
         );
       }
       // Also trigger copy-trade-listener so active copy relationships execute the trade
-      if (sig && user) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user.id }
-        }).catch(e => console.warn('copy-trade-listener error:', e));
-      }
-      toast({ title: "Signal published — AI Bot + Copy broadcast!" });
+      const fanOut = sig && user && broadcastToCopy ? await runCopyFanOut(sig.id, user.id) : null;
+      const report = describeFanOut(fanOut, broadcast);
+      toast({ title: report.title, description: report.description, variant: report.destructive ? "destructive" : undefined });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
       loadProfile();
