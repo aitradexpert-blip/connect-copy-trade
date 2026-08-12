@@ -441,21 +441,16 @@ export default function MentorCenter() {
       }).select('id').single();
       if (sigErr) throw sigErr;
 
-      // Trigger copy trade listener
-      const masterAcc = accounts.find(a => a.is_master);
-      if (masterAcc && sig) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user!.id }
-        });
-      }
+      let broadcast: any = null;
       if (sig) {
-        await broadcastSignal(
+        broadcast = await broadcastSignal(
           { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Center' },
           { toAiBot: true, toCopyFactory: true },
         );
       }
-
-      toast({ title: "Quick trade published — AI Bot + Copy broadcast!" });
+      const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;
+      const report = describeFanOut(fanOut, broadcast);
+      toast({ title: report.title, description: report.description, variant: report.destructive ? "destructive" : undefined });
       setQuickSymbol("");
       loadProfile();
     } catch (err: any) {
@@ -754,6 +749,17 @@ export default function MentorCenter() {
                       <div className="space-y-2">
                         <Label>Comment</Label>
                         <Textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Analysis notes..." />
+                      </div>
+                      <div className="space-y-2 p-3 rounded-lg bg-muted/40 border border-border">
+                        <p className="text-sm font-medium">Broadcast channels</p>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToBot} onCheckedChange={(v) => setBroadcastToBot(v === true)} />
+                          Broadcast to AI Bot subscribers
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToCopy} onCheckedChange={(v) => setBroadcastToCopy(v === true)} />
+                          Broadcast to Copy Trading subscribers
+                        </label>
                       </div>
                       <Button onClick={publishSignal} disabled={publishingSignal} className="w-full bg-gradient-primary">
                         {publishingSignal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}
