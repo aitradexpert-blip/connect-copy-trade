@@ -134,9 +134,9 @@ const Admin = () => {
           distinctMasterUserIds.map(masterUserId => runCopyFanOut(newSignal.id, masterUserId))
         );
         for (const s of summaries) {
-          totalCopied += s.copied_count;
-          totalFailed += s.failed_count;
-          fanOutErrors.push(...s.errors);
+          totalCopied += s.copied;
+          totalFailed += s.failed;
+          if (s.firstError) fanOutErrors.push(s.firstError);
         }
         console.log('[Admin] copy fan-out', { totalCopied, totalFailed, fanOutErrors });
       }
