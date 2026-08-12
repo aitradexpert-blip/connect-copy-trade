@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { notifyMakeNewSignal } from "@/lib/makeWebhook";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
+import { runCopyFanOut } from "@/services/publishFanOut";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramLeadsTab } from "@/components/admin/TelegramLeadsTab";
 import { PendingPaymentsTab } from "@/components/admin/PendingPaymentsTab";
@@ -120,20 +121,28 @@ const Admin = () => {
       }
 
       // Fan out to every mentor's copy-trading followers (not just AI bots)
+      let totalCopied = 0;
+      let totalFailed = 0;
+      const fanOutErrors: string[] = [];
       if (newSignal) {
         const { data: masters } = await supabase
           .from('trading_accounts')
           .select('user_id')
           .eq('is_master', true);
         const distinctMasterUserIds = [...new Set((masters || []).map(m => m.user_id))];
-        await Promise.allSettled(
-          distinctMasterUserIds.map(masterUserId =>
-            supabase.functions.invoke('copy-trade-listener', {
-              body: { signal_id: newSignal.id, master_user_id: masterUserId }
-            })
-          )
+        const summaries = await Promise.all(
+          distinctMasterUserIds.map(masterUserId => runCopyFanOut(newSignal.id, masterUserId))
         );
+        for (const s of summaries) {
+          totalCopied += s.copied;
+          totalFailed += s.failed;
+          if (s.firstError) fanOutErrors.push(s.firstError);
+        }
+        console.log('[Admin] copy fan-out', { totalCopied, totalFailed, fanOutErrors });
       }
+      const fanOutNote = newSignal
+        ? ` Copy fan-out: ${totalCopied} copied, ${totalFailed} failed${fanOutErrors.length ? ` — ${[...new Set(fanOutErrors)].slice(0, 2).join('; ')}` : ''}.`
+        : '';
 
       // Auto-execute for AI bots if enabled
       if (formData.auto_execute_for_bots && newSignal) {
@@ -144,18 +153,20 @@ const Admin = () => {
         if (!autoExecError && autoExecResult?.executed_count > 0) {
           toast({
             title: "Idea published and auto-executed!",
-            description: `Idea executed on ${autoExecResult.executed_count} AI bot accounts`,
+            description: `Idea executed on ${autoExecResult.executed_count} AI bot accounts.${fanOutNote}`,
           });
         } else {
           toast({
             title: "Signal published successfully!",
-            description: "Signal has been shared to connected social channels.",
+            description: `Signal has been shared to connected social channels.${fanOutNote}`,
+            variant: totalFailed > 0 && totalCopied === 0 ? "destructive" : undefined,
           });
         }
       } else {
         toast({
           title: "Idea published successfully!",
-          description: "Trading idea has been published.",
+          description: `Trading idea has been published.${fanOutNote}`,
+          variant: totalFailed > 0 && totalCopied === 0 ? "destructive" : undefined,
         });
       }
 

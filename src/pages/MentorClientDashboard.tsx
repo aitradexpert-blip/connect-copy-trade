@@ -305,6 +305,9 @@ if (result.success) {
               <DropdownMenuItem onClick={() => navigate("/settings")}>
                 <Settings className="w-4 h-4 mr-2" /> Settings
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/subscription")}>
+                <Wallet className="w-4 h-4 mr-2" /> Subscription
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleInstallApp}>
                 <Download className="w-4 h-4 mr-2" /> Install App
               </DropdownMenuItem>
@@ -323,6 +326,31 @@ if (result.success) {
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Subscription status banner */}
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">
+              {isFree ? "You're on the Free plan" : `${subscription?.plan_name || 'Active'} plan`}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {isFree
+                ? "Upgrade to unlock live copy trading, AI bots and higher trade limits."
+                : subscription?.status === 'active'
+                  ? "Your subscription is active — all included features are unlocked."
+                  : "Your subscription is pending approval."}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant={isFree ? "default" : "outline"}
+            onClick={() => navigate("/subscription")}
+            className="shrink-0"
+          >
+            <Wallet className="w-4 h-4 mr-2" />
+            {isFree ? "Upgrade Plan" : "Manage Subscription"}
+          </Button>
+        </div>
+
         <Tabs defaultValue="home" className="space-y-6">
           <TabsList className="grid grid-cols-4 w-full max-w-lg">
             <TabsTrigger value="home" className="flex items-center gap-1">

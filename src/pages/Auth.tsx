@@ -328,8 +328,31 @@ const Auth = () => {
               <ArrowRight className="h-4 w-4" />
             </motion.button>
           </motion.div>
+
+          {/* Compact feature chips — keeps the three pillars above the fold */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="mt-6 flex flex-wrap items-center justify-center gap-2 sm:gap-3"
+          >
+            {[
+              { icon: Lightbulb, label: "Trade Ideas" },
+              { icon: Copy, label: "Copy Trading" },
+              { icon: Bot, label: "AI Bot System" },
+            ].map(({ icon: Icon, label }) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/80 backdrop-blur sm:text-sm"
+              >
+                <Icon className="h-4 w-4 text-[hsl(354_90%_60%)]" />
+                {label}
+              </span>
+            ))}
+          </motion.div>
         </motion.div>
       </section>
+
 
       {/* ─────────────── FEATURE GRID ─────────────── */}
       <section className="relative z-10 mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-24">
