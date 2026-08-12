@@ -20,6 +20,8 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { OctaFxPromoCard } from "@/components/OctaFxPromoCard";
 import { broadcastSignal } from "@/services/signalBroadcast";
+import { runCopyFanOut, describeFanOut } from "@/services/publishFanOut";
+import { Checkbox } from "@/components/ui/checkbox";
 import NoticeBoard from "@/components/NoticeBoard";
 import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
 
@@ -112,6 +114,8 @@ export default function MentorCenter() {
   const [newComment, setNewComment] = useState("");
   const [publishingSignal, setPublishingSignal] = useState(false);
   const [showSignalDialog, setShowSignalDialog] = useState(false);
+  const [broadcastToBot, setBroadcastToBot] = useState(true);
+  const [broadcastToCopy, setBroadcastToCopy] = useState(true);
 
   // Khumo AI suggestion
   const [aiSuggestion, setAiSuggestion] = useState("");
