@@ -153,18 +153,20 @@ const Admin = () => {
         if (!autoExecError && autoExecResult?.executed_count > 0) {
           toast({
             title: "Idea published and auto-executed!",
-            description: `Idea executed on ${autoExecResult.executed_count} AI bot accounts`,
+            description: `Idea executed on ${autoExecResult.executed_count} AI bot accounts.${fanOutNote}`,
           });
         } else {
           toast({
             title: "Signal published successfully!",
-            description: "Signal has been shared to connected social channels.",
+            description: `Signal has been shared to connected social channels.${fanOutNote}`,
+            variant: totalFailed > 0 && totalCopied === 0 ? "destructive" : undefined,
           });
         }
       } else {
         toast({
           title: "Idea published successfully!",
-          description: "Trading idea has been published.",
+          description: `Trading idea has been published.${fanOutNote}`,
+          variant: totalFailed > 0 && totalCopied === 0 ? "destructive" : undefined,
         });
       }
 
