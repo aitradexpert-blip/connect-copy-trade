@@ -658,16 +658,16 @@ export default function MentorHub() {
                     auto_to_copyfactory: true,
                   }).select('id').single();
                   
+                  let broadcast: any = null;
                   if (sig) {
-                    await supabase.functions.invoke('copy-trade-listener', {
-                      body: { signal_id: sig.id, master_user_id: user!.id }
-                    });
-                    await broadcastSignal(
+                    broadcast = await broadcastSignal(
                       { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: `Copy Trade: ${suggestion.analysis}`, mentor_id: profile.id },
                       { toAiBot: true, toCopyFactory: true },
                     );
                   }
-                  toast({ title: "Signal broadcast to AI Bot + Copy followers!" });
+                  const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;
+                  const report = describeFanOut(fanOut, broadcast);
+                  toast({ title: report.title, description: report.description, variant: report.destructive ? "destructive" : undefined });
                   loadData();
                 } catch (err: any) {
                   toast({ title: "Error", description: err.message, variant: "destructive" });
