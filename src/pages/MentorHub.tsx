@@ -363,20 +363,23 @@ export default function MentorHub() {
       }).select('id').single();
       if (sigErr) throw sigErr;
 
-      const masterAcc = accounts.find(a => a.is_master);
-      if (masterAcc && sig) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user!.id }
-        });
-      }
+      let broadcast: any = null;
       if (sig) {
-        await broadcastSignal(
+        broadcast = await broadcastSignal(
           { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Hub' },
           { toAiBot: true, toCopyFactory: true },
         );
       }
-
-      toast({ title: "Quick trade published — AI Bot + Copy broadcast!" });
+      let fanOut = null;
+      if (sig && user) {
+        fanOut = await runCopyFanOut(sig.id, user.id);
+      }
+      const report = describeFanOut(fanOut, broadcast);
+      toast({
+        title: report.title,
+        description: report.description,
+        variant: report.destructive ? "destructive" : undefined,
+      });
       setQuickSymbol("");
       loadData();
     } catch (err: any) {
