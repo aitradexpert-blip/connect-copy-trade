@@ -21,6 +21,7 @@ import WelcomeModal from "@/components/WelcomeModal";
 import KhumoForexSessions from "@/components/KhumoForexSessions";
 import { getProviderLabel } from "@/lib/providerLabel";
 import { broadcastSignal } from "@/services/signalBroadcast";
+import { runCopyFanOut, describeFanOut } from "@/services/publishFanOut";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import NoticeBoard from "@/components/NoticeBoard";
@@ -261,19 +262,24 @@ export default function MentorHub() {
         auto_to_copyfactory: broadcastToCopy,
       }).select('id').single();
       if (error) throw error;
+      let broadcast: any = null;
       if (sig) {
-        await broadcastSignal(
+        broadcast = await broadcastSignal(
           { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
           { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
         );
       }
       // Also trigger copy-trade-listener so active copy relationships execute the trade
-      if (sig && user) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user.id }
-        }).catch(e => console.warn('copy-trade-listener error:', e));
+      let fanOut = null;
+      if (sig && user && broadcastToCopy) {
+        fanOut = await runCopyFanOut(sig.id, user.id);
       }
-      toast({ title: "Idea published & broadcast!" });
+      const report = describeFanOut(fanOut, broadcast);
+      toast({
+        title: report.title,
+        description: report.description,
+        variant: report.destructive ? "destructive" : undefined,
+      });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
       loadData();
