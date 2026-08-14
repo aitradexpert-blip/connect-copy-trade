@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify(body),
         });
         const json = await res.json().catch(() => null);
-        return { ok: res.ok, status: res.status, json, error: null as string | null };
+        return { ok: res.ok, status: res.status, json, error: null as string | null, timedOut: false, unreachable: false };
       } catch (err: any) {
         const aborted = err?.name === 'AbortError' || String(err?.message || '').includes('aborted');
         return {
@@ -178,6 +178,8 @@ Deno.serve(async (req) => {
           error: aborted
             ? `${label} timed out after ${ms / 1000}s — the trading bridge did not respond`
             : `${label} unreachable: ${err?.message || String(err)}`,
+          timedOut: aborted,
+          unreachable: !aborted,
         };
       } finally {
         clearTimeout(timer);
