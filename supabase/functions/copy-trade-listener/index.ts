@@ -216,7 +216,7 @@ Deno.serve(async (req) => {
         password: account.mt5_password,
         server: account.server,
         account_id: account.id,
-      }, 20000, 'VPS /connect');
+      }, 8000, 'VPS /connect');
       if (res.json?.success) {
         vpsSessions.set(account.id, true);
         return { ok: true };
