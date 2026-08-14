@@ -308,6 +308,9 @@ if (result.success) {
               <DropdownMenuItem onClick={() => navigate("/subscription")}>
                 <Wallet className="w-4 h-4 mr-2" /> Subscription
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleVerifyConnection}>
+                <ShieldCheck className="w-4 h-4 mr-2" /> Verify Trading Connection
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleInstallApp}>
                 <Download className="w-4 h-4 mr-2" /> Install App
               </DropdownMenuItem>
