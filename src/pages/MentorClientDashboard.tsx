@@ -91,6 +91,38 @@ export default function MentorClientDashboard() {
     }
   };
 
+  const handleVerifyConnection = async () => {
+    const vpsAccount = accounts.find(
+      (a: any) => a.provider === 'vps' || a.connection_type === 'vps' || a.mt5_password
+    );
+    if (!vpsAccount) {
+      toast({ title: "No trading account found", description: "Connect a trading account first." });
+      return;
+    }
+    toast({ title: "Verifying connection..." });
+    const { data, error } = await supabase.functions.invoke('verify-vps-connection', {
+      body: { account_id: vpsAccount.id },
+    });
+    if (error) {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    } else if ((data as any)?.needsCredentials) {
+      toast({
+        title: "Reconnect needed",
+        description: "Go to Trading Accounts to re-enter your password.",
+        variant: "destructive",
+      });
+      navigate("/accounts");
+    } else if ((data as any)?.success) {
+      toast({ title: "Connection verified" });
+    } else {
+      toast({
+        title: "Verification failed",
+        description: (data as any)?.error || "Try again shortly",
+        variant: "destructive",
+      });
+    }
+  };
+
   useEffect(() => {
     if (user) loadData();
   }, [user, mentorId]);
