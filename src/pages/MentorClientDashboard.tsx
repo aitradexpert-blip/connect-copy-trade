@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu, ShieldCheck } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { LotSizeInput } from "@/components/ui/lot-size-input";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -88,6 +88,38 @@ export default function MentorClientDashboard() {
       await install();
     } else {
       setShowInstallGuide(true);
+    }
+  };
+
+  const handleVerifyConnection = async () => {
+    const vpsAccount = accounts.find(
+      (a: any) => a.provider === 'vps' || a.connection_type === 'vps' || a.mt5_password
+    );
+    if (!vpsAccount) {
+      toast({ title: "No trading account found", description: "Connect a trading account first." });
+      return;
+    }
+    toast({ title: "Verifying connection..." });
+    const { data, error } = await supabase.functions.invoke('verify-vps-connection', {
+      body: { account_id: vpsAccount.id },
+    });
+    if (error) {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    } else if ((data as any)?.needsCredentials) {
+      toast({
+        title: "Reconnect needed",
+        description: "Go to Trading Accounts to re-enter your password.",
+        variant: "destructive",
+      });
+      navigate("/accounts");
+    } else if ((data as any)?.success) {
+      toast({ title: "Connection verified" });
+    } else {
+      toast({
+        title: "Verification failed",
+        description: (data as any)?.error || "Try again shortly",
+        variant: "destructive",
+      });
     }
   };
 
@@ -307,6 +339,9 @@ if (result.success) {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate("/subscription")}>
                 <Wallet className="w-4 h-4 mr-2" /> Subscription
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleVerifyConnection}>
+                <ShieldCheck className="w-4 h-4 mr-2" /> Verify Trading Connection
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleInstallApp}>
                 <Download className="w-4 h-4 mr-2" /> Install App

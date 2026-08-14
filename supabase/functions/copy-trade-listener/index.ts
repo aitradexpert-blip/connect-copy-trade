@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify(body),
         });
         const json = await res.json().catch(() => null);
-        return { ok: res.ok, status: res.status, json, error: null as string | null };
+        return { ok: res.ok, status: res.status, json, error: null as string | null, timedOut: false, unreachable: false };
       } catch (err: any) {
         const aborted = err?.name === 'AbortError' || String(err?.message || '').includes('aborted');
         return {
@@ -178,6 +178,8 @@ Deno.serve(async (req) => {
           error: aborted
             ? `${label} timed out after ${ms / 1000}s — the trading bridge did not respond`
             : `${label} unreachable: ${err?.message || String(err)}`,
+          timedOut: aborted,
+          unreachable: !aborted,
         };
       } finally {
         clearTimeout(timer);
@@ -214,7 +216,7 @@ Deno.serve(async (req) => {
         password: account.mt5_password,
         server: account.server,
         account_id: account.id,
-      }, 20000, 'VPS /connect');
+      }, 8000, 'VPS /connect');
       if (res.json?.success) {
         vpsSessions.set(account.id, true);
         return { ok: true };
@@ -267,16 +269,20 @@ Deno.serve(async (req) => {
             comment: `Copy from ${relationship.master_account?.name || 'master'}`,
           };
 
-          // 25s window + one retry: MT5 order_send through the bridge can be
-          // slow on first touch, which is what produced "signal has been aborted".
-          let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 25000, 'VPS /order');
-          if (!orderRes.json?.success) {
+          // Fail fast: 8s window, and retry ONLY on a genuinely transient
+          // network/5xx condition. A timeout or a broker-level rejection
+          // returns immediately — retrying either one just holds the single
+          // shared MT5 terminal lock and starves other publishes.
+          let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 8000, 'VPS /order');
+          const transient = !orderRes.json?.success && !orderRes.timedOut &&
+            (orderRes.unreachable || orderRes.status >= 500);
+          if (transient) {
             const firstMsg = orderRes.error || orderRes.json?.error || `VPS HTTP ${orderRes.status}`;
-            console.warn(`[fan-out] VPS attempt 1 failed for ${relationship.follower_user_id}: ${firstMsg} — retrying`);
+            console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
             vpsSessions.delete(follower.id);
             const re = await ensureVpsSession(follower);
-            if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 25000, 'VPS /order (retry)');
-            else orderRes = { ok: false, status: 0, json: null, error: re.error! };
+            if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 8000, 'VPS /order (retry)');
+            else orderRes = { ok: false, status: 0, json: null, error: re.error!, timedOut: false, unreachable: false };
           }
 
           if (orderRes.json?.success) {
