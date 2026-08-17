@@ -199,6 +199,7 @@ export default function MentorHub() {
           .from('trading_signals')
           .select('id,symbol,direction,lot_size,stop_loss,take_profit,comment,created_at,status')
           .eq('mentor_id', profileData.id)
+          .neq('status', 'removed')
           .order('created_at', { ascending: false })
           .limit(20);
         setSignals((sigData || []) as Signal[]);
@@ -237,6 +238,21 @@ export default function MentorHub() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Soft-delete: mentors have UPDATE (not DELETE) rights on trading_signals,
+  // so removing an idea marks it 'removed' and filters it out of the list.
+  const removeSignal = async (signalId: string) => {
+    const { error } = await supabase
+      .from('trading_signals')
+      .update({ status: 'removed' })
+      .eq('id', signalId);
+    if (error) {
+      toast({ title: 'Could not remove idea', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setSignals(prev => prev.filter(s => s.id !== signalId));
+    toast({ title: 'Idea removed', description: 'It no longer appears to your clients.' });
   };
 
   const publishSignal = async () => {
@@ -800,7 +816,18 @@ export default function MentorHub() {
                           {sig.take_profit && <p>TP: {sig.take_profit}</p>}
                           {sig.comment && <p className="italic">{sig.comment}</p>}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-2">{new Date(sig.created_at).toLocaleString()}</div>
+                        <div className="flex items-center justify-between mt-2 gap-2">
+                          <span className="text-xs text-muted-foreground">{new Date(sig.created_at).toLocaleString()}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 text-destructive hover:text-destructive"
+                            onClick={() => removeSignal(sig.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Remove
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
