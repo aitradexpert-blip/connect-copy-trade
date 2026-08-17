@@ -70,6 +70,84 @@ const FOREX_SESSIONS: ForexSession[] = [
   }
 ];
 
+
+// ---------------------------------------------------------------------------
+// SL/TP normalization — AI text output cannot be trusted to produce broker-
+// valid stops. MT5 rejects orders with "Invalid stops" when SL/TP are missing,
+// on the wrong side of entry, or unrealistically tight. We repair them here so
+// generated ideas execute exactly like manually entered ones.
+// ---------------------------------------------------------------------------
+function toNum(v: unknown): number | null {
+  if (typeof v === "number" && isFinite(v)) return v;
+  const n = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, ""));
+  return isFinite(n) ? n : null;
+}
+
+/** Sensible default stop distance in PRICE units for a symbol. */
+function defaultStopDistance(symbol: string, price: number): number {
+  const s = symbol.toUpperCase();
+  if (s.includes("XAU") || s.includes("GOLD")) return 5;
+  if (s.includes("XAG") || s.includes("SILVER")) return 0.3;
+  if (s.includes("BTC") || s.includes("ETH")) return price * 0.01;
+  if (/(^|[^A-Z])(US30|NAS100|SPX500|GER40|UK100|JP225)/.test(s)) return price * 0.004;
+  if (s.includes("VOLATILITY") || s.includes("BOOM") || s.includes("CRASH") || s.includes("STEP")) return price * 0.005;
+  if (s.endsWith("JPY") || s.includes("JPY")) return 0.3;
+  return 0.003; // ~30 pips on a 5-digit forex pair
+}
+
+function decimalsFor(symbol: string, price: number): number {
+  const s = symbol.toUpperCase();
+  if (s.includes("JPY")) return 3;
+  if (s.includes("XAU") || s.includes("GOLD")) return 2;
+  if (price > 1000) return 2;
+  if (price > 100) return 3;
+  return 5;
+}
+
+export interface NormalizedLevels {
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+}
+
+/**
+ * Returns broker-valid entry/SL/TP. `entry` falls back to the live price.
+ * SL is always on the losing side, TP on the winning side, both at least a
+ * fraction of, and at most 5x, a sane default distance for the symbol.
+ */
+export function normalizeLevels(
+  symbol: string,
+  direction: "BUY" | "SELL",
+  rawEntry: unknown,
+  rawSl: unknown,
+  rawTp: unknown,
+  livePrice?: number | null,
+): NormalizedLevels {
+  const entry = toNum(rawEntry) ?? (livePrice && livePrice > 0 ? livePrice : null);
+  if (!entry || entry <= 0) return { entry: null, stopLoss: null, takeProfit: null };
+
+  const dist = defaultStopDistance(symbol, entry);
+  const dp = decimalsFor(symbol, entry);
+  const round = (n: number) => Number(n.toFixed(dp));
+  const isBuy = direction === "BUY";
+
+  let sl = toNum(rawSl);
+  let tp = toNum(rawTp);
+
+  const slDist = sl === null ? null : isBuy ? entry - sl : sl - entry;
+  if (slDist === null || slDist <= 0 || slDist < dist * 0.2 || slDist > dist * 5) {
+    sl = isBuy ? entry - dist : entry + dist;
+  }
+  const finalSlDist = Math.abs(entry - (sl as number));
+
+  const tpDist = tp === null ? null : isBuy ? tp - entry : entry - tp;
+  if (tpDist === null || tpDist <= 0 || tpDist < finalSlDist * 0.5 || tpDist > finalSlDist * 10) {
+    tp = isBuy ? entry + finalSlDist * 2 : entry - finalSlDist * 2;
+  }
+
+  return { entry: round(entry), stopLoss: round(sl as number), takeProfit: round(tp as number) };
+}
+
 function getCurrentUTCHour(): number {
   return new Date().getUTCHours();
 }
@@ -204,9 +282,10 @@ export function KhumoForexSessions({
       // Pull live price for the most relevant pair to ground the AI in real market data
       const primaryPair = relevantPairs[0] || "EURUSD";
       let livePriceContext = "";
+      const livePriceMap: Record<string, number> = {};
       try {
         const { getLivePrice } = await import("@/services/priceFeed");
-        const livePrices: Record<string, number> = {};
+        const livePrices: Record<string, number> = livePriceMap;
         // Limit to 3 to keep it fast
         for (const sym of relevantPairs.slice(0, 3)) {
           const p = await getLivePrice(sym);
@@ -263,12 +342,23 @@ Format your response EXACTLY like this JSON (no markdown, just pure JSON):
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[0]);
+          const symbol = parsed.symbol?.toUpperCase() || "EURUSD";
+          const direction: "BUY" | "SELL" = parsed.direction?.toUpperCase() === "SELL" ? "SELL" : "BUY";
+          // Repair AI levels so the idea is executable (no "N/A", no invalid stops).
+          const levels = normalizeLevels(
+            symbol,
+            direction,
+            parsed.entry,
+            parsed.stopLoss,
+            parsed.takeProfit,
+            livePriceMap[symbol] ?? null,
+          );
           const newSuggestion: TradeSuggestion = {
-            symbol: parsed.symbol?.toUpperCase() || "EURUSD",
-            direction: parsed.direction?.toUpperCase() === "SELL" ? "SELL" : "BUY",
-            entry: parsed.entry || "Market",
-            stopLoss: parsed.stopLoss || "N/A",
-            takeProfit: parsed.takeProfit || "N/A",
+            symbol,
+            direction,
+            entry: levels.entry !== null ? String(levels.entry) : "",
+            stopLoss: levels.stopLoss !== null ? String(levels.stopLoss) : "",
+            takeProfit: levels.takeProfit !== null ? String(levels.takeProfit) : "",
             analysis: parsed.analysis || "No analysis provided.",
             session: active.map(s => s.name).join(" + ") || "Off-hours",
             confidence: parsed.confidence || "Medium",
