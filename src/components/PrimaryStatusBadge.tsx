@@ -2,39 +2,19 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { subscribeEngineStatus, getLastEngineRoute, type EngineRoute } from "@/services/engineStatus";
+import { primaryApi } from "@/services/primaryApi";
 
 type Status = "online" | "fallback" | "reconnecting" | "offline" | "disabled";
 
-const BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 const POLL_MS = 30_000;
-const TIMEOUT_MS = 5_000;
 // If a real trading call routed through fallback within this window, trust that
 // over the health ping — it reflects what production traffic actually did.
 const ROUTE_FRESH_MS = 60_000;
 
-async function ping(): Promise<boolean> {
-  if (!BASE) return false;
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-  try {
-    // Prefer FastAPI /health; fall back to /account?id=health sentinel for older VPS builds.
-    let resp = await fetch(`${BASE}/health`, {
-      signal: ctl.signal,
-      headers: { "ngrok-skip-browser-warning": "true" },
-    });
-    if (resp.status === 404) {
-      resp = await fetch(`${BASE}/account?id=health`, {
-        signal: ctl.signal,
-        headers: { "ngrok-skip-browser-warning": "true" },
-      });
-    }
-    return resp.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(t);
-  }
-}
+// Health is probed through the vps-proxy edge function — the exact same path
+// production trading traffic uses — so the badge can never claim "offline"
+// just because a browser env var is missing.
+const ping = () => primaryApi.health();
 
 export function PrimaryStatusBadge() {
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
@@ -44,7 +24,6 @@ export function PrimaryStatusBadge() {
 
   // Subscribe to the TRUE routing of live trading calls.
   useEffect(() => {
-    if (!BASE) return;
     return subscribeEngineStatus((r, at) => {
       setRoute(r);
       setRouteAt(at);
@@ -53,7 +32,6 @@ export function PrimaryStatusBadge() {
 
   // Background health probe of the primary engine.
   useEffect(() => {
-    if (!BASE) return;
     let alive = true;
     const tick = async () => {
       const ok = await ping();
@@ -68,8 +46,6 @@ export function PrimaryStatusBadge() {
       clearInterval(i);
     };
   }, []);
-
-  if (!BASE) return null;
 
   // Derive a single status. Real traffic routing (when fresh) wins over the ping.
   let status: Status;
