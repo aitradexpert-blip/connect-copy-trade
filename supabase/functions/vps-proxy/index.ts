@@ -7,6 +7,7 @@ const corsHeaders = {
 
 // Which VPS routes the browser is allowed to reach, and how each is called.
 const ROUTES: Record<string, { method: 'GET' | 'POST'; ownerField?: string }> = {
+  health: { method: 'GET' },
   connect: { method: 'POST', ownerField: 'account_id' },
   account: { method: 'GET', ownerField: 'account_id' },
   positions: { method: 'GET', ownerField: 'account_id' },
