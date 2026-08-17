@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, User, Settings, Download, LogOut, Smartphone, Menu, Sparkles, Crown, Users, Link, CheckCircle, Wallet } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, User, Settings, Download, LogOut, Smartphone, Menu, Sparkles, Crown, Users, Link, CheckCircle, Wallet, Trash2 } from "lucide-react";
 import { ConnectAccountModal } from "@/components/ConnectAccountModal";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import WelcomeModal from "@/components/WelcomeModal";
