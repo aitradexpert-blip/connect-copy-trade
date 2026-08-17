@@ -99,9 +99,17 @@ Deno.serve(async (req) => {
       body: route.method === 'POST' ? JSON.stringify(body) : undefined,
     });
 
-    const vpsData = await vpsRes.json().catch(() => null);
+    const rawText = await vpsRes.text().catch(() => '');
+    let vpsData: unknown = null;
+    try { vpsData = rawText ? JSON.parse(rawText) : null; } catch { vpsData = null; }
+    if (vpsData === null) {
+      // Non-JSON body (e.g. a plain "ok" from /health, or an ngrok HTML page)
+      vpsData = vpsRes.ok
+        ? { success: true, status: vpsRes.status }
+        : { success: false, error: `VPS returned ${vpsRes.status}${rawText ? `: ${rawText.slice(0, 200)}` : ''}` };
+    }
     return new Response(JSON.stringify(vpsData), {
-      status: vpsRes.status,
+      status: vpsRes.ok ? 200 : vpsRes.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e: any) {
