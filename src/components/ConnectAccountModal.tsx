@@ -136,30 +136,15 @@ export function ConnectAccountModal({
   };
 
   const testVpsConnection = async () => {
-    const base = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-    if (!base) {
-      toast({ title: "VPS not configured", description: "VITE_API_URL is empty.", variant: "destructive" });
-      return;
-    }
     const started = performance.now();
-    try {
-      const res = await fetch(`${base}/health`, {
-        headers: { Accept: "application/json", "ngrok-skip-browser-warning": "true" },
-      });
-      const ms = Math.round(performance.now() - started);
-      if (res.ok) {
-        toast({ title: "VPS online", description: `/health responded in ${ms}ms` });
-      } else {
-        toast({
-          title: `VPS returned ${res.status}`,
-          description: "Check the FastAPI server and VPS_API_SECRET.",
-          variant: "destructive",
-        });
-      }
-    } catch (e: any) {
+    const ok = await primaryApi.health();
+    const ms = Math.round(performance.now() - started);
+    if (ok) {
+      toast({ title: "Trading bridge online", description: `Health check responded in ${ms}ms` });
+    } else {
       toast({
-        title: "VPS unreachable",
-        description: e?.message || "Could not connect to the VPS bridge.",
+        title: "Trading bridge unreachable",
+        description: "The VPS bridge did not answer. Check the FastAPI server, VPS_API_URL and VPS_API_SECRET.",
         variant: "destructive",
       });
     }
@@ -179,6 +164,10 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
   }
 
   setIsLoading(true);
+
+  // Captures the REAL reason the primary VPS leg failed so the final error
+  // never lies to the user with a generic "capacity exhausted" message.
+  let vpsReason = "";
 
   // ---------------------------------------------------------
   // STEP 1: Try VPS Backend
@@ -264,10 +253,12 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
       // delete the placeholder row so it does not count against quota on retry
       await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
       newAccount = null;
-      console.warn("VPS broker rejected credentials, falling back to MetaAPI:", vpsJson?.error);
+      vpsReason = String(vpsJson?.error || vpsData?.error || "The broker rejected these credentials.");
+      console.warn("VPS broker rejected credentials, falling back to MetaAPI:", vpsReason);
 
     } catch (vpsNetworkError: any) {
-      console.error('[VPS] Network error, cleaning up:', vpsNetworkError?.message);
+      vpsReason = String(vpsNetworkError?.message || "Trading bridge unreachable.");
+      console.error('[VPS] Network error, cleaning up:', vpsReason);
       // Clean up ghost row so quota is not consumed on retry
       if (newAccount?.id) {
         const { error: cleanupErr } = await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
@@ -363,11 +354,14 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           }
           await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
         } catch (e) {
+          vpsReason = String((e as any)?.message || vpsReason || "VPS bridge failed.");
           console.error('[VPS fallback] failed:', e);
         }
         toast({
           title: "Both trading engines unavailable",
-          description: "Our Trading Bridge is temporarily at capacity and the VPS bridge failed too. Please try again shortly.",
+          description: vpsReason
+            ? `Backup bridge is at capacity, and the direct trading bridge said: ${vpsReason}`
+            : "Both the direct trading bridge and the backup bridge are unavailable right now. Please try again shortly.",
           variant: "destructive",
         });
         setIsLoading(false);
