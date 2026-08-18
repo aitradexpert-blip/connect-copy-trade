@@ -16,6 +16,9 @@ import { executeOnAccount, TradingAccount as BrokerAccount, TradeSignal } from "
 import { useFreeTierGuard, FreeTierBanner } from "@/components/FreeTierGuard";
 import { useSubscription } from "@/hooks/useSubscription";
 import { Lock } from "lucide-react";
+import KhumoForexSessions from "@/components/KhumoForexSessions";
+import { broadcastSignal } from "@/services/signalBroadcast";
+import { runCopyFanOut, describeFanOut } from "@/services/publishFanOut";
 
 interface Signal {
   id: string;
