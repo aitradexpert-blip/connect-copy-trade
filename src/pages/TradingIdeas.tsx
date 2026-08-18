@@ -53,6 +53,7 @@ export default function TradingIdeas() {
   const [riskPercent, setRiskPercent] = useState<number>(2);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
+  const [mentorProfileId, setMentorProfileId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const { isFree } = useSubscription();
