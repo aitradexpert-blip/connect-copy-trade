@@ -103,36 +103,45 @@ export default function TradingIdeas() {
     return 'Very High';
   };
 
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+
+    try {
+      // Load signals
+      const { data: signalsData, error: signalsError } = await supabase
+        .from('trading_signals')
+        .select('id,symbol,direction,lot_size,stop_loss,take_profit,comment,created_at')
+        .order('created_at', { ascending: false });
+
+      if (signalsError) throw signalsError;
+      setSignals((signalsData || []) as Signal[]);
+
+      // Load user's trading accounts with provider info
+      const { data: accountsData, error: accountsError } = await supabase
+        .from('trading_accounts')
+        .select('id,name,balance,metaapi_account_id,provider,deriv_token,deriv_currency,is_virtual,login,connection_type')
+        .eq('user_id', user.id);
+
+      if (accountsError) throw accountsError;
+      setAccounts(accountsData || []);
+
+      // Is this user a mentor? Only mentors may publish generated ideas.
+      const { data: mentor } = await supabase
+        .from('mentor_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setMentorProfileId(mentor?.id || null);
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: 'Failed to load data', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [user, toast]);
+
   useEffect(() => {
-    const load = async () => {
-      if (!user) return;
-      setLoading(true);
-
-      try {
-        // Load signals
-        const { data: signalsData, error: signalsError } = await supabase
-          .from('trading_signals')
-          .select('id,symbol,direction,lot_size,stop_loss,take_profit,comment,created_at')
-          .order('created_at', { ascending: false });
-
-        if (signalsError) throw signalsError;
-        setSignals((signalsData || []) as Signal[]);
-
-        // Load user's trading accounts with provider info
-        const { data: accountsData, error: accountsError } = await supabase
-          .from('trading_accounts')
-          .select('id,name,balance,metaapi_account_id,provider,deriv_token,deriv_currency,is_virtual,login,connection_type')
-          .eq('user_id', user.id);
-
-        if (accountsError) throw accountsError;
-        setAccounts(accountsData || []);
-      } catch (error: any) {
-        console.error(error);
-        toast({ title: 'Failed to load data', description: error.message, variant: 'destructive' });
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
 
     // Realtime: show new signals the moment a mentor publishes
@@ -146,7 +155,55 @@ export default function TradingIdeas() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, toast]);
+  }, [load]);
+
+  // Publish a Khumo-generated idea, reusing the exact MentorHub flow.
+  const publishSuggestion = async (
+    suggestion: { symbol: string; direction: 'BUY' | 'SELL'; stopLoss: string; takeProfit: string; analysis: string },
+    commentPrefix = '',
+  ) => {
+    if (!mentorProfileId) {
+      toast({
+        title: 'Mentor account required',
+        description: 'Only mentor accounts can publish generated ideas to followers.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      const sl = parseFloat(suggestion.stopLoss) || null;
+      const tp = parseFloat(suggestion.takeProfit) || null;
+      const comment = commentPrefix ? `${commentPrefix}${suggestion.analysis}` : suggestion.analysis;
+      const { data: sig, error } = await supabase.from('trading_signals').insert({
+        symbol: suggestion.symbol,
+        direction: suggestion.direction,
+        lot_size: 0.01,
+        stop_loss: sl,
+        take_profit: tp,
+        comment,
+        mentor_id: mentorProfileId,
+        status: 'active',
+        auto_to_ai_bot: true,
+        auto_to_copyfactory: true,
+      }).select('id').single();
+      if (error) throw error;
+
+      let broadcast: any = null;
+      if (sig) {
+        broadcast = await broadcastSignal(
+          { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment, mentor_id: mentorProfileId },
+          { toAiBot: true, toCopyFactory: true },
+        );
+      }
+      const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;
+      const report = describeFanOut(fanOut, broadcast);
+      toast({ title: report.title, description: report.description, variant: report.destructive ? 'destructive' : undefined });
+      load();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
 
   const requirePaid = useFreeTierGuard();
 
