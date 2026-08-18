@@ -349,6 +349,16 @@ export default function TradingIdeas() {
           </Card>
         )}
 
+        {/* Generate Idea — Khumo AI forex session intelligence */}
+        <KhumoForexSessions
+          mentorId={mentorProfileId || undefined}
+          onPublishIdea={(suggestion) => publishSuggestion(suggestion)}
+          onCopyTrade={(suggestion) => publishSuggestion(suggestion, 'Copy Trade: ')}
+          onAddToBot={(suggestion) => publishSuggestion(suggestion, 'AI Bot: ')}
+        />
+
+
+
         {signals.length === 0 && !loading && (
           <div className="text-center text-muted-foreground py-16">
             No active ideas at the moment. Check back later.
