@@ -131,7 +131,7 @@ export const primaryApi = {
   getPositions: (accountId: string) => callProxy("positions", { account_id: accountId }),
   getHistory: (accountId: string, from?: string, to?: string) =>
     callProxy("history", { account_id: accountId, from, to }),
-  sendOrder: (payload: Record<string, unknown>) => callProxy("order", payload),
+  sendOrder: (payload: Record<string, unknown>) => sendOrderWithRebind(payload),
   copyTrade: (payload: { master_account_id: string; symbol: string; volume: number; order_type?: string; sl?: number; tp?: number }) =>
     callProxy("copy-trade", payload),
 };
