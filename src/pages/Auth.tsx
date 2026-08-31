@@ -25,7 +25,7 @@ import HeroBull from "@/components/landing/HeroBull";
 import FeatureCard from "@/components/landing/FeatureCard";
 import LandingNav from "@/components/landing/LandingNav";
 
-
+const TELEGRAM_DOWNLOAD_URL = "https://whatsform.com/cjSuXT";
 const WHATSAPP_DOWNLOAD_URL = "https://whatsform.com/cjSuXT";
 
 
