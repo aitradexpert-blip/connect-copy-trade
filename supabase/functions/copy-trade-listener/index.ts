@@ -204,6 +204,16 @@ Deno.serve(async (req) => {
       console.log(`[fan-out] VPS bridge online=${vpsOnline}`);
     }
 
+    // The shared MetaTrader terminal exposes only the symbol list of whichever
+    // login it is currently bound to. When it is bound elsewhere (or to a
+    // broken login), orders come back as "symbol not available" even though the
+    // symbol is tradable on the follower's own broker. That is a SESSION fault,
+    // not a broker rejection — re-bind and retry once.
+    const SESSION_ERROR_RE =
+      /symbol\s+(is\s+)?not\s+(available|found|visible)|symbol\s+not\s+exist|invalid\s+symbol|unknown\s+symbol|no\s+such\s+symbol|not\s+logged\s+in|no\s+active\s+session|terminal\s+not\s+(connected|initialized)/i;
+    const INVALID_CREDS_RE =
+      /invalid\s+(account|credentials|password|login)|authorization\s+failed|auth\s+failed|wrong\s+password|login\s+failed|account\s+disabled/i;
+
     // One terminal session per account per invocation.
     const vpsSessions = new Map<string, boolean>();
     async function ensureVpsSession(account: any): Promise<{ ok: boolean; error?: string }> {
@@ -221,7 +231,20 @@ Deno.serve(async (req) => {
         vpsSessions.set(account.id, true);
         return { ok: true };
       }
-      return { ok: false, error: res.error || res.json?.error || `VPS /connect HTTP ${res.status}` };
+      const err = res.error || res.json?.error || `VPS /connect HTTP ${res.status}`;
+      // A bad login poisons the shared terminal for everybody. Park the account
+      // in a status excluded from fan-out until its password is fixed in-app.
+      if (INVALID_CREDS_RE.test(String(err))) {
+        try {
+          await supabase.from('trading_accounts')
+            .update({ connection_status: 'invalid_credentials', metaapi_last_error: String(err).slice(0, 500) } as any)
+            .eq('id', account.id);
+        } catch (e) {
+          console.error('Failed to flag invalid credentials:', e);
+        }
+        return { ok: false, error: `Broker rejected the stored credentials for this account — update the password in Trading Accounts (${err})` };
+      }
+      return { ok: false, error: err };
     }
 
     const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
@@ -233,6 +256,17 @@ Deno.serve(async (req) => {
         const msg = 'Broken copy relationship: follower account or user is missing';
         console.error(`[fan-out] ${msg} (relationship ${relationship.id})`);
         return { follower_user_id: relationship.follower_user_id ?? null, success: false, via: 'none', error: msg };
+      }
+
+      // Skip accounts parked as unusable — a bad login would otherwise re-bind
+      // (and poison) the shared terminal for every other follower.
+      if (['invalid_credentials', 'pending_vps', 'needs_reconnect'].includes(String(follower.connection_status || ''))) {
+        const msg = follower.connection_status === 'invalid_credentials'
+          ? 'Skipped: stored broker credentials are invalid — update the password in Trading Accounts'
+          : `Skipped: account is not connected (${follower.connection_status})`;
+        console.warn(`[fan-out] ${msg} (account ${follower.id})`);
+        await auditFailure(relationship, msg, 'skipped');
+        return { follower_user_id: relationship.follower_user_id, success: false, via: 'skipped', error: msg };
       }
 
       const masterBalance = relationship.master_account?.balance || 10000;
@@ -274,10 +308,15 @@ Deno.serve(async (req) => {
           // returns immediately — retrying either one just holds the single
           // shared MT5 terminal lock and starves other publishes.
           let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 8000, 'VPS /order');
+          const firstError = orderRes.error || orderRes.json?.error || '';
+          // Additional (not replacement) retry condition: a session fault —
+          // "symbol not available" and friends mean the terminal is bound to
+          // another login, so re-bind this follower and retry once.
+          const sessionFault = !orderRes.json?.success && SESSION_ERROR_RE.test(String(firstError));
           const transient = !orderRes.json?.success && !orderRes.timedOut &&
             (orderRes.unreachable || orderRes.status >= 500);
-          if (transient) {
-            const firstMsg = orderRes.error || orderRes.json?.error || `VPS HTTP ${orderRes.status}`;
+          if (transient || sessionFault) {
+            const firstMsg = firstError || `VPS HTTP ${orderRes.status}`;
             console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
             vpsSessions.delete(follower.id);
             const re = await ensureVpsSession(follower);

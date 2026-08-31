@@ -61,6 +61,54 @@ async function callProxy<T = any>(path: string, body: Record<string, unknown>): 
   return data as T;
 }
 
+/**
+ * The VPS runs ONE MetaTrader terminal session at a time. When the terminal is
+ * bound to a different (or broken) login, the symbol list it exposes belongs to
+ * that other session, so orders come back as "symbol not available" even though
+ * the symbol is perfectly tradable on the caller's own broker. That is a
+ * SESSION problem, not a broker rejection — so we re-bind the terminal to this
+ * account and retry once before reporting a failure.
+ */
+const SESSION_ERROR_RE =
+  /symbol\s+(is\s+)?not\s+(available|found|visible)|symbol\s+not\s+exist|invalid\s+symbol|unknown\s+symbol|no\s+such\s+symbol|not\s+logged\s+in|no\s+active\s+session|terminal\s+not\s+(connected|initialized)/i;
+
+export function isSessionError(message: unknown): boolean {
+  return SESSION_ERROR_RE.test(String(message ?? ""));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Re-bind the shared terminal to the given account using the credentials that
+ * live server-side (verify-vps-connection performs the /connect and validates
+ * that the caller owns the account — the browser never sees the password).
+ */
+async function rebindSession(accountId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.functions.invoke("verify-vps-connection", {
+      body: { account_id: accountId },
+    });
+    if (error) return false;
+    return !!data?.success;
+  } catch {
+    return false;
+  }
+}
+
+async function sendOrderWithRebind(payload: Record<string, unknown>): Promise<any> {
+  const res: any = await callProxy("order", payload);
+  const errMsg = res?.success === false ? res?.error : res?.error;
+  if (!isSessionError(errMsg)) return res;
+
+  const accountId = String(payload.account_id ?? payload.accountId ?? "");
+  if (!UUID_RE.test(accountId)) return res;
+
+  console.warn(`[primaryApi] Session error on /order ("${errMsg}") — re-binding terminal and retrying once`);
+  const rebound = await rebindSession(accountId);
+  if (!rebound) return res;
+  return await callProxy("order", payload);
+}
+
 export const primaryApi = {
   configured: isPrimaryConfigured,
 
@@ -83,7 +131,7 @@ export const primaryApi = {
   getPositions: (accountId: string) => callProxy("positions", { account_id: accountId }),
   getHistory: (accountId: string, from?: string, to?: string) =>
     callProxy("history", { account_id: accountId, from, to }),
-  sendOrder: (payload: Record<string, unknown>) => callProxy("order", payload),
+  sendOrder: (payload: Record<string, unknown>) => sendOrderWithRebind(payload),
   copyTrade: (payload: { master_account_id: string; symbol: string; volume: number; order_type?: string; sl?: number; tp?: number }) =>
     callProxy("copy-trade", payload),
 };
