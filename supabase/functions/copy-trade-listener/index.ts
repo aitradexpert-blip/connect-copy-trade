@@ -258,6 +258,17 @@ Deno.serve(async (req) => {
         return { follower_user_id: relationship.follower_user_id ?? null, success: false, via: 'none', error: msg };
       }
 
+      // Skip accounts parked as unusable — a bad login would otherwise re-bind
+      // (and poison) the shared terminal for every other follower.
+      if (['invalid_credentials', 'pending_vps', 'needs_reconnect'].includes(String(follower.connection_status || ''))) {
+        const msg = follower.connection_status === 'invalid_credentials'
+          ? 'Skipped: stored broker credentials are invalid — update the password in Trading Accounts'
+          : `Skipped: account is not connected (${follower.connection_status})`;
+        console.warn(`[fan-out] ${msg} (account ${follower.id})`);
+        await auditFailure(relationship, msg, 'skipped');
+        return { follower_user_id: relationship.follower_user_id, success: false, via: 'skipped', error: msg };
+      }
+
       const masterBalance = relationship.master_account?.balance || 10000;
       const followerBalance = follower.balance || 10000;
       const balanceRatio = followerBalance / masterBalance;
