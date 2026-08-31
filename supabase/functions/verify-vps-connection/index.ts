@@ -68,11 +68,21 @@ Deno.serve(async (req) => {
 
     const vpsData = await vpsRes.json().catch(() => null);
 
+    const INVALID_CREDS_RE =
+      /invalid\s+(account|credentials|password|login)|authorization\s+failed|auth\s+failed|wrong\s+password|login\s+failed|account\s+disabled/i;
+
     if (vpsData?.success) {
       await serviceClient.from('trading_accounts').update({
         connection_status: 'connected',
         balance: vpsData.data?.balance ?? 0,
         equity: vpsData.data?.equity ?? 0,
+      }).eq('id', account_id);
+    } else if (INVALID_CREDS_RE.test(String(vpsData?.error || ''))) {
+      // Park the account so a bad login can never re-bind (and poison) the
+      // shared MetaTrader terminal during fan-out.
+      await serviceClient.from('trading_accounts').update({
+        connection_status: 'invalid_credentials',
+        metaapi_last_error: String(vpsData?.error).slice(0, 500),
       }).eq('id', account_id);
     }
 
