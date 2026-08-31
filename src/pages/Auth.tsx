@@ -28,6 +28,7 @@ import LandingNav from "@/components/landing/LandingNav";
 
 const WHATSAPP_DOWNLOAD_URL = "https://whatsform.com/cjSuXT";
 
+
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [downloadClicked, setDownloadClicked] = useState(false);
@@ -66,10 +67,10 @@ const Auth = () => {
     });
   };
 
-  const handleDownloadApp = () => {
+    const handleDownloadApp = () => {
     if (downloadClicked) return;
     setDownloadClicked(true);
-    window.open(TELEGRAM_DOWNLOAD_URL, "_blank", "noopener,noreferrer");
+    window.open(WHATSAPP_DOWNLOAD_URL, "_blank", "noopener,noreferrer");
     setTimeout(() => setDownloadClicked(false), 1500);
   };
 
