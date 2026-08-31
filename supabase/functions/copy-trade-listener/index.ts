@@ -204,6 +204,16 @@ Deno.serve(async (req) => {
       console.log(`[fan-out] VPS bridge online=${vpsOnline}`);
     }
 
+    // The shared MetaTrader terminal exposes only the symbol list of whichever
+    // login it is currently bound to. When it is bound elsewhere (or to a
+    // broken login), orders come back as "symbol not available" even though the
+    // symbol is tradable on the follower's own broker. That is a SESSION fault,
+    // not a broker rejection — re-bind and retry once.
+    const SESSION_ERROR_RE =
+      /symbol\s+(is\s+)?not\s+(available|found|visible)|symbol\s+not\s+exist|invalid\s+symbol|unknown\s+symbol|no\s+such\s+symbol|not\s+logged\s+in|no\s+active\s+session|terminal\s+not\s+(connected|initialized)/i;
+    const INVALID_CREDS_RE =
+      /invalid\s+(account|credentials|password|login)|authorization\s+failed|auth\s+failed|wrong\s+password|login\s+failed|account\s+disabled/i;
+
     // One terminal session per account per invocation.
     const vpsSessions = new Map<string, boolean>();
     async function ensureVpsSession(account: any): Promise<{ ok: boolean; error?: string }> {
@@ -221,7 +231,20 @@ Deno.serve(async (req) => {
         vpsSessions.set(account.id, true);
         return { ok: true };
       }
-      return { ok: false, error: res.error || res.json?.error || `VPS /connect HTTP ${res.status}` };
+      const err = res.error || res.json?.error || `VPS /connect HTTP ${res.status}`;
+      // A bad login poisons the shared terminal for everybody. Park the account
+      // in a status excluded from fan-out until its password is fixed in-app.
+      if (INVALID_CREDS_RE.test(String(err))) {
+        try {
+          await supabase.from('trading_accounts')
+            .update({ connection_status: 'invalid_credentials', metaapi_last_error: String(err).slice(0, 500) } as any)
+            .eq('id', account.id);
+        } catch (e) {
+          console.error('Failed to flag invalid credentials:', e);
+        }
+        return { ok: false, error: `Broker rejected the stored credentials for this account — update the password in Trading Accounts (${err})` };
+      }
+      return { ok: false, error: err };
     }
 
     const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
