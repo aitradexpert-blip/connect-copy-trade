@@ -308,10 +308,15 @@ Deno.serve(async (req) => {
           // returns immediately — retrying either one just holds the single
           // shared MT5 terminal lock and starves other publishes.
           let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 8000, 'VPS /order');
+          const firstError = orderRes.error || orderRes.json?.error || '';
+          // Additional (not replacement) retry condition: a session fault —
+          // "symbol not available" and friends mean the terminal is bound to
+          // another login, so re-bind this follower and retry once.
+          const sessionFault = !orderRes.json?.success && SESSION_ERROR_RE.test(String(firstError));
           const transient = !orderRes.json?.success && !orderRes.timedOut &&
             (orderRes.unreachable || orderRes.status >= 500);
-          if (transient) {
-            const firstMsg = orderRes.error || orderRes.json?.error || `VPS HTTP ${orderRes.status}`;
+          if (transient || sessionFault) {
+            const firstMsg = firstError || `VPS HTTP ${orderRes.status}`;
             console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
             vpsSessions.delete(follower.id);
             const re = await ensureVpsSession(follower);
