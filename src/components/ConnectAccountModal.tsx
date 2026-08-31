@@ -258,25 +258,31 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
 
     } catch (vpsNetworkError: any) {
       vpsReason = String(vpsNetworkError?.message || "Trading bridge unreachable.");
-      console.error('[VPS] Network error, cleaning up:', vpsReason);
-      // Clean up ghost row so quota is not consumed on retry
-      if (newAccount?.id) {
-        const { error: cleanupErr } = await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
-        if (cleanupErr) console.warn("Cleanup failed:", cleanupErr.message);
-        newAccount = null;
-      }
-      // If VPS had a network error (not credential rejection), show user a message
-      // and stop — do not silently fall through to MetaAPI
-      if (vpsNetworkError?.name === 'PrimaryUnavailableError' &&
-          vpsNetworkError?.message?.includes('timeout')) {
-        toast({
-          title: "VPS timeout",
-          description: "Our direct engine took too long to respond. Trying backup connection...",
-        });
-        // Allow fallthrough to MetaAPI for timeout only
-      } else if (vpsNetworkError?.name === 'PrimaryUnavailableError') {
-        // Network unreachable — fall through to MetaAPI silently
+      console.error('[VPS] Network error:', vpsReason);
+
+      // Bridge offline/timeout: RETAIN the account row together with its
+      // credentials so the user can retry the exact same connection later with
+      // "Verify Trading Connection" instead of re-typing everything. The row is
+      // parked in a status that fan-out and live queries ignore.
+      if (vpsNetworkError?.name === 'PrimaryUnavailableError') {
+        if (newAccount?.id) {
+          await supabase.from("trading_accounts").update({
+            mt5_password: formData.password,
+            connection_status: 'pending_vps',
+          }).eq("id", newAccount.id);
+          toast({
+            title: "Saved — bridge offline",
+            description: "Your account details were kept. Open Trading Accounts and tap \"Verify Trading Connection\" to retry once the bridge is back.",
+          });
+          setIsLoading(false);
+          return;
+        }
       } else {
+        // Clean up ghost row so quota is not consumed on retry
+        if (newAccount?.id) {
+          await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+          newAccount = null;
+        }
         // Unexpected error — stop entirely
         toast({
           title: "Connection error",
