@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
 import { notifyMakeNewSignal } from "@/lib/makeWebhook";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
-import { runCopyFanOut } from "@/services/publishFanOut";
+import { runCopyFanOut, formatErrorGroups, type FanOutErrorGroup } from "@/services/publishFanOut";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TelegramLeadsTab } from "@/components/admin/TelegramLeadsTab";
 import { PendingPaymentsTab } from "@/components/admin/PendingPaymentsTab";
