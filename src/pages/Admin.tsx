@@ -123,7 +123,7 @@ const Admin = () => {
       // Fan out to every mentor's copy-trading followers (not just AI bots)
       let totalCopied = 0;
       let totalFailed = 0;
-      const fanOutErrors: string[] = [];
+      const mergedGroups = new Map<string, FanOutErrorGroup>();
       if (newSignal) {
         const { data: masters } = await supabase
           .from('trading_accounts')
@@ -136,12 +136,21 @@ const Admin = () => {
         for (const s of summaries) {
           totalCopied += s.copied;
           totalFailed += s.failed;
-          if (s.firstError) fanOutErrors.push(s.firstError);
+          for (const g of s.errorGroups) {
+            const existing = mergedGroups.get(g.label);
+            if (existing) existing.count += g.count;
+            else mergedGroups.set(g.label, { ...g });
+          }
         }
-        console.log('[Admin] copy fan-out', { totalCopied, totalFailed, fanOutErrors });
+        console.log('[Admin] copy fan-out', {
+          totalCopied,
+          totalFailed,
+          errorGroups: Array.from(mergedGroups.values()),
+        });
       }
+      const groupsSorted = Array.from(mergedGroups.values()).sort((a, b) => b.count - a.count);
       const fanOutNote = newSignal
-        ? ` Copy fan-out: ${totalCopied} copied, ${totalFailed} failed${fanOutErrors.length ? ` — ${[...new Set(fanOutErrors)].slice(0, 2).join('; ')}` : ''}.`
+        ? ` Copy fan-out: ${totalCopied} copied, ${totalFailed} failed${groupsSorted.length ? ` — ${formatErrorGroups(groupsSorted)}` : ''}.`
         : '';
 
       // Auto-execute for AI bots if enabled
