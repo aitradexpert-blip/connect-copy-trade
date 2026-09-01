@@ -24,17 +24,23 @@ export interface FanOutSummary {
 /** Maps a raw follower error string to a short bucket label. */
 export function classifyFanOutError(raw: string): string {
   const e = (raw || "").toLowerCase();
-  if (/timed? ?out|timeout|abort|unreachable|network|econn|fetch failed|bridge/.test(e))
-    return "timed out";
+  // Only a genuine timeout wording counts as a timeout — never "aborted",
+  // "network" or the word "bridge" on its own, which appear in unrelated errors.
+  if (/timed out after|timed out|timeout/.test(e)) return "timed out";
+  if (/unreachable|econnrefused|econnreset|enotfound|fetch failed|dns/.test(e))
+    return "bridge unreachable";
   if (/invalid[_ -]?credential|password|auth failed|unauthor|login failed/.test(e))
     return "need a password update";
   if (/not deployed|deploying|redeploy|undeployed|provision/.test(e))
     return "still deploying";
+  if (/capacity|quota|rate limit|too many requests/.test(e))
+    return "bridge capacity exhausted";
   if (/symbol/.test(e)) return "symbol unavailable on broker";
   if (/no (linked |trading )?account|account not found|follower_user_id|orphan/.test(e))
     return "no linked account";
   return (raw || "unknown error").trim().slice(0, 140);
 }
+
 
 /** Tally every failed result into labelled buckets, largest first. */
 export function groupFanOutErrors(results: any[]): FanOutErrorGroup[] {
