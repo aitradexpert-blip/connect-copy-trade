@@ -53,6 +53,7 @@ const TradingAccounts = () => {
   const [searchParams] = useSearchParams();
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [credAccount, setCredAccount] = useState<TradingAccount | null>(null);
   const [credLogin, setCredLogin] = useState("");
   const [credPassword, setCredPassword] = useState("");
