@@ -96,6 +96,9 @@ const TradingAccounts = () => {
         deriv_currency: a.deriv_currency,
         is_virtual: a.is_virtual || false,
         metaapi_account_id: a.metaapi_account_id,
+        metaapi_health_status: (a as any).metaapi_health_status ?? null,
+        metaapi_last_error: (a as any).metaapi_last_error ?? null,
+        metaapi_health_checked_at: (a as any).metaapi_health_checked_at ?? null,
       }))
     );
   };
@@ -385,7 +388,7 @@ const handleVerifyConnection = async (account: TradingAccount) => {
                         </div>
                       </TableCell>
                       <TableCell>{getProviderBadge(account)}</TableCell>
-                      <TableCell>{getStatusBadge(account.connection_status)}</TableCell>
+                      <TableCell>{getStatusBadge(account)}</TableCell>
                       <TableCell>
                         {account.deriv_currency || '$'}{account.balance.toFixed(2)}
                       </TableCell>
