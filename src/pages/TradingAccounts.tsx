@@ -205,6 +205,35 @@ const TradingAccounts = () => {
     }
   };
 
+  // Ask the follow-up worker to finish (or diagnose) a stuck MetaAPI provisioning
+  const handleFinalizeAccount = async (account: TradingAccount) => {
+    setFinalizingId(account.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('metaapi-finalize-deployments', {
+        body: { tradingAccountId: account.id },
+      });
+      if (error) throw error;
+      const r = data?.results?.[0];
+      const outcome = r?.outcome as string | undefined;
+      if (outcome === 'healthy') {
+        toast({ title: 'Account is ready', description: `${account.name} is deployed and connected.` });
+      } else if (outcome === 'deploying') {
+        toast({ title: 'Still finishing setup', description: r?.detail || 'The broker terminal is still starting up. We keep retrying every few minutes.' });
+      } else {
+        toast({
+          title: 'Setup could not complete',
+          description: r?.detail || r?.outcome || 'No response from the trading bridge.',
+          variant: 'destructive',
+        });
+      }
+      await loadAccounts();
+    } catch (err: any) {
+      toast({ title: 'Check failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setFinalizingId(null);
+    }
+  };
+
 const handleVerifyConnection = async (account: TradingAccount) => {
     setVerifyingId(account.id);
     try {
