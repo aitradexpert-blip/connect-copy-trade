@@ -428,6 +428,19 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
         .eq('login', normalizedLogin)
         .maybeSingle();
 
+      // Record the REAL provisioning outcome so a half-deployed account is
+      // visible and can be finished by the metaapi-finalize-deployments worker
+      // instead of silently pretending to be connected.
+      const isDeployed = data2.state === 'DEPLOYED';
+      const provisionState = {
+        connection_status: isDeployed ? 'connected' : 'provisioning',
+        metaapi_health_status: isDeployed ? 'healthy' : 'deploying',
+        metaapi_last_error: isDeployed
+          ? null
+          : `Broker terminal is still starting up (state=${data2.state || 'CREATED'}).`,
+        metaapi_health_checked_at: new Date().toISOString(),
+      };
+
       if (existingAcc?.id) {
         await supabase.from('trading_accounts').update({
           provider: 'metaapi',
@@ -436,11 +449,13 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
           server: formData.server,
           platform: formData.platform,
-          connection_status: data2.state === 'DEPLOYED' ? 'connected' : 'provisioning',
+          ...provisionState,
         }).eq('id', existingAcc.id);
         toast({
-          title: "Account connected!",
-          description: `${formData.name || formData.login} has been connected successfully.`,
+          title: isDeployed ? "Account connected!" : "Account added — finishing setup",
+          description: isDeployed
+            ? `${formData.name || formData.login} has been connected successfully.`
+            : "The broker terminal is still starting up. We'll finish setup in the background — check Trading Accounts in a few minutes.",
         });
         resetAndClose();
         setIsLoading(false);
@@ -458,14 +473,16 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           server: formData.server,
           platform: formData.platform,
           connection_type: 'metaapi',
-          connection_status: data2.state === 'DEPLOYED' ? 'connected' : 'provisioning',
           balance: 0,
           equity: 0,
+          ...provisionState,
         }]);
       if (insertError) throw insertError;
       toast({
-        title: "Account connected!",
-        description: `${formData.name || formData.login} has been connected successfully.`,
+        title: isDeployed ? "Account connected!" : "Account added — finishing setup",
+        description: isDeployed
+          ? `${formData.name || formData.login} has been connected successfully.`
+          : "The broker terminal is still starting up. We'll finish setup in the background — check Trading Accounts in a few minutes.",
       });
       resetAndClose();
     } catch (error: any) {
