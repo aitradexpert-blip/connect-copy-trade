@@ -192,30 +192,15 @@ export function ConnectAccountModal({
   };
 
   const testVpsConnection = async () => {
-    const base = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-    if (!base) {
-      toast({ title: "VPS not configured", description: "VITE_API_URL is empty.", variant: "destructive" });
-      return;
-    }
     const started = performance.now();
-    try {
-      const res = await fetch(`${base}/health`, {
-        headers: { Accept: "application/json", "ngrok-skip-browser-warning": "true" },
-      });
-      const ms = Math.round(performance.now() - started);
-      if (res.ok) {
-        toast({ title: "VPS online", description: `/health responded in ${ms}ms` });
-      } else {
-        toast({
-          title: `VPS returned ${res.status}`,
-          description: "Check the FastAPI server and VPS_API_SECRET.",
-          variant: "destructive",
-        });
-      }
-    } catch (e: any) {
+    const ok = await primaryApi.health();
+    const ms = Math.round(performance.now() - started);
+    if (ok) {
+      toast({ title: "Trading bridge online", description: `Health check responded in ${ms}ms` });
+    } else {
       toast({
-        title: "VPS unreachable",
-        description: e?.message || "Could not connect to the VPS bridge.",
+        title: "Trading bridge unreachable",
+        description: "The VPS bridge did not answer. Check the FastAPI server, VPS_API_URL and VPS_API_SECRET.",
         variant: "destructive",
       });
     }
@@ -235,6 +220,10 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
   }
 
   setIsLoading(true);
+
+  // Captures the REAL reason the primary VPS leg failed so the final error
+  // never lies to the user with a generic "capacity exhausted" message.
+  let vpsReason = "";
 
   // ---------------------------------------------------------
   // STEP 1: Try VPS Backend
@@ -320,28 +309,36 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
       // delete the placeholder row so it does not count against quota on retry
       await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
       newAccount = null;
-      console.warn("VPS broker rejected credentials, falling back to MetaAPI:", vpsJson?.error);
+      vpsReason = String(vpsJson?.error || vpsData?.error || "The broker rejected these credentials.");
+      console.warn("VPS broker rejected credentials, falling back to MetaAPI:", vpsReason);
 
     } catch (vpsNetworkError: any) {
-      console.error('[VPS] Network error, cleaning up:', vpsNetworkError?.message);
-      // Clean up ghost row so quota is not consumed on retry
-      if (newAccount?.id) {
-        const { error: cleanupErr } = await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
-        if (cleanupErr) console.warn("Cleanup failed:", cleanupErr.message);
-        newAccount = null;
-      }
-      // If VPS had a network error (not credential rejection), show user a message
-      // and stop — do not silently fall through to MetaAPI
-      if (vpsNetworkError?.name === 'PrimaryUnavailableError' &&
-          vpsNetworkError?.message?.includes('timeout')) {
-        toast({
-          title: "VPS timeout",
-          description: "Our direct engine took too long to respond. Trying backup connection...",
-        });
-        // Allow fallthrough to MetaAPI for timeout only
-      } else if (vpsNetworkError?.name === 'PrimaryUnavailableError') {
-        // Network unreachable — fall through to MetaAPI silently
+      vpsReason = String(vpsNetworkError?.message || "Trading bridge unreachable.");
+      console.error('[VPS] Network error:', vpsReason);
+
+      // Bridge offline/timeout: RETAIN the account row together with its
+      // credentials so the user can retry the exact same connection later with
+      // "Verify Trading Connection" instead of re-typing everything. The row is
+      // parked in a status that fan-out and live queries ignore.
+      if (vpsNetworkError?.name === 'PrimaryUnavailableError') {
+        if (newAccount?.id) {
+          await supabase.from("trading_accounts").update({
+            mt5_password: formData.password,
+            connection_status: 'pending_vps',
+          }).eq("id", newAccount.id);
+          toast({
+            title: "Saved — bridge offline",
+            description: "Your account details were kept. Open Trading Accounts and tap \"Verify Trading Connection\" to retry once the bridge is back.",
+          });
+          setIsLoading(false);
+          return;
+        }
       } else {
+        // Clean up ghost row so quota is not consumed on retry
+        if (newAccount?.id) {
+          await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
+          newAccount = null;
+        }
         // Unexpected error — stop entirely
         toast({
           title: "Connection error",
@@ -419,11 +416,14 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           }
           await supabase.from("trading_accounts").delete().eq("id", newAccount.id);
         } catch (e) {
+          vpsReason = String((e as any)?.message || vpsReason || "VPS bridge failed.");
           console.error('[VPS fallback] failed:', e);
         }
         toast({
           title: "Both trading engines unavailable",
-          description: "Our Trading Bridge is temporarily at capacity and the VPS bridge failed too. Please try again shortly.",
+          description: vpsReason
+            ? `Backup bridge is at capacity, and the direct trading bridge said: ${vpsReason}`
+            : "Both the direct trading bridge and the backup bridge are unavailable right now. Please try again shortly.",
           variant: "destructive",
         });
         setIsLoading(false);
@@ -484,6 +484,19 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
         .eq('login', normalizedLogin)
         .maybeSingle();
 
+      // Record the REAL provisioning outcome so a half-deployed account is
+      // visible and can be finished by the metaapi-finalize-deployments worker
+      // instead of silently pretending to be connected.
+      const isDeployed = data2.state === 'DEPLOYED';
+      const provisionState = {
+        connection_status: isDeployed ? 'connected' : 'provisioning',
+        metaapi_health_status: isDeployed ? 'healthy' : 'deploying',
+        metaapi_last_error: isDeployed
+          ? null
+          : `Broker terminal is still starting up (state=${data2.state || 'CREATED'}).`,
+        metaapi_health_checked_at: new Date().toISOString(),
+      };
+
       if (existingAcc?.id) {
         await supabase.from('trading_accounts').update({
           provider: 'metaapi',
@@ -492,11 +505,13 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           name: formData.name || `${formData.platform.toUpperCase()}-${formData.login}`,
           server: formData.server,
           platform: formData.platform,
-          connection_status: data2.state === 'DEPLOYED' ? 'connected' : 'provisioning',
+          ...provisionState,
         }).eq('id', existingAcc.id);
         toast({
-          title: "Account connected!",
-          description: `${formData.name || formData.login} has been connected successfully.`,
+          title: isDeployed ? "Account connected!" : "Account added — finishing setup",
+          description: isDeployed
+            ? `${formData.name || formData.login} has been connected successfully.`
+            : "The broker terminal is still starting up. We'll finish setup in the background — check Trading Accounts in a few minutes.",
         });
         resetAndClose();
         setIsLoading(false);
@@ -514,14 +529,16 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
           server: formData.server,
           platform: formData.platform,
           connection_type: 'metaapi',
-          connection_status: data2.state === 'DEPLOYED' ? 'connected' : 'provisioning',
           balance: 0,
           equity: 0,
+          ...provisionState,
         }]);
       if (insertError) throw insertError;
       toast({
-        title: "Account connected!",
-        description: `${formData.name || formData.login} has been connected successfully.`,
+        title: isDeployed ? "Account connected!" : "Account added — finishing setup",
+        description: isDeployed
+          ? `${formData.name || formData.login} has been connected successfully.`
+          : "The broker terminal is still starting up. We'll finish setup in the background — check Trading Accounts in a few minutes.",
       });
       resetAndClose();
     } catch (error: any) {

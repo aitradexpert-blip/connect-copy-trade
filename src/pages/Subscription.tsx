@@ -13,6 +13,16 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSubscriptionPlans, getFeatureList } from "@/hooks/useSubscriptionPlans";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PayPalButton } from "@/components/PayPalButton";
+import { CreditCard } from "lucide-react";
+
+const PAYPAL_CONFIG: Record<string, { hostedButtonId: string; qrCode: string }> = {
+  basic: { hostedButtonId: "MZNVMXGUBRKSQ", qrCode: "/qr-codes/basic.png" },
+  professional: { hostedButtonId: "ETQMRGQBSLG2Y", qrCode: "/qr-codes/professional.png" },
+  enterprise: { hostedButtonId: "U8ZAJNT797Q58", qrCode: "/qr-codes/enterprise.png" },
+  mentor: { hostedButtonId: "S7CTAQUZVG528", qrCode: "/qr-codes/mentor.png" },
+};
 import TelegramButton, { TELEGRAM_CHANNEL_URL, TELEGRAM_DM_URL } from "@/components/TelegramButton";
 import PopiaConsentCheckbox, { recordConsent } from "@/components/PopiaConsentCheckbox";
 
@@ -263,7 +273,7 @@ export default function Subscription() {
                     onClick={() => openProofDialog(plan)}
                     disabled={plan.tier === tierName}
                   >
-                    {plan.tier === tierName ? 'Current Plan' : <><Upload className="w-4 h-4 mr-2" />Pay by EFT &amp; Submit Proof</>}
+                    {plan.tier === tierName ? 'Current Plan' : <><CreditCard className="w-4 h-4 mr-2" />Upgrade</>}
                   </Button>
                 </CardContent>
               </Card>
@@ -282,11 +292,35 @@ export default function Subscription() {
       <Dialog open={showProofDialog} onOpenChange={setShowProofDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Submit Proof of Payment</DialogTitle>
-            <DialogDescription>
-              After making the EFT, upload your bank confirmation. Our team is notified instantly on Telegram.
-            </DialogDescription>
+            <DialogTitle>{selectedPlan?.name} Plan</DialogTitle>
+            <DialogDescription>Choose how you'd like to pay.</DialogDescription>
           </DialogHeader>
+          <Tabs defaultValue="paypal">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="paypal">Pay Here</TabsTrigger>
+              <TabsTrigger value="eft">Bank Transfer</TabsTrigger>
+            </TabsList>
+            <TabsContent value="paypal" className="space-y-4 pt-4">
+              {selectedPlan && PAYPAL_CONFIG[selectedPlan.tier] && (
+                <>
+                  <div className="flex justify-center">
+                    <PayPalButton hostedButtonId={PAYPAL_CONFIG[selectedPlan.tier].hostedButtonId} />
+                  </div>
+                  <div className="text-center space-y-2 pt-2 border-t border-border">
+                    <p className="text-xs text-muted-foreground">On another device? Scan to pay:</p>
+                    <img
+                      src={PAYPAL_CONFIG[selectedPlan.tier].qrCode}
+                      alt={`${selectedPlan.name} PayPal QR code`}
+                      className="w-40 h-40 mx-auto rounded-lg border border-border"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Activates once payment is confirmed and reviewed by our team.
+                  </p>
+                </>
+              )}
+            </TabsContent>
+            <TabsContent value="eft">
           <div className="space-y-4">
             <div>
               <Label>Selected Plan</Label>
@@ -333,6 +367,8 @@ export default function Subscription() {
               Need help? Chat with support on Telegram →
             </a>
           </div>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </AppLayout>

@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Home, Lightbulb, Copy, Bot, ExternalLink, Plus, Play, StopCircle, Wallet, User, Settings, Download, LogOut, Smartphone, Menu, ShieldCheck } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { LotSizeInput } from "@/components/ui/lot-size-input";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -88,6 +88,38 @@ export default function MentorClientDashboard() {
       await install();
     } else {
       setShowInstallGuide(true);
+    }
+  };
+
+  const handleVerifyConnection = async () => {
+    const vpsAccount = accounts.find(
+      (a: any) => a.provider === 'vps' || a.connection_type === 'vps' || a.mt5_password
+    );
+    if (!vpsAccount) {
+      toast({ title: "No trading account found", description: "Connect a trading account first." });
+      return;
+    }
+    toast({ title: "Verifying connection..." });
+    const { data, error } = await supabase.functions.invoke('verify-vps-connection', {
+      body: { account_id: vpsAccount.id },
+    });
+    if (error) {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    } else if ((data as any)?.needsCredentials) {
+      toast({
+        title: "Reconnect needed",
+        description: "Go to Trading Accounts to re-enter your password.",
+        variant: "destructive",
+      });
+      navigate("/accounts");
+    } else if ((data as any)?.success) {
+      toast({ title: "Connection verified" });
+    } else {
+      toast({
+        title: "Verification failed",
+        description: (data as any)?.error || "Try again shortly",
+        variant: "destructive",
+      });
     }
   };
 
@@ -195,8 +227,12 @@ export default function MentorClientDashboard() {
         takeProfit: selectedSignal.take_profit,
         comment: selectedSignal.comment || `Signal ${selectedSignal.id.slice(0, 8)}`,
       };
-      await executeOnAccount(brokerAccount, signal);
-      toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${manualLotSize} lots` });
+      const result = await executeOnAccount(brokerAccount, signal);
+if (result.success) {
+  toast({ title: "Trade executed!", description: `${signal.direction} ${signal.symbol} @ ${manualLotSize} lots` });
+} else {
+  toast({ title: "Execution failed", description: result.error || "Unknown error", variant: "destructive" });
+}
       setShowExecuteDialog(false);
     } catch (err: any) {
       toast({ title: "Execution failed", description: err.message, variant: "destructive" });
@@ -233,7 +269,7 @@ export default function MentorClientDashboard() {
 
       const followerAccount = accounts.find(a => a.id === selectedAccountId) || accounts[0];
 
-      const { error } = await supabase.from('copy_trading_relationships').insert({
+            const { error } = await supabase.from('copy_trading_relationships').insert({
         follower_user_id: user!.id,
         follower_account_id: followerAccount.id,
         master_account_id: masterAcc.id,
@@ -241,7 +277,21 @@ export default function MentorClientDashboard() {
         status: 'active',
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') {
+          // A relationship already exists for this pair (e.g. they
+          // stopped and are restarting) — reactivate it instead of
+          // showing a raw database error.
+          const { error: updateError } = await supabase
+            .from('copy_trading_relationships')
+            .update({ status: 'active', follower_account_id: followerAccount.id })
+            .eq('master_account_id', masterAcc.id)
+            .eq('follower_user_id', user!.id);
+          if (updateError) throw updateError;
+        } else {
+          throw error;
+        }
+      }
       toast({ title: "Copy trading activated!", description: "You'll now automatically copy your mentor's trades." });
       loadData();
     } catch (err: any) {
@@ -305,6 +355,12 @@ export default function MentorClientDashboard() {
               <DropdownMenuItem onClick={() => navigate("/settings")}>
                 <Settings className="w-4 h-4 mr-2" /> Settings
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/subscription")}>
+                <Wallet className="w-4 h-4 mr-2" /> Subscription
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleVerifyConnection}>
+                <ShieldCheck className="w-4 h-4 mr-2" /> Verify Trading Connection
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleInstallApp}>
                 <Download className="w-4 h-4 mr-2" /> Install App
               </DropdownMenuItem>
@@ -323,6 +379,31 @@ export default function MentorClientDashboard() {
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Subscription status banner */}
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-muted/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">
+              {isFree ? "You're on the Free plan" : `${subscription?.plan_name || 'Active'} plan`}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {isFree
+                ? "Upgrade to unlock live copy trading, AI bots and higher trade limits."
+                : subscription?.status === 'active'
+                  ? "Your subscription is active — all included features are unlocked."
+                  : "Your subscription is pending approval."}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant={isFree ? "default" : "outline"}
+            onClick={() => navigate("/subscription")}
+            className="shrink-0"
+          >
+            <Wallet className="w-4 h-4 mr-2" />
+            {isFree ? "Upgrade Plan" : "Manage Subscription"}
+          </Button>
+        </div>
+
         <Tabs defaultValue="home" className="space-y-6">
           <TabsList className="grid grid-cols-4 w-full max-w-lg">
             <TabsTrigger value="home" className="flex items-center gap-1">

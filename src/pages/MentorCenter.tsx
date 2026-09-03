@@ -20,6 +20,8 @@ import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import { OctaFxPromoCard } from "@/components/OctaFxPromoCard";
 import { broadcastSignal } from "@/services/signalBroadcast";
+import { runCopyFanOut, describeFanOut } from "@/services/publishFanOut";
+import { Checkbox } from "@/components/ui/checkbox";
 import NoticeBoard from "@/components/NoticeBoard";
 import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
 
@@ -112,6 +114,8 @@ export default function MentorCenter() {
   const [newComment, setNewComment] = useState("");
   const [publishingSignal, setPublishingSignal] = useState(false);
   const [showSignalDialog, setShowSignalDialog] = useState(false);
+  const [broadcastToBot, setBroadcastToBot] = useState(true);
+  const [broadcastToCopy, setBroadcastToCopy] = useState(true);
 
   // Khumo AI suggestion
   const [aiSuggestion, setAiSuggestion] = useState("");
@@ -339,23 +343,21 @@ export default function MentorCenter() {
         comment: newComment || null,
         mentor_id: profile.id,
         status: 'active',
-        auto_to_ai_bot: true,
-        auto_to_copyfactory: true,
+        auto_to_ai_bot: broadcastToBot,
+        auto_to_copyfactory: broadcastToCopy,
       }).select('id').single();
       if (error) throw error;
+      let broadcast: any = null;
       if (sig) {
-        await broadcastSignal(
+        broadcast = await broadcastSignal(
           { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
-          { toAiBot: true, toCopyFactory: true },
+          { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
         );
       }
       // Also trigger copy-trade-listener so active copy relationships execute the trade
-      if (sig && user) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user.id }
-        }).catch(e => console.warn('copy-trade-listener error:', e));
-      }
-      toast({ title: "Signal published — AI Bot + Copy broadcast!" });
+      const fanOut = sig && user && broadcastToCopy ? await runCopyFanOut(sig.id, user.id) : null;
+      const report = describeFanOut(fanOut, broadcast);
+      toast({ title: report.title, description: report.description, variant: report.destructive ? "destructive" : undefined });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
       loadProfile();
@@ -439,21 +441,16 @@ export default function MentorCenter() {
       }).select('id').single();
       if (sigErr) throw sigErr;
 
-      // Trigger copy trade listener
-      const masterAcc = accounts.find(a => a.is_master);
-      if (masterAcc && sig) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user!.id }
-        });
-      }
+      let broadcast: any = null;
       if (sig) {
-        await broadcastSignal(
+        broadcast = await broadcastSignal(
           { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Center' },
           { toAiBot: true, toCopyFactory: true },
         );
       }
-
-      toast({ title: "Quick trade published — AI Bot + Copy broadcast!" });
+      const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;
+      const report = describeFanOut(fanOut, broadcast);
+      toast({ title: report.title, description: report.description, variant: report.destructive ? "destructive" : undefined });
       setQuickSymbol("");
       loadProfile();
     } catch (err: any) {
@@ -752,6 +749,17 @@ export default function MentorCenter() {
                       <div className="space-y-2">
                         <Label>Comment</Label>
                         <Textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Analysis notes..." />
+                      </div>
+                      <div className="space-y-2 p-3 rounded-lg bg-muted/40 border border-border">
+                        <p className="text-sm font-medium">Broadcast channels</p>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToBot} onCheckedChange={(v) => setBroadcastToBot(v === true)} />
+                          Broadcast to AI Bot subscribers
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox checked={broadcastToCopy} onCheckedChange={(v) => setBroadcastToCopy(v === true)} />
+                          Broadcast to Copy Trading subscribers
+                        </label>
                       </div>
                       <Button onClick={publishSignal} disabled={publishingSignal} className="w-full bg-gradient-primary">
                         {publishingSignal ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}

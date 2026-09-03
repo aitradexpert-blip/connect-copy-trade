@@ -7,11 +7,12 @@ const corsHeaders = {
 
 // Which VPS routes the browser is allowed to reach, and how each is called.
 const ROUTES: Record<string, { method: 'GET' | 'POST'; ownerField?: string }> = {
+  health: { method: 'GET' },
   connect: { method: 'POST', ownerField: 'account_id' },
   account: { method: 'GET', ownerField: 'account_id' },
   positions: { method: 'GET', ownerField: 'account_id' },
   history: { method: 'GET', ownerField: 'account_id' },
-  order: { method: 'POST', ownerField: 'account_id' },
+  order: { method: 'POST', ownerField: 'accountId' },
   'copy-trade': { method: 'POST', ownerField: 'master_account_id' },
 };
 
@@ -98,9 +99,17 @@ Deno.serve(async (req) => {
       body: route.method === 'POST' ? JSON.stringify(body) : undefined,
     });
 
-    const vpsData = await vpsRes.json().catch(() => null);
+    const rawText = await vpsRes.text().catch(() => '');
+    let vpsData: unknown = null;
+    try { vpsData = rawText ? JSON.parse(rawText) : null; } catch { vpsData = null; }
+    if (vpsData === null) {
+      // Non-JSON body (e.g. a plain "ok" from /health, or an ngrok HTML page)
+      vpsData = vpsRes.ok
+        ? { success: true, status: vpsRes.status }
+        : { success: false, error: `VPS returned ${vpsRes.status}${rawText ? `: ${rawText.slice(0, 200)}` : ''}` };
+    }
     return new Response(JSON.stringify(vpsData), {
-      status: vpsRes.status,
+      status: vpsRes.ok ? 200 : vpsRes.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e: any) {
