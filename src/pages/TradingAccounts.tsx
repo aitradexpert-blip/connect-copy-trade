@@ -467,6 +467,22 @@ const handleVerifyConnection = async (account: TradingAccount) => {
                               <WifiOff className="w-4 h-4" />
                             </Button>
                           )}
+                          {/* Check now: finish a stuck MetaAPI provisioning */}
+                          {account.provider !== 'deriv' && account.metaapi_account_id &&
+                           (account.connection_status === 'provisioning' ||
+                            account.metaapi_health_status === 'deploying' ||
+                            account.metaapi_health_status === 'error') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleFinalizeAccount(account)}
+                              disabled={finalizingId === account.id}
+                              title="Check setup status now"
+                              className="text-primary hover:text-primary/80"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${finalizingId === account.id ? 'animate-spin' : ''}`} />
+                            </Button>
+                          )}
                           {(account.provider === 'vps' || (account as any).connection_type === 'vps') && (
                             <Button
                               variant="ghost"
