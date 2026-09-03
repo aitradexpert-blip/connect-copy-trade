@@ -41,6 +41,9 @@ interface TradingAccount {
   deriv_currency: string | null;
   is_virtual: boolean;
   metaapi_account_id: string | null;
+  metaapi_health_status: string | null;
+  metaapi_last_error: string | null;
+  metaapi_health_checked_at: string | null;
 }
 
 const TradingAccounts = () => {
@@ -66,7 +69,7 @@ const TradingAccounts = () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("trading_accounts")
-      .select("id,name,login,platform,connection_status,balance,equity,provider,provider_account_id,deriv_token,deriv_currency,is_virtual,metaapi_account_id")
+      .select("id,name,login,platform,connection_status,balance,equity,provider,provider_account_id,deriv_token,deriv_currency,is_virtual,metaapi_account_id,metaapi_health_status,metaapi_last_error,metaapi_health_checked_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
