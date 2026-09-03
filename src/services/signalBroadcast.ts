@@ -4,7 +4,7 @@ import { primaryApi, isPrimaryConfigured, PrimaryUnavailableError } from "./prim
 export interface BroadcastOptions {
   toAiBot?: boolean;        // run auto-execute-signal across opted-in bot users
   toCopyFactory?: boolean;  // push external signal through CopyFactory
-  toPrimary?: boolean;      // direct fan-out via primary FastAPI /order (default true when configured)
+  toPrimary?: boolean;      // legacy direct fan-out; automatic copy trading is listener-owned
 }
 
 export interface BroadcastSignal {
@@ -35,18 +35,28 @@ export interface BroadcastSignal {
 export async function broadcastSignal(
   signal: BroadcastSignal,
   opts: BroadcastOptions = { toAiBot: true, toCopyFactory: true, toPrimary: true },
-): Promise<{ aiBot: any; copyFactory: any; primary: any }> {
-  const results: { aiBot: any; copyFactory: any; primary: any } = {
+): Promise<{ aiBot: any; copyFactory: any; primary: any; copyTrading: any }> {
+  const results: { aiBot: any; copyFactory: any; primary: any; copyTrading: any } = {
     aiBot: null,
     copyFactory: null,
     primary: null,
+    copyTrading: null,
   };
 
-  // 0) Direct primary /order fan-out (dormant unless VITE_API_URL is set)
-  const wantPrimary = opts.toPrimary !== false && isPrimaryConfigured();
+  // Automatic copy trading is server-owned. This runs for every published idea,
+  // regardless of whether the publisher later presses a manual Execute button.
+  const copyTradingPromise = signal.mentor_id
+    ? supabase.functions
+        .invoke("copy-trade-listener", { body: { signal_id: signal.id, mentor_id: signal.mentor_id } })
+        .then(({ data, error }) => (error ? { error: error.message } : data))
+        .catch((e: any) => ({ error: e?.message || String(e) }))
+    : Promise.resolve({ skipped: "no mentor_id" });
+
+  // Legacy direct fan-out is disabled by default to prevent duplicate orders.
+  const wantPrimary = opts.toPrimary === true && isPrimaryConfigured();
   const primaryPromise: Promise<any> = wantPrimary
     ? fanOutDirect(signal).catch((e) => ({ error: e?.message || String(e) }))
-    : Promise.resolve({ skipped: "primary engine not configured" });
+    : Promise.resolve({ skipped: "listener owns automatic copy trading" });
 
   // 1) AI Bot fan-out
   const aiPromise: Promise<any> =
@@ -63,10 +73,11 @@ export async function broadcastSignal(
       ? Promise.resolve({ skipped: opts.toCopyFactory === false ? "disabled" : "no mentor_id" })
       : runCopyFactory(signal).catch((e) => ({ error: e?.message || String(e) }));
 
-  const [p, a, c] = await Promise.allSettled([primaryPromise, aiPromise, cfPromise]);
+  const [p, a, c, ct] = await Promise.allSettled([primaryPromise, aiPromise, cfPromise, copyTradingPromise]);
   results.primary = p.status === "fulfilled" ? p.value : { error: String(p.reason) };
   results.aiBot = a.status === "fulfilled" ? a.value : { error: String(a.reason) };
   results.copyFactory = c.status === "fulfilled" ? c.value : { error: String(c.reason) };
+  results.copyTrading = ct.status === "fulfilled" ? ct.value : { error: String(ct.reason) };
   return results;
 }
 

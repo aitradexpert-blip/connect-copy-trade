@@ -267,12 +267,6 @@ export default function MentorHub() {
           { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
         );
       }
-      // Also trigger copy-trade-listener so active copy relationships execute the trade
-      if (sig && user) {
-        await supabase.functions.invoke('copy-trade-listener', {
-          body: { signal_id: sig.id, master_user_id: user.id }
-        }).catch(e => console.warn('copy-trade-listener error:', e));
-      }
       toast({ title: "Idea published & broadcast!" });
       setShowSignalDialog(false);
       setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");

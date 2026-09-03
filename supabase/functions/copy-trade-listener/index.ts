@@ -68,16 +68,25 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
-    const { signal_id, master_user_id } = await req.json();
+    const { signal_id, master_user_id, mentor_id } = await req.json();
+    let resolvedMasterUserId = master_user_id;
+    if (!resolvedMasterUserId && mentor_id) {
+      const { data: mentorProfile } = await supabase
+        .from('mentor_profiles')
+        .select('user_id')
+        .eq('id', mentor_id)
+        .maybeSingle();
+      resolvedMasterUserId = mentorProfile?.user_id;
+    }
 
-    if (!signal_id || !master_user_id) {
+    if (!signal_id || !resolvedMasterUserId) {
       return new Response(
         JSON.stringify({ error: 'signal_id and master_user_id are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Copy trading triggered for signal:', signal_id, 'by master:', master_user_id);
+    console.log('Copy trading triggered for signal:', signal_id, 'by master:', resolvedMasterUserId);
 
     const { data: signal, error: signalError } = await supabase
       .from('trading_signals')
@@ -96,7 +105,7 @@ Deno.serve(async (req) => {
     const { data: relationships, error: relationshipsError } = await supabase
       .from('copy_trading_relationships')
       .select('*, follower_account:trading_accounts!follower_account_id(*), master_account:trading_accounts!master_account_id(*)')
-      .eq('master_user_id', master_user_id)
+      .eq('master_user_id', resolvedMasterUserId)
       .eq('status', 'active');
 
     if (relationshipsError) {
@@ -161,6 +170,19 @@ Deno.serve(async (req) => {
 
       console.log(`[fan-out] follower=${relationship.follower_user_id} vol=${adjustedVolume}`);
 
+      // Idempotency: a retried publish/webhook must not place a second order.
+      const { data: existingAudit } = await supabase
+        .from('trade_history')
+        .select('id,status')
+        .eq('signal_id', signal_id)
+        .eq('trading_account_id', relationship.follower_account_id)
+        .in('status', ['open', 'pending'])
+        .limit(1)
+        .maybeSingle();
+      if (existingAudit) {
+        return { follower_user_id: relationship.follower_user_id, success: true, skipped: 'already executed', audit_id: existingAudit.id };
+      }
+
       const isVpsAccount = relationship.follower_account?.connection_type === 'vps'
         || relationship.follower_account?.provider === 'vps';
 
@@ -186,14 +208,18 @@ Deno.serve(async (req) => {
             }),
           }).finally(() => clearTimeout(vpsTimeout));
           const vpsResult = await vpsRes.json().catch(() => null);
-          if (vpsResult?.success) {
-            await logSuccess(relationship, adjustedVolume, 'vps', vpsResult?.data?.price ?? null);
+          const vpsData = vpsResult?.data && typeof vpsResult.data === 'object' ? vpsResult.data : vpsResult;
+          const retcode = Number(vpsData?.retcode);
+          const confirmed = vpsResult?.success === true && (!Number.isFinite(retcode) || [10008, 10009].includes(retcode));
+          if (confirmed) {
+            await logSuccess(relationship, adjustedVolume, 'vps', vpsData?.price ?? null);
             return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: vpsResult };
           }
-          const msg = vpsResult?.error || `VPS HTTP ${vpsRes.status}`;
+          const msg = vpsResult?.error || vpsData?.comment || (Number.isFinite(retcode) ? `MT5 order rejected (retcode ${retcode})` : `VPS HTTP ${vpsRes.status}`);
           console.warn(`[fan-out] VPS rejected for ${relationship.follower_user_id}: ${msg}`);
           await auditFailure(relationship, msg, 'vps');
-          // fall through to MetaAPI
+          // Do not send a rejected VPS order to another broker/provider.
+          return { follower_user_id: relationship.follower_user_id, success: false, via: 'vps', error: msg };
         } catch (vpsErr: any) {
           console.warn(`[fan-out] VPS unreachable for ${relationship.follower_user_id}:`, vpsErr?.message || vpsErr);
           await auditFailure(relationship, vpsErr?.message || String(vpsErr), 'vps-network');
