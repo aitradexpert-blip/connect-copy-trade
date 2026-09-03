@@ -41,6 +41,9 @@ interface TradingAccount {
   deriv_currency: string | null;
   is_virtual: boolean;
   metaapi_account_id: string | null;
+  metaapi_health_status: string | null;
+  metaapi_last_error: string | null;
+  metaapi_health_checked_at: string | null;
 }
 
 const TradingAccounts = () => {
@@ -50,6 +53,7 @@ const TradingAccounts = () => {
   const [searchParams] = useSearchParams();
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [finalizingId, setFinalizingId] = useState<string | null>(null);
   const [credAccount, setCredAccount] = useState<TradingAccount | null>(null);
   const [credLogin, setCredLogin] = useState("");
   const [credPassword, setCredPassword] = useState("");
@@ -66,7 +70,7 @@ const TradingAccounts = () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("trading_accounts")
-      .select("id,name,login,platform,connection_status,balance,equity,provider,provider_account_id,deriv_token,deriv_currency,is_virtual,metaapi_account_id")
+      .select("id,name,login,platform,connection_status,balance,equity,provider,provider_account_id,deriv_token,deriv_currency,is_virtual,metaapi_account_id,metaapi_health_status,metaapi_last_error,metaapi_health_checked_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -93,6 +97,9 @@ const TradingAccounts = () => {
         deriv_currency: a.deriv_currency,
         is_virtual: a.is_virtual || false,
         metaapi_account_id: a.metaapi_account_id,
+        metaapi_health_status: (a as any).metaapi_health_status ?? null,
+        metaapi_last_error: (a as any).metaapi_last_error ?? null,
+        metaapi_health_checked_at: (a as any).metaapi_health_checked_at ?? null,
       }))
     );
   };
@@ -198,6 +205,35 @@ const TradingAccounts = () => {
     }
   };
 
+  // Ask the follow-up worker to finish (or diagnose) a stuck MetaAPI provisioning
+  const handleFinalizeAccount = async (account: TradingAccount) => {
+    setFinalizingId(account.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('metaapi-finalize-deployments', {
+        body: { tradingAccountId: account.id },
+      });
+      if (error) throw error;
+      const r = data?.results?.[0];
+      const outcome = r?.outcome as string | undefined;
+      if (outcome === 'healthy') {
+        toast({ title: 'Account is ready', description: `${account.name} is deployed and connected.` });
+      } else if (outcome === 'deploying') {
+        toast({ title: 'Still finishing setup', description: r?.detail || 'The broker terminal is still starting up. We keep retrying every few minutes.' });
+      } else {
+        toast({
+          title: 'Setup could not complete',
+          description: r?.detail || r?.outcome || 'No response from the trading bridge.',
+          variant: 'destructive',
+        });
+      }
+      await loadAccounts();
+    } catch (err: any) {
+      toast({ title: 'Check failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setFinalizingId(null);
+    }
+  };
+
 const handleVerifyConnection = async (account: TradingAccount) => {
     setVerifyingId(account.id);
     try {
@@ -292,16 +328,29 @@ const handleVerifyConnection = async (account: TradingAccount) => {
     );
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (account: TradingAccount) => {
+    const status = account.connection_status;
     const statusColors: Record<string, string> = {
       connected: 'bg-profit text-white',
       pending_approval: 'bg-yellow-500 text-white',
       disconnected: 'bg-destructive text-white',
+      needs_reconnect: 'bg-destructive text-white',
+      invalid_credentials: 'bg-destructive text-white',
+      provisioning: 'bg-yellow-500 text-white',
     };
+    const label = status === 'provisioning' ? 'finishing setup' : status.replace(/_/g, ' ');
     return (
-      <Badge className={statusColors[status] || 'bg-muted'}>
-        {status.replace('_', ' ')}
-      </Badge>
+      <div className="space-y-1">
+        <Badge className={statusColors[status] || 'bg-muted'}>{label}</Badge>
+        {(status === 'provisioning' || account.metaapi_health_status === 'error') && account.metaapi_last_error && (
+          <div className="text-xs text-muted-foreground max-w-[220px]" title={account.metaapi_last_error}>
+            {account.metaapi_last_error}
+            {account.metaapi_health_checked_at && (
+              <> · checked {new Date(account.metaapi_health_checked_at).toLocaleTimeString()}</>
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -369,7 +418,7 @@ const handleVerifyConnection = async (account: TradingAccount) => {
                         </div>
                       </TableCell>
                       <TableCell>{getProviderBadge(account)}</TableCell>
-                      <TableCell>{getStatusBadge(account.connection_status)}</TableCell>
+                      <TableCell>{getStatusBadge(account)}</TableCell>
                       <TableCell>
                         {account.deriv_currency || '$'}{account.balance.toFixed(2)}
                       </TableCell>
@@ -446,6 +495,22 @@ const handleVerifyConnection = async (account: TradingAccount) => {
                               className="text-amber-500 hover:text-amber-600"
                             >
                               <WifiOff className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {/* Check now: finish a stuck MetaAPI provisioning */}
+                          {account.provider !== 'deriv' && account.metaapi_account_id &&
+                           (account.connection_status === 'provisioning' ||
+                            account.metaapi_health_status === 'deploying' ||
+                            account.metaapi_health_status === 'error') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleFinalizeAccount(account)}
+                              disabled={finalizingId === account.id}
+                              title="Check setup status now"
+                              className="text-primary hover:text-primary/80"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${finalizingId === account.id ? 'animate-spin' : ''}`} />
                             </Button>
                           )}
                           {(account.provider === 'vps' || (account as any).connection_type === 'vps') && (
