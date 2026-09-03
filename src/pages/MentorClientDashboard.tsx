@@ -265,7 +265,7 @@ if (result.success) {
 
       const followerAccount = accounts.find(a => a.id === selectedAccountId) || accounts[0];
 
-      const { error } = await supabase.from('copy_trading_relationships').insert({
+            const { error } = await supabase.from('copy_trading_relationships').insert({
         follower_user_id: user!.id,
         follower_account_id: followerAccount.id,
         master_account_id: masterAcc.id,
@@ -273,7 +273,21 @@ if (result.success) {
         status: 'active',
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') {
+          // A relationship already exists for this pair (e.g. they
+          // stopped and are restarting) — reactivate it instead of
+          // showing a raw database error.
+          const { error: updateError } = await supabase
+            .from('copy_trading_relationships')
+            .update({ status: 'active', follower_account_id: followerAccount.id })
+            .eq('master_account_id', masterAcc.id)
+            .eq('follower_user_id', user!.id);
+          if (updateError) throw updateError;
+        } else {
+          throw error;
+        }
+      }
       toast({ title: "Copy trading activated!", description: "You'll now automatically copy your mentor's trades." });
       loadData();
     } catch (err: any) {
