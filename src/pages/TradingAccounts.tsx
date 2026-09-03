@@ -38,6 +38,9 @@ interface TradingAccount {
   deriv_currency: string | null;
   is_virtual: boolean;
   metaapi_account_id: string | null;
+  metaapi_health_status: string | null;
+  metaapi_last_error: string | null;
+  metaapi_health_checked_at: string | null;
 }
 
 const TradingAccounts = () => {
@@ -58,7 +61,7 @@ const TradingAccounts = () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("trading_accounts")
-      .select("id,name,login,platform,connection_status,balance,equity,provider,provider_account_id,deriv_token,deriv_currency,is_virtual,metaapi_account_id")
+      .select("id,name,login,platform,connection_status,balance,equity,provider,provider_account_id,deriv_token,deriv_currency,is_virtual,metaapi_account_id,metaapi_health_status,metaapi_last_error,metaapi_health_checked_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -85,6 +88,9 @@ const TradingAccounts = () => {
         deriv_currency: a.deriv_currency,
         is_virtual: a.is_virtual || false,
         metaapi_account_id: a.metaapi_account_id,
+        metaapi_health_status: a.metaapi_health_status,
+        metaapi_last_error: a.metaapi_last_error,
+        metaapi_health_checked_at: a.metaapi_health_checked_at,
       }))
     );
   };
@@ -206,6 +212,20 @@ const TradingAccounts = () => {
     setDerivMT5TransferOpen(true);
   };
 
+  const handleFinalizeAccount = async (account: TradingAccount) => {
+    if (!account.metaapi_account_id) return;
+    setRefreshingId(account.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('metaapi-finalize-deployments', { body: { tradingAccountId: account.id } });
+      if (error) throw error;
+      const result = data?.results?.[0];
+      toast({ title: result?.status === 'healthy' ? 'Account ready' : 'Setup status updated', description: result?.error || result?.status || 'Check complete' });
+      await loadAccounts();
+    } catch (err: any) {
+      toast({ title: 'Check failed', description: err.message, variant: 'destructive' });
+    } finally { setRefreshingId(null); }
+  };
+
   const getProviderBadge = (account: TradingAccount) => {
     if (account.provider === 'vps' || (account as any).connection_type === 'vps') {
       return (
@@ -228,10 +248,12 @@ const TradingAccounts = () => {
     );
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, account?: TradingAccount) => {
     const statusColors: Record<string, string> = {
       connected: 'bg-profit text-white',
       pending_approval: 'bg-yellow-500 text-white',
+      provisioning: 'bg-yellow-500 text-white',
+      needs_reconnect: 'bg-destructive text-white',
       disconnected: 'bg-destructive text-white',
     };
     return (
@@ -305,7 +327,16 @@ const TradingAccounts = () => {
                         </div>
                       </TableCell>
                       <TableCell>{getProviderBadge(account)}</TableCell>
-                      <TableCell>{getStatusBadge(account.connection_status)}</TableCell>
+                      <TableCell>
+                            {getStatusBadge(account.connection_status, account)}
+                            {account.provider === 'metaapi' && account.connection_status === 'provisioning' && (
+                              <div className="mt-1 space-y-1">
+                                <div className="text-xs text-muted-foreground">Finishing setup{account.metaapi_health_checked_at ? ` · checked ${new Date(account.metaapi_health_checked_at).toLocaleString()}` : ''}</div>
+                                <Button size="sm" variant="outline" onClick={() => handleFinalizeAccount(account)} disabled={refreshingId === account.id}>Check setup status now</Button>
+                              </div>
+                            )}
+                            {account.metaapi_last_error && account.connection_status === 'needs_reconnect' && <div className="mt-1 max-w-[220px] text-xs text-destructive">{account.metaapi_last_error}</div>}
+                          </TableCell>
                       <TableCell>
                         {account.deriv_currency || '$'}{account.balance.toFixed(2)}
                       </TableCell>

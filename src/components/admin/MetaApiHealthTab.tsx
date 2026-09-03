@@ -43,6 +43,7 @@ export function MetaApiHealthTab() {
   const [rows, setRows] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [finalizingAll, setFinalizingAll] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -104,6 +105,20 @@ export function MetaApiHealthTab() {
     } finally { setBusyId(null); }
   };
 
+  const finalizeAll = async () => {
+    setFinalizingAll(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("metaapi-finalize-deployments", { body: {} });
+      if (error) throw error;
+      toast({ title: "Finalize complete", description: `${data?.processed || 0} pending account(s) checked.` });
+      await load();
+    } catch (e: any) {
+      toast({ title: "Finalize failed", description: e.message, variant: "destructive" });
+    } finally {
+      setFinalizingAll(false);
+    }
+  };
+
   const healthy = rows.filter(r => r.metaapi_health_status === "healthy").length;
   const failed = rows.filter(r => ["failed", "error"].includes((r.metaapi_health_status || r.connection_status || "").toLowerCase())).length;
 
@@ -117,6 +132,10 @@ export function MetaApiHealthTab() {
         <div className="flex items-center gap-2">
           <Badge variant="default">{healthy} healthy</Badge>
           {failed > 0 && <Badge variant="destructive" className="gap-1"><AlertTriangle className="w-3 h-3" />{failed} failed</Badge>}
+          <Button size="sm" variant="outline" onClick={finalizeAll} disabled={finalizingAll || loading}>
+            <RefreshCw className={`w-4 h-4 mr-1 ${finalizingAll ? "animate-spin" : ""}`} />
+            {finalizingAll ? "Finalizing..." : "Finalize all pending"}
+          </Button>
           <Button size="sm" variant="outline" onClick={load} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>

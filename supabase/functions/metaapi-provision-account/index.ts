@@ -245,7 +245,9 @@ Deno.serve(async (req) => {
         })
       }
 
-      const state = data.state || 'CREATED'
+      let state = data.state || 'CREATED'
+      let connectionStatus = data.connectionStatus || 'DEPLOYING'
+      let lastProvisioningError: string | null = null
       console.log(`Account provisioned: id=${metaapiAccountId}, state=${state}`)
 
       // Wait up to 15s for deployment
@@ -258,7 +260,9 @@ Deno.serve(async (req) => {
             })
             if (checkResp.ok) {
               const checkData = await checkResp.json()
-              if (checkData.state === 'DEPLOYED') {
+              state = checkData.state || state
+              connectionStatus = checkData.connectionStatus || connectionStatus
+              if (state === 'DEPLOYED' && connectionStatus === 'CONNECTED') {
                 await maybeEnableCopyFactory(token, metaapiAccountId, isMaster, email)
                 return new Response(JSON.stringify({
                   success: true,
@@ -278,13 +282,26 @@ Deno.serve(async (req) => {
         await maybeEnableCopyFactory(token, metaapiAccountId, isMaster, email)
       }
 
+      lastProvisioningError = `state=${state}; connectionStatus=${connectionStatus}`
+      if (supabaseUrl && serviceKey && callerUserId) {
+        const admin = createClient(supabaseUrl, serviceKey)
+        await admin.from('trading_accounts').update({
+          connection_status: 'provisioning',
+          metaapi_health_status: 'deploying',
+          metaapi_last_error: lastProvisioningError,
+          metaapi_health_checked_at: new Date().toISOString(),
+        }).eq('user_id', callerUserId).eq('metaapi_account_id', metaapiAccountId)
+      }
+
       return new Response(JSON.stringify({
         success: true,
+        pending: true,
         metaapi_account_id: metaapiAccountId,
         state: state,
         name: data.name,
-        connectionStatus: data.connectionStatus,
+        connectionStatus: connectionStatus,
         region: data.region,
+        message: 'Account is provisioning in the background.',
       }), {
         status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
