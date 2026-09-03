@@ -292,16 +292,29 @@ const handleVerifyConnection = async (account: TradingAccount) => {
     );
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (account: TradingAccount) => {
+    const status = account.connection_status;
     const statusColors: Record<string, string> = {
       connected: 'bg-profit text-white',
       pending_approval: 'bg-yellow-500 text-white',
       disconnected: 'bg-destructive text-white',
+      needs_reconnect: 'bg-destructive text-white',
+      invalid_credentials: 'bg-destructive text-white',
+      provisioning: 'bg-yellow-500 text-white',
     };
+    const label = status === 'provisioning' ? 'finishing setup' : status.replace(/_/g, ' ');
     return (
-      <Badge className={statusColors[status] || 'bg-muted'}>
-        {status.replace('_', ' ')}
-      </Badge>
+      <div className="space-y-1">
+        <Badge className={statusColors[status] || 'bg-muted'}>{label}</Badge>
+        {(status === 'provisioning' || account.metaapi_health_status === 'error') && account.metaapi_last_error && (
+          <div className="text-xs text-muted-foreground max-w-[220px]" title={account.metaapi_last_error}>
+            {account.metaapi_last_error}
+            {account.metaapi_health_checked_at && (
+              <> · checked {new Date(account.metaapi_health_checked_at).toLocaleTimeString()}</>
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
