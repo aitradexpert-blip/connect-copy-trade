@@ -279,9 +279,17 @@ async function executeOnAccountInner(
         provider: 'vps',
       };
     } catch (vpsErr: any) {
-      // Only a truly unreachable VPS should fall through to the legacy engine.
+      // Only a truly unreachable VPS should fall through to the legacy engine,
+      // and only when an admin has explicitly approved MetaAPI fallback.
       if (vpsErr?.name === 'PrimaryUnavailableError') {
-        console.warn('[BrokerExecution] VPS unreachable, trying MetaAPI:', vpsErr?.message);
+        if (!account.metaapi_fallback_approved) {
+          return {
+            success: false,
+            error: 'VPS unreachable. MetaAPI fallback not approved for this account — contact admin.',
+            provider: 'vps',
+          };
+        }
+        console.warn('[BrokerExecution] VPS unreachable, approved fallback to MetaAPI:', vpsErr?.message);
       } else {
         return {
           success: false,
