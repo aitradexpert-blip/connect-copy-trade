@@ -460,6 +460,8 @@ const Admin = () => {
 
 <TabsContent value="bots">
   <ActiveBotsTab />
+</TabsContent>
+
 <TabsContent value="payments">
   <PendingPaymentsTab />
 </TabsContent>
