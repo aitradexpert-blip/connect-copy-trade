@@ -54,6 +54,24 @@ Deno.serve(async (req) => {
 
     if (action === 'set_master') {
       if (!target_account_id) return json({ error: 'target_account_id required' }, 400);
+      if (value === true) {
+        const { data: account, error: accountError } = await admin
+          .from('trading_accounts')
+          .select('user_id')
+          .eq('id', target_account_id)
+          .maybeSingle();
+        if (accountError) return json({ error: accountError.message }, 500);
+        if (!account?.user_id) return json({ error: 'Target trading account not found' }, 404);
+
+        const { data: mentorProfile, error: mentorError } = await admin
+          .from('mentor_profiles')
+          .select('id')
+          .eq('user_id', account.user_id)
+          .maybeSingle();
+        if (mentorError) return json({ error: mentorError.message }, 500);
+        if (!mentorProfile) return json({ error: 'Target account owner must have a mentor profile before enabling Master status' }, 400);
+      }
+
       const { error } = await admin
         .from('trading_accounts')
         .update({ is_master: !!value })

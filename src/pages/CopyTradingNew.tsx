@@ -90,6 +90,7 @@ export default function CopyTradingNew() {
   const [strategyName, setStrategyName] = useState("");
   const [strategyDescription, setStrategyDescription] = useState("");
   const [creatingStrategy, setCreatingStrategy] = useState(false);
+  const [hasActiveMentorProfile, setHasActiveMentorProfile] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -141,6 +142,14 @@ export default function CopyTradingNew() {
 
     
     try {
+      const { data: mentorProfile } = await supabase
+        .from('mentor_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+      setHasActiveMentorProfile(!!mentorProfile);
+
       // Load user's trading accounts with provider info
       const { data: accountsData, error: accountsError } = await supabase
         .from("trading_accounts")
@@ -441,6 +450,11 @@ export default function CopyTradingNew() {
 
   const toggleMasterStatus = async (accountId: string, currentStatus: boolean) => {
     try {
+      if (!currentStatus && !hasActiveMentorProfile) {
+        toast({ title: "Mentor profile required", description: "Create or activate a mentor profile before enabling Master status.", variant: "destructive" });
+        return;
+      }
+
       // Lifecycle guard: only allow Master activation on connected accounts
       if (!currentStatus) {
         const acc: any = accounts.find((a) => a.id === accountId);
@@ -559,6 +573,11 @@ export default function CopyTradingNew() {
 
   // Create a CopyFactory strategy (become a provider)
   const createCopyFactoryStrategy = async () => {
+    if (!hasActiveMentorProfile) {
+      toast({ title: "Mentor profile required", description: "Create or activate a mentor profile before enabling Master status.", variant: "destructive" });
+      return;
+    }
+
     const metaApiAccount = accounts.find(acc => acc.metaapi_account_id);
 
     // VPS accounts can be masters without CopyFactory — just set is_master flag
@@ -810,15 +829,17 @@ export default function CopyTradingNew() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={account.is_master}
-                            onCheckedChange={() => toggleMasterStatus(account.id, account.is_master)}
-                          />
-                          <span className="text-sm text-muted-foreground">
-                            {account.is_master ? 'Disable' : 'Enable'} Master
-                          </span>
-                        </div>
+                        {hasActiveMentorProfile && (
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={account.is_master}
+                              onCheckedChange={() => toggleMasterStatus(account.id, account.is_master)}
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              {account.is_master ? 'Disable' : 'Enable'} Master
+                            </span>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1078,6 +1099,7 @@ export default function CopyTradingNew() {
                 </div>
                 
                 {/* Become a Provider Section */}
+                {hasActiveMentorProfile && (
                 <Card className="border-primary/20 bg-primary/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base flex items-center gap-2">
@@ -1138,6 +1160,7 @@ export default function CopyTradingNew() {
                     </div>
                   </CardContent>
                 </Card>
+                )}
 
                 {/* Available Strategies to Copy */}
                 <div className="space-y-4">
