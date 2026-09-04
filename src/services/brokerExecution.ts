@@ -1,0 +1,620 @@
+/**
+ * Unified Broker Execution Service
+ * Routes trade execution to the appropriate API based on account provider and connection_type
+ * Supports: Deriv (deriv_api), MetaAPI (metaapi), and future broker integrations
+ *
+ * Dual-engine read path: primary self-hosted FastAPI (when VITE_API_URL is set)
+ * with MetaAPI edge functions as silent fallback.
+ */
+
+import { supabase } from '@/integrations/supabase/client';
+import { primaryApi, isPrimaryConfigured } from './primaryApi';
+import { withFailover } from './tradingDataGateway';
+
+// ============ Interfaces ============
+
+export interface TradingAccount {
+  id: string;
+  provider: string;
+  connection_type?: string; // 'deriv_api' or 'metaapi'
+  broker_name?: string;
+  metaapi_account_id: string | null;
+  deriv_token: string | null;
+  deriv_currency: string | null;
+  is_virtual: boolean | null;
+  name: string;
+  login: string;
+  platform?: string;
+  balance?: number;
+  equity?: number;
+  metaapi_fallback_approved?: boolean | null;
+}
+
+export interface TradeSignal {
+  symbol: string;
+  direction: 'BUY' | 'SELL';
+  volume: number;
+  stopLoss?: number | null;
+  takeProfit?: number | null;
+  comment?: string;
+}
+
+export interface ExecuteTradeResult {
+  success: boolean;
+  tradeId?: string | number;
+  buyPrice?: number;
+  payout?: number;
+  error?: string;
+  provider: string;
+}
+
+export interface AccountDataResult {
+  balance: number;
+  equity: number;
+  positions: any[];
+  history?: any[];
+}
+
+async function logExecution(account: TradingAccount, signal: TradeSignal, outcome: ExecuteTradeResult) {
+  try {
+    await supabase.from('trade_history').insert({
+      trading_account_id: account.id,
+      symbol: signal.symbol,
+      direction: signal.direction,
+      volume: signal.volume,
+      stop_loss: signal.stopLoss ?? null,
+      take_profit: signal.takeProfit ?? null,
+      status: outcome.success ? 'open' : 'failed',
+      comment: outcome.success
+        ? `Direct execute via ${outcome.provider}`
+        : `[${outcome.provider}] ${outcome.error || 'execution failed'}`.slice(0, 500),
+    } as any);
+  } catch (e) {
+    console.error('[BrokerExecution] Failed to log trade_history:', e);
+  }
+}
+
+// ============ Symbol Mapping ============
+
+const DERIV_SYMBOL_MAP: Record<string, string> = {
+  'EUR/USD': 'frxEURUSD',
+  'GBP/USD': 'frxGBPUSD',
+  'USD/JPY': 'frxUSDJPY',
+  'AUD/USD': 'frxAUDUSD',
+  'USD/CHF': 'frxUSDCHF',
+  'NZD/USD': 'frxNZDUSD',
+  'USD/CAD': 'frxUSDCAD',
+  'GBP/JPY': 'frxGBPJPY',
+  'EUR/GBP': 'frxEURGBP',
+  'EUR/JPY': 'frxEURJPY',
+  'XAU/USD': 'frxXAUUSD',
+  'BTC/USD': 'cryBTCUSD',
+  'ETH/USD': 'cryETHUSD',
+  'EURUSD': 'frxEURUSD',
+  'GBPUSD': 'frxGBPUSD',
+  'USDJPY': 'frxUSDJPY',
+  'AUDUSD': 'frxAUDUSD',
+  'USDCHF': 'frxUSDCHF',
+  'NZDUSD': 'frxNZDUSD',
+  'USDCAD': 'frxUSDCAD',
+  'GBPJPY': 'frxGBPJPY',
+  'EURGBP': 'frxEURGBP',
+  'EURJPY': 'frxEURJPY',
+  'XAUUSD': 'frxXAUUSD',
+  'BTCUSD': 'cryBTCUSD',
+  'ETHUSD': 'cryETHUSD',
+};
+
+function getDerivSymbol(symbol: string): string {
+  if (DERIV_SYMBOL_MAP[symbol]) {
+    return DERIV_SYMBOL_MAP[symbol];
+  }
+  
+  if (symbol.startsWith('frx') || symbol.startsWith('cry') || symbol.startsWith('R_') || symbol.startsWith('1HZ')) {
+    return symbol;
+  }
+  
+  const upperSymbol = symbol.toUpperCase().replace('/', '');
+  if (DERIV_SYMBOL_MAP[upperSymbol]) {
+    return DERIV_SYMBOL_MAP[upperSymbol];
+  }
+  
+  return symbol;
+}
+
+/**
+ * Determine the connection type for routing
+ * Uses connection_type column if available, falls back to provider detection
+ */
+function getConnectionType(account: TradingAccount): 'deriv_api' | 'metaapi' {
+  // Use explicit connection_type if set
+  if (account.connection_type === 'metaapi') return 'metaapi';
+  if (account.connection_type === 'deriv_api') return 'deriv_api';
+  if (account.connection_type === 'vps' || account.provider === 'vps') return 'metaapi';
+
+  // Fall back to platform detection
+  const platform = account.platform?.toLowerCase() || '';
+  if (platform.includes('mt4') || platform.includes('mt5') || platform.includes('metatrader')) {
+    return 'metaapi';
+  }
+  
+  // Fall back to provider detection
+  if (account.provider === 'metaapi' || account.provider === 'mt4' || account.provider === 'mt5') {
+    return 'metaapi';
+  }
+  
+  // Default to deriv_api for Deriv accounts with tokens
+  if (account.deriv_token) return 'deriv_api';
+  if (account.metaapi_account_id) return 'metaapi';
+  
+  return 'deriv_api';
+}
+
+// ============ VPS Order Result Interpretation ============
+
+// MT5 "success" return codes: DONE (10009) and PLACED (pending, 10008).
+const MT5_SUCCESS_RETCODES = new Set([10008, 10009]);
+
+// Common MT5 rejection codes → human readable reason.
+const MT5_RETCODE_MESSAGES: Record<number, string> = {
+  10004: 'Requote',
+  10006: 'Request rejected by broker',
+  10013: 'Invalid request',
+  10014: 'Invalid volume / lot size',
+  10015: 'Invalid price',
+  10016: 'Invalid stop loss / take profit',
+  10017: 'Trading is disabled',
+  10018: 'Market is closed',
+  10019: 'Not enough money to open position',
+  10021: 'No quotes to process the request',
+  10027: 'AutoTrading disabled in the MT5 terminal',
+  10030: 'Unsupported order filling mode',
+};
+
+interface VpsOrderVerdict {
+  ok: boolean;
+  ticket?: number | string;
+  retcode?: number;
+  message?: string;
+}
+
+/**
+ * Strictly interpret a VPS /order response. The order only counts as executed
+ * when the broker confirms it — never when a field merely "exists".
+ * Digs through an optional { source, data } failover wrapper.
+ */
+function interpretVpsOrderResult(raw: any): VpsOrderVerdict {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, message: 'Empty response from VPS engine' };
+  }
+
+  // Unwrap failover.py style { source, data, error } envelope.
+  if (raw.error && !raw.retcode && !raw.success) {
+    return { ok: false, message: String(raw.error) };
+  }
+  const r = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+
+  const retcode = typeof r.retcode === 'number' ? r.retcode : undefined;
+  const ticket = r.ticket ?? r.order ?? r.deal ?? undefined;
+
+  // If the broker gave us a retcode, it is the source of truth.
+  if (retcode !== undefined) {
+    if (MT5_SUCCESS_RETCODES.has(retcode)) {
+      return { ok: true, ticket, retcode };
+    }
+    return {
+      ok: false,
+      retcode,
+      message: MT5_RETCODE_MESSAGES[retcode] || r.comment || `Order rejected (retcode ${retcode})`,
+    };
+  }
+
+  // Explicit boolean success flag.
+  if (r.success === true) return { ok: true, ticket };
+  if (r.success === false) return { ok: false, message: r.error || r.comment || 'Order rejected by VPS' };
+
+  // A real, non-zero ticket with no retcode still counts as filled.
+  if (typeof ticket === 'number' && ticket > 0) return { ok: true, ticket };
+  if (typeof ticket === 'string' && ticket && ticket !== '0') return { ok: true, ticket };
+
+  return { ok: false, message: r.error || r.comment || 'VPS engine did not confirm the order' };
+}
+
+// ============ Main Execution Function ============
+
+/**
+ * Execute a trade on the specified account
+ * Automatically routes to the correct broker API based on connection_type
+ */
+export async function executeOnAccount(
+  account: TradingAccount,
+  signal: TradeSignal
+): Promise<ExecuteTradeResult> {
+  const outcome = await executeOnAccountInner(account, signal);
+  await logExecution(account, signal, outcome);
+  return outcome;
+}
+
+async function executeOnAccountInner(
+  account: TradingAccount,
+  signal: TradeSignal
+): Promise<ExecuteTradeResult> {
+  console.log(`[BrokerExecution] Executing trade on ${account.provider} account:`, account.name);
+  console.log(`[BrokerExecution] Signal:`, signal);
+
+  // VPS-first middleware — routes directly to self-hosted FastAPI when the
+  // account was connected via the VPS bridge. For a VPS-native account the VPS
+  // is the source of truth: we ONLY fall through to MetaAPI when the VPS is
+  // genuinely unreachable. A broker rejection is reported as a failure, never
+  // masked as success.
+  if (
+    (account.provider === 'vps' || account.connection_type === 'vps') &&
+    isPrimaryConfigured()
+  ) {
+    try {
+      const raw: any = await primaryApi.sendOrder({
+        accountId: account.id,
+        symbol: signal.symbol,
+        order_type: signal.direction.toLowerCase(),
+        volume: signal.volume,
+        sl: signal.stopLoss ?? null,
+        tp: signal.takeProfit ?? null,
+      });
+
+      const verdict = interpretVpsOrderResult(raw);
+      console.log('[BrokerExecution] VPS order verdict:', verdict, 'raw:', raw);
+
+      if (verdict.ok) {
+        return {
+          success: true,
+          tradeId: verdict.ticket ?? 'vps-order',
+          provider: 'vps',
+        };
+      }
+
+      // VPS responded and rejected the order — surface the real reason.
+      return {
+        success: false,
+        error: verdict.message || 'VPS engine rejected the order',
+        provider: 'vps',
+      };
+    } catch (vpsErr: any) {
+      // Only a truly unreachable VPS should fall through to the legacy engine,
+      // and only when an admin has explicitly approved MetaAPI fallback.
+      if (vpsErr?.name === 'PrimaryUnavailableError') {
+        if (!account.metaapi_fallback_approved) {
+          return {
+            success: false,
+            error: 'VPS unreachable. MetaAPI fallback not approved for this account — contact admin.',
+            provider: 'vps',
+          };
+        }
+        console.warn('[BrokerExecution] VPS unreachable, approved fallback to MetaAPI:', vpsErr?.message);
+      } else {
+        return {
+          success: false,
+          error: vpsErr?.message || 'VPS order execution failed',
+          provider: 'vps',
+        };
+      }
+    }
+  }
+
+  const connectionType = getConnectionType(account);
+  console.log(`[BrokerExecution] Connection type:`, connectionType);
+
+  if (connectionType === 'deriv_api') {
+    return executeDerivTrade(account, signal);
+  } else {
+    return executeMetaApiTrade(account, signal);
+  }
+}
+
+// ============ Deriv Execution ============
+
+async function executeDerivTrade(
+  account: TradingAccount,
+  signal: TradeSignal
+): Promise<ExecuteTradeResult> {
+  if (!account.deriv_token) {
+    return { 
+      success: false, 
+      error: 'No Deriv API token available for this account', 
+      provider: 'deriv' 
+    };
+  }
+  
+  try {
+    // Use the edge function for server-side execution
+    const { data, error } = await supabase.functions.invoke('deriv-execute-signal', {
+      body: {
+        deriv_token: account.deriv_token,
+        deriv_currency: account.deriv_currency || 'USD',
+        is_virtual: account.is_virtual || false,
+        signal: {
+          symbol: signal.symbol,
+          direction: signal.direction,
+          lot_size: signal.volume,
+          stop_loss: signal.stopLoss,
+          take_profit: signal.takeProfit,
+          comment: signal.comment,
+        }
+      }
+    });
+    
+    if (error) {
+      console.error('[BrokerExecution] Deriv edge function error:', error);
+      throw new Error(error.message || 'Deriv trade execution failed');
+    }
+    
+    if (!data?.success) {
+      throw new Error(data?.error || 'Deriv trade execution failed');
+    }
+    
+    console.log('[BrokerExecution] Deriv trade successful:', data);
+    
+    return {
+      success: true,
+      tradeId: data.contract_id,
+      buyPrice: data.buy_price,
+      payout: data.payout,
+      provider: 'deriv',
+    };
+  } catch (err: any) {
+    console.error('[BrokerExecution] Deriv execution error:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to execute Deriv trade',
+      provider: 'deriv',
+    };
+  }
+}
+
+// ============ MetaAPI Execution ============
+
+async function executeMetaApiTrade(
+  account: TradingAccount,
+  signal: TradeSignal
+): Promise<ExecuteTradeResult> {
+  if (!account.metaapi_account_id) {
+    return {
+      success: false,
+      error: 'No MetaAPI account ID available for this account',
+      provider: 'metaapi'
+    };
+  }
+
+  const payload = {
+    accountId: account.metaapi_account_id,
+    symbol: signal.symbol,
+    direction: signal.direction,
+    volume: signal.volume,
+    stopLoss: signal.stopLoss,
+    takeProfit: signal.takeProfit,
+    comment: signal.comment || 'HuMi Trade',
+  };
+
+  // Primary-first execution via self-hosted FastAPI; silent fallback to MetaAPI edge fn.
+  try {
+    const primary: any = await primaryApi.sendOrder({
+      accountId: account.metaapi_account_id,
+      symbol: signal.symbol,
+      order_type: signal.direction.toLowerCase(),
+      volume: signal.volume,
+      sl: signal.stopLoss ?? null,
+      tp: signal.takeProfit ?? null,
+    });
+    const verdict = interpretVpsOrderResult(primary);
+    console.log('[BrokerExecution] MetaAPI primary verdict:', verdict, 'raw:', primary);
+    if (verdict.ok) {
+      return {
+        success: true,
+        tradeId: verdict.ticket ?? primary?.tradeId ?? primary?.positionId ?? primary?.order,
+        provider: 'metaapi',
+      };
+    }
+    return { success: false, error: verdict.message || 'Primary engine rejected order', provider: 'metaapi' };
+  } catch (primaryErr: any) {
+    // Only fall back on primary-unavailable; rethrow real broker rejections
+    const isPrimaryDown = primaryErr?.name === 'PrimaryUnavailableError';
+    if (!isPrimaryDown) {
+      console.error('[BrokerExecution] Primary order rejected:', primaryErr);
+      return { success: false, error: primaryErr?.message || 'Primary engine rejected order', provider: 'metaapi' };
+    }
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke('metaapi-execute-trade', {
+      body: {
+        accountId: account.metaapi_account_id,
+        trade: {
+          symbol: signal.symbol,
+          direction: signal.direction,
+          volume: signal.volume,
+          stopLoss: signal.stopLoss,
+          takeProfit: signal.takeProfit,
+          comment: signal.comment || 'HuMi Trade'
+        }
+      }
+    });
+
+    if (error) {
+      console.error('[BrokerExecution] MetaAPI edge function error:', error);
+      throw new Error(error.message || 'MetaAPI trade execution failed');
+    }
+
+    if (data?.error) {
+      throw new Error(data.error);
+    }
+
+    console.log('[BrokerExecution] MetaAPI trade successful:', data);
+
+    return {
+      success: true,
+      tradeId: data?.tradeId || data?.positionId,
+      provider: 'metaapi',
+    };
+  } catch (err: any) {
+    console.error('[BrokerExecution] MetaAPI execution error:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to execute MetaAPI trade',
+      provider: 'metaapi',
+    };
+  }
+}
+
+
+// ============ Utility Functions ============
+
+/**
+ * Check if an account supports trade execution
+ */
+export function canExecuteTrades(account: TradingAccount): boolean {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
+    return !!account.deriv_token;
+  }
+  if (connectionType === 'metaapi') {
+    return !!account.metaapi_account_id;
+  }
+  return false;
+}
+
+/**
+ * Get a user-friendly description of why an account can't trade
+ */
+export function getTradeDisabledReason(account: TradingAccount): string | null {
+  if (canExecuteTrades(account)) {
+    return null;
+  }
+  
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
+    return 'Deriv API token not configured';
+  }
+  if (connectionType === 'metaapi') {
+    return 'MetaAPI connection not configured';
+  }
+  return `${account.provider} broker not yet supported for trade execution`;
+}
+
+/**
+ * Get provider-specific trade execution details
+ */
+export function getProviderInfo(account: TradingAccount): {
+  name: string;
+  supportsOptions: boolean;
+  supportsForex: boolean;
+  supportsSynthetics: boolean;
+  connectionType: 'deriv_api' | 'metaapi';
+} {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'deriv_api') {
+    return {
+      name: account.broker_name || 'Deriv',
+      supportsOptions: true,
+      supportsForex: true,
+      supportsSynthetics: true,
+      connectionType: 'deriv_api',
+    };
+  }
+  
+  return {
+    name: account.broker_name || 'MetaAPI (MT4/MT5)',
+    supportsOptions: false,
+    supportsForex: true,
+    supportsSynthetics: false,
+    connectionType: 'metaapi',
+  };
+}
+
+// ============ Account Data Fetching ============
+
+/**
+ * Fetch live account data (balance, equity, positions) from the appropriate API
+ */
+export async function fetchAccountData(account: TradingAccount): Promise<AccountDataResult> {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'metaapi' && account.metaapi_account_id) {
+    return fetchMetaApiData(account.metaapi_account_id);
+  }
+  
+  // Default to empty for Deriv (handled via WebSocket in UI)
+  return {
+    balance: account.balance || 0,
+    equity: account.equity || 0,
+    positions: [],
+  };
+}
+
+async function fetchMetaApiData(accountId: string): Promise<AccountDataResult> {
+  return withFailover(
+    async () => {
+      const [info, positions] = await Promise.all([
+        primaryApi.getAccount(accountId),
+        primaryApi.getPositions(accountId),
+      ]);
+      const i: any = info || {};
+      const p: any = positions || {};
+      return {
+        balance: Number(i.balance ?? 0),
+        equity: Number(i.equity ?? 0),
+        positions: Array.isArray(p) ? p : (p.positions ?? []),
+      };
+    },
+    async () => {
+      try {
+        const [infoResp, positionsResp] = await Promise.all([
+          supabase.functions.invoke('metaapi-account-info', { body: { accountId } }),
+          supabase.functions.invoke('metaapi-get-positions', { body: { accountId } }),
+        ]);
+        const info = infoResp.data || {};
+        const positions = positionsResp.data?.positions || [];
+        return {
+          balance: info.balance || 0,
+          equity: info.equity || 0,
+          positions,
+        };
+      } catch (error) {
+        console.error('[BrokerExecution] MetaAPI data fetch error:', error);
+        return { balance: 0, equity: 0, positions: [] };
+      }
+    },
+  );
+}
+
+/**
+ * Fetch trading history from the appropriate API
+ */
+export async function fetchTradingHistory(account: TradingAccount, days: number = 7): Promise<any[]> {
+  const connectionType = getConnectionType(account);
+  
+  if (connectionType === 'metaapi' && account.metaapi_account_id) {
+    const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    return withFailover(
+      async () => {
+        const h: any = await primaryApi.getHistory(account.metaapi_account_id!, startTime);
+        return Array.isArray(h) ? h : (h?.history ?? []);
+      },
+      async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke('metaapi-get-history', {
+            body: { accountId: account.metaapi_account_id, startTime },
+          });
+          if (error) throw error;
+          return data?.history || [];
+        } catch (error) {
+          console.error('[BrokerExecution] History fetch error:', error);
+          return [];
+        }
+      },
+    );
+  }
+  
+  return [];
+}
