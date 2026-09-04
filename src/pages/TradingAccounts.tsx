@@ -214,15 +214,16 @@ const TradingAccounts = () => {
       });
       if (error) throw error;
       const r = data?.results?.[0];
-      const outcome = r?.outcome as string | undefined;
+      const outcome = (r?.outcome ?? r?.status) as string | undefined;
+      const detail = r?.detail ?? r?.error;
       if (outcome === 'healthy') {
         toast({ title: 'Account is ready', description: `${account.name} is deployed and connected.` });
-      } else if (outcome === 'deploying') {
-        toast({ title: 'Still finishing setup', description: r?.detail || 'The broker terminal is still starting up. We keep retrying every few minutes.' });
+      } else if (outcome === 'deploying' || outcome === 'provisioning') {
+        toast({ title: 'Still finishing setup', description: detail || 'The broker terminal is still starting up. We keep retrying every few minutes.' });
       } else {
         toast({
           title: 'Setup could not complete',
-          description: r?.detail || r?.outcome || 'No response from the trading bridge.',
+          description: detail || outcome || 'No response from the trading bridge.',
           variant: 'destructive',
         });
       }
