@@ -230,6 +230,15 @@ export async function executeOnAccount(
   account: TradingAccount,
   signal: TradeSignal
 ): Promise<ExecuteTradeResult> {
+  const outcome = await executeOnAccountInner(account, signal);
+  await logExecution(account, signal, outcome);
+  return outcome;
+}
+
+async function executeOnAccountInner(
+  account: TradingAccount,
+  signal: TradeSignal
+): Promise<ExecuteTradeResult> {
   console.log(`[BrokerExecution] Executing trade on ${account.provider} account:`, account.name);
   console.log(`[BrokerExecution] Signal:`, signal);
 
