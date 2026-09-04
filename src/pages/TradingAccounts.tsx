@@ -306,19 +306,6 @@ const handleVerifyConnection = async (account: TradingAccount) => {
     setDerivMT5TransferOpen(true);
   };
 
-  const handleFinalizeAccount = async (account: TradingAccount) => {
-    if (!account.metaapi_account_id) return;
-    setRefreshingId(account.id);
-    try {
-      const { data, error } = await supabase.functions.invoke('metaapi-finalize-deployments', { body: { tradingAccountId: account.id } });
-      if (error) throw error;
-      const result = data?.results?.[0];
-      toast({ title: result?.status === 'healthy' ? 'Account ready' : 'Setup status updated', description: result?.error || result?.status || 'Check complete' });
-      await loadAccounts();
-    } catch (err: any) {
-      toast({ title: 'Check failed', description: err.message, variant: 'destructive' });
-    } finally { setRefreshingId(null); }
-  };
 
   const getProviderBadge = (account: TradingAccount) => {
     if (account.provider === 'vps' || (account as any).connection_type === 'vps') {
