@@ -931,6 +931,7 @@ export type Database = {
           id: string
           khumo_queries_reset_at: string
           khumo_queries_used: number
+          phone: string | null
           referred_by: string | null
           subscription_plan: string | null
           subscription_status: string | null
@@ -943,6 +944,7 @@ export type Database = {
           id?: string
           khumo_queries_reset_at?: string
           khumo_queries_used?: number
+          phone?: string | null
           referred_by?: string | null
           subscription_plan?: string | null
           subscription_status?: string | null
@@ -955,6 +957,7 @@ export type Database = {
           id?: string
           khumo_queries_reset_at?: string
           khumo_queries_used?: number
+          phone?: string | null
           referred_by?: string | null
           subscription_plan?: string | null
           subscription_status?: string | null
