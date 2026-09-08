@@ -126,6 +126,24 @@ Light mode is default (:root), dark mode is .dark class
   }
 }
 
+.phone-input .PhoneInputInput {
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.phone-input .PhoneInputCountrySelect {
+  color: hsl(var(--foreground));
+}
+
+.phone-input .PhoneInputCountryIcon {
+  width: 1.5rem;
+  box-shadow: none;
+}
+
 @layer base {
   * {
     @apply border-border;

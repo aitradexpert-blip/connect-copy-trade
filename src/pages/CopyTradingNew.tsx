@@ -96,6 +96,36 @@ export default function CopyTradingNew() {
     subscribeToTrades();
   }, [user]);
 
+  const requireMentorProfile = async (): Promise<boolean> => {
+    if (!user?.id) return false;
+
+    const { data, error } = await supabase
+      .from("mentor_profiles")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      toast({
+        title: "Could not verify mentor status",
+        description: error.message,
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    if (!data) {
+      toast({
+        title: "Registered mentors only",
+        description: "You need to be a registered mentor to set up a master trading account — apply to become a mentor first.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    return true;
+  };
+
   const subscribeToTrades = () => {
     if (!user) return;
 
@@ -443,6 +473,8 @@ export default function CopyTradingNew() {
     try {
       // Lifecycle guard: only allow Master activation on connected accounts
       if (!currentStatus) {
+        if (!(await requireMentorProfile())) return;
+
         const acc: any = accounts.find((a) => a.id === accountId);
         const status = acc?.connection_status;
         if (status && status !== 'connected') {
@@ -559,6 +591,8 @@ export default function CopyTradingNew() {
 
   // Create a CopyFactory strategy (become a provider)
   const createCopyFactoryStrategy = async () => {
+    if (!(await requireMentorProfile())) return;
+
     const metaApiAccount = accounts.find(acc => acc.metaapi_account_id);
 
     // VPS accounts can be masters without CopyFactory — just set is_master flag

@@ -24,9 +24,19 @@ import PopiaConsentCheckbox, { recordConsent } from "@/components/PopiaConsentCh
 import HeroBull from "@/components/landing/HeroBull";
 import FeatureCard from "@/components/landing/FeatureCard";
 import LandingNav from "@/components/landing/LandingNav";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
+import "react-phone-number-input/style.css";
+import { z } from "zod";
 
 const TELEGRAM_DOWNLOAD_URL = "https://whatsform.com/cjSuXT";
 const WHATSAPP_DOWNLOAD_URL = "https://whatsform.com/cjSuXT";
+
+const signupSchema = z.object({
+  displayName: z.string().trim().min(1, "Display name is required").max(100, "Display name must be 100 characters or less"),
+  email: z.string().trim().email("Enter a valid email address").max(255, "Email must be 255 characters or less"),
+  password: z.string().min(6, "Password must be at least 6 characters").max(72, "Password must be 72 characters or less"),
+  phone: z.string().refine(isValidPhoneNumber, "Enter a valid phone number including its country code"),
+});
 
 
 const Auth = () => {
@@ -35,6 +45,7 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [phone, setPhone] = useState("");
   const [showSignInPw, setShowSignInPw] = useState(false);
   const [showSignUpPw, setShowSignUpPw] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
@@ -181,14 +192,28 @@ const Auth = () => {
       toast({ title: "Please accept the Terms & Privacy Policy", variant: "destructive" });
       return;
     }
+
+    const validated = signupSchema.safeParse({ displayName, email, password, phone });
+    if (!validated.success) {
+      toast({
+        title: "Check your registration details",
+        description: validated.error.issues[0]?.message || "Please correct the highlighted details.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: validated.data.email,
+        password: validated.data.password,
         options: {
           emailRedirectTo: `${window.location.origin}/`,
-          data: { display_name: displayName },
+          data: {
+            display_name: validated.data.displayName,
+            phone: validated.data.phone,
+          },
         },
       });
       if (error) throw error;
@@ -542,6 +567,20 @@ const Auth = () => {
                         onChange={(e) => setEmail(e.target.value)}
                         required
                         className="h-12 border-white/10 bg-white/5 text-white placeholder:text-white/40 focus-visible:ring-[hsl(354_82%_45%)]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-phone">Phone Number</Label>
+                      <PhoneInput
+                        id="signup-phone"
+                        international
+                        defaultCountry="ZA"
+                        countryCallingCodeEditable={false}
+                        placeholder="Enter phone number"
+                        value={phone}
+                        onChange={(value) => setPhone(value || "")}
+                        className="phone-input h-12 rounded-md border border-white/10 bg-white/5 px-3 text-white focus-within:ring-2 focus-within:ring-[hsl(354_82%_45%)]"
+                        required
                       />
                     </div>
                     <div className="space-y-2">
