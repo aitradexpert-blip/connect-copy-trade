@@ -33,9 +33,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const gatewayKey = Deno.env.get('AI_GATEWAY_API_KEY');
+    const gatewayKey = Deno.env.get('LOVABLE_API_KEY');
     if (!gatewayKey) {
-      return new Response(JSON.stringify({ error: 'AI_GATEWAY_API_KEY not configured' }), {
+      return new Response(JSON.stringify({ error: 'LOVABLE_API_KEY is not configured for this project' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -44,16 +44,15 @@ Deno.serve(async (req) => {
     const prompt =
       'This is a screenshot of a MetaTrader/broker account. Extract ONLY: login (number), server (exact string), broker/company name, and platform (mt4 or mt5 if determinable). Respond with ONLY raw JSON, no markdown, no preamble: {"login": "", "server": "", "broker_name": "", "platform": ""}. If a field is not visible, use null for it. NEVER extract or mention any password, even if one is visible in the image.';
 
-    // Vercel AI Gateway (OpenAI-compatible endpoint)
-    const res = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
+    // Lovable AI Gateway (OpenAI-compatible endpoint)
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${gatewayKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-sonnet-4.5',
-        max_tokens: 300,
+        model: 'google/gemini-2.5-flash',
         messages: [{
           role: 'user',
           content: [
@@ -74,8 +73,16 @@ Deno.serve(async (req) => {
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || '{}';
     const clean = String(text).replace(/```json|```/g, '').trim();
-    let extracted;
+    let extracted: Record<string, unknown>;
     try { extracted = JSON.parse(clean); } catch { extracted = {}; }
+
+    // Models often answer "MetaTrader 5" / "MT5 (build 4470)" instead of the
+    // bare "mt5" the form expects, which silently dropped the platform value.
+    const rawPlatform = String(extracted?.platform ?? '');
+    if (/5/.test(rawPlatform) && /mt|metatrader/i.test(rawPlatform)) extracted.platform = 'mt5';
+    else if (/4/.test(rawPlatform) && /mt|metatrader/i.test(rawPlatform)) extracted.platform = 'mt4';
+    else if (!/^(mt4|mt5)$/i.test(rawPlatform.trim())) extracted.platform = null;
+    else extracted.platform = rawPlatform.trim().toLowerCase();
 
 return new Response(JSON.stringify(extracted), {
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
