@@ -73,8 +73,16 @@ Deno.serve(async (req) => {
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || '{}';
     const clean = String(text).replace(/```json|```/g, '').trim();
-    let extracted;
+    let extracted: Record<string, unknown>;
     try { extracted = JSON.parse(clean); } catch { extracted = {}; }
+
+    // Models often answer "MetaTrader 5" / "MT5 (build 4470)" instead of the
+    // bare "mt5" the form expects, which silently dropped the platform value.
+    const rawPlatform = String(extracted?.platform ?? '');
+    if (/5/.test(rawPlatform) && /mt|metatrader/i.test(rawPlatform)) extracted.platform = 'mt5';
+    else if (/4/.test(rawPlatform) && /mt|metatrader/i.test(rawPlatform)) extracted.platform = 'mt4';
+    else if (!/^(mt4|mt5)$/i.test(rawPlatform.trim())) extracted.platform = null;
+    else extracted.platform = rawPlatform.trim().toLowerCase();
 
 return new Response(JSON.stringify(extracted), {
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
