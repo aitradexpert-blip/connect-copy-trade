@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.metaapi-finalize-deployments]
 verify_jwt = false
+
+[functions.ocr-selftest]
+verify_jwt = false
