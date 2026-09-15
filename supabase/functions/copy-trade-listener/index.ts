@@ -214,10 +214,46 @@ Deno.serve(async (req) => {
     const INVALID_CREDS_RE =
       /invalid\s+(account|credentials|password|login)|authorization\s+failed|auth\s+failed|wrong\s+password|login\s+failed|account\s+disabled/i;
 
-    // One terminal session per account per invocation.
-    const vpsSessions = new Map<string, boolean>();
-    async function ensureVpsSession(account: any): Promise<{ ok: boolean; error?: string }> {
-      if (vpsSessions.get(account.id)) return { ok: true };
+    // ---- Order verdict — IDENTICAL rules to the manual "Execute Trade" button
+    // (interpretVpsOrderResult in src/services/brokerExecution.ts). The listener
+    // used to require `json.success === true`, so a normal MT5 fill that answers
+    // with retcode 10009 / a ticket and no `success` flag was recorded as a
+    // FAILURE even though the trade was live. Same rules now, both paths.
+    const MT5_SUCCESS_RETCODES = new Set([10008, 10009]);
+    const MT5_RETCODE_MESSAGES: Record<number, string> = {
+      10004: 'Requote', 10006: 'Request rejected by broker', 10013: 'Invalid request',
+      10014: 'Invalid volume / lot size', 10015: 'Invalid price',
+      10016: 'Invalid stop loss / take profit', 10017: 'Trading is disabled',
+      10018: 'Market is closed', 10019: 'Not enough money to open position',
+      10021: 'No quotes to process the request',
+      10027: 'AutoTrading disabled in the MT5 terminal', 10030: 'Unsupported order filling mode',
+    };
+    function interpretVpsOrderResult(raw: any): { ok: boolean; ticket?: number | string; price?: number | null; message?: string } {
+      if (!raw || typeof raw !== 'object') return { ok: false, message: 'Empty response from VPS engine' };
+      if (raw.error && !raw.retcode && !raw.success) return { ok: false, message: String(raw.error) };
+      const r = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+      const retcode = typeof r.retcode === 'number' ? r.retcode : undefined;
+      const ticket = r.ticket ?? r.order ?? r.deal ?? undefined;
+      const price = typeof r.price === 'number' ? r.price : null;
+      if (retcode !== undefined) {
+        if (MT5_SUCCESS_RETCODES.has(retcode)) return { ok: true, ticket, price };
+        return { ok: false, message: MT5_RETCODE_MESSAGES[retcode] || r.comment || `Order rejected (retcode ${retcode})` };
+      }
+      if (r.success === true) return { ok: true, ticket, price };
+      if (r.success === false) return { ok: false, message: r.error || r.comment || 'Order rejected by VPS' };
+      if (typeof ticket === 'number' && ticket > 0) return { ok: true, ticket, price };
+      if (typeof ticket === 'string' && ticket && ticket !== '0') return { ok: true, ticket, price };
+      return { ok: false, message: r.error || r.comment || 'VPS engine did not confirm the order' };
+    }
+
+    // Re-bind the shared terminal to one account. The manual path does this too
+    // (verify-vps-connection), but ONLY after an order reports a session fault —
+    // never before the order. We now behave the same way: /order first, connect
+    // only as recovery. Kept as recovery (not removed) because fan-out drives
+    // one shared single-login terminal across many followers, so consecutive
+    // orders genuinely do land on the wrong bound login — a case the one-account
+    // manual path effectively never hits.
+    async function rebindVpsSession(account: any): Promise<{ ok: boolean; error?: string }> {
       if (!account.login || !account.server || !account.mt5_password) {
         return { ok: false, error: 'Follower account is missing MT5 login/server/password — reconnect the account to enable copying' };
       }
@@ -227,10 +263,7 @@ Deno.serve(async (req) => {
         server: account.server,
         account_id: account.id,
       }, 8000, 'VPS /connect');
-      if (res.json?.success) {
-        vpsSessions.set(account.id, true);
-        return { ok: true };
-      }
+      if (res.json?.success) return { ok: true };
       const err = res.error || res.json?.error || `VPS /connect HTTP ${res.status}`;
       // A bad login poisons the shared terminal for everybody. Park the account
       // in a status excluded from fan-out until its password is fixed in-app.
