@@ -302,18 +302,38 @@ Deno.serve(async (req) => {
         return { follower_user_id: relationship.follower_user_id, success: false, via: 'skipped', error: msg };
       }
 
-      const masterBalance = relationship.master_account?.balance || 10000;
-      const followerBalance = follower.balance || 10000;
-      const balanceRatio = followerBalance / masterBalance;
-      // Floor at 0.01 (min broker lot), ceiling at 10.0 (safety cap so
-      // followers with much larger accounts don't submit oversized orders).
-      const rawVolume = signal.lot_size * balanceRatio;
-      const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(2));
+// Risk-based sizing, reusing the same formula as the manual Risk
+// Calculator: riskAmount = balance * risk% ; lots = riskAmount / (pips * pipValue).
+// Pip distance is approximated from the signal's own SL/TP spread
+// (half the total range) since we don't have a live tick price here —
+// a reasonable proxy, not exact; note this for future refinement.
+function pipSizeForSymbol(symbol: string): number {
+  const s = symbol.toUpperCase();
+  if (s.includes('JPY')) return 0.01;
+  if (s.includes('XAU') || s.includes('GOLD')) return 0.01;
+  if (s.includes('XAG')) return 0.001;
+  return 0.0001;
+}
+
+const followerBalance = follower.balance || 0;
+const riskPercent = follower.risk_percent ?? 1.0;
+const pipSize = pipSizeForSymbol(signal.symbol);
+let stopDistance = 0;
+if (signal.stop_loss && signal.take_profit) {
+  stopDistance = Math.abs(signal.take_profit - signal.stop_loss) / 2;
+} else if (signal.stop_loss) {
+  stopDistance = Math.abs(signal.stop_loss) * 0.001; // last-resort rough fallback
+}
+const stopPips = stopDistance > 0 ? stopDistance / pipSize : 20; // default 20 pips if no SL/TP at all
+const riskAmount = followerBalance * (riskPercent / 100);
+const pipValue = 10; // standard $10/pip per lot, matches manual calculator
+const rawVolume = stopPips > 0 ? riskAmount / (stopPips * pipValue) : 0.01;
+const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(2));
 
       console.log(`[fan-out] follower=${relationship.follower_user_id} vol=${adjustedVolume}`);
 
       // Any account holding live MT5 credentials can execute through the bridge.
-      const vpsEligible = !!(VPS_URL && vpsOnline && follower.mt5_password && follower.login && follower.server);
+      const vpsEligible = follower.connection_type === 'vps' || follower.provider === 'vps';
       let vpsError: string | null = null;
 
       if (VPS_URL && !vpsOnline) {
@@ -321,6 +341,7 @@ Deno.serve(async (req) => {
       }
 
       if (vpsEligible) {
+        {
         const session = await ensureVpsSession(follower);
         if (!session.ok) {
           vpsError = session.error!;
@@ -351,13 +372,14 @@ Deno.serve(async (req) => {
           if (transient || sessionFault) {
             const firstMsg = firstError || `VPS HTTP ${orderRes.status}`;
             console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
-            vpsSessions.delete(follower.id);
+            
             const re = await ensureVpsSession(follower);
             if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order (retry)');
             else orderRes = { ok: false, status: 0, json: null, error: re.error!, timedOut: false, unreachable: false };
           }
 
-          if (orderRes.json?.success) {
+          const interpreted = interpretVpsOrderResult(orderRes.json);
+          if (interpreted.success) {
             await logSuccess(relationship, adjustedVolume, 'vps', orderRes.json?.data?.price ?? null);
             return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: orderRes.json };
           }
