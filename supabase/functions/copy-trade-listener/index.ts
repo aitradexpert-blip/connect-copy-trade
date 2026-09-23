@@ -340,52 +340,43 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         vpsError = 'Trading bridge (VPS) is offline';
       }
 
-      if (vpsEligible) {
-        {
-        const session = await ensureVpsSession(follower);
-        if (!session.ok) {
-          vpsError = session.error!;
-        } else {
-          const orderBody = {
-            accountId: follower.id,
-            account_id: follower.id,
-            symbol: signal.symbol,
-            order_type: String(signal.direction || '').toLowerCase(),
-            volume: adjustedVolume,
-            sl: signal.stop_loss ?? null,
-            tp: signal.take_profit ?? null,
-            comment: `Copy from ${relationship.master_account?.name || 'master'}`,
-          };
+           if (vpsEligible) {
+        const orderBody = {
+          accountId: follower.id,
+          account_id: follower.id,
+          symbol: signal.symbol,
+          order_type: String(signal.direction || '').toLowerCase(),
+          volume: adjustedVolume,
+          sl: signal.stop_loss ?? null,
+          tp: signal.take_profit ?? null,
+          comment: `Copy from ${relationship.master_account?.name || 'master'}`,
+        };
 
-          // Fail fast: 8s window, and retry ONLY on a genuinely transient
-          // network/5xx condition. A timeout or a broker-level rejection
-          // returns immediately — retrying either one just holds the single
-          // shared MT5 terminal lock and starves other publishes.
-          let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order');
-          const firstError = orderRes.error || orderRes.json?.error || '';
-          // Additional (not replacement) retry condition: a session fault —
-          // "symbol not available" and friends mean the terminal is bound to
-          // another login, so re-bind this follower and retry once.
-          const sessionFault = !orderRes.json?.success && SESSION_ERROR_RE.test(String(firstError));
-          const transient = !orderRes.json?.success && !orderRes.timedOut &&
-            (orderRes.unreachable || orderRes.status >= 500);
-          if (transient || sessionFault) {
-            const firstMsg = firstError || `VPS HTTP ${orderRes.status}`;
-            console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
-            
-            const re = await ensureVpsSession(follower);
-            if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order (retry)');
-            else orderRes = { ok: false, status: 0, json: null, error: re.error!, timedOut: false, unreachable: false };
-          }
+        // Straight to /order first, exactly like the manual Execute Trade
+        // button — no pre-login. Re-bind only happens below, as recovery
+        // after a session fault, never before the first attempt.
+        let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order');
+        const firstError = orderRes.error || orderRes.json?.error || '';
+        const firstInterpreted = interpretVpsOrderResult(orderRes.json);
+        const sessionFault = !firstInterpreted.ok && SESSION_ERROR_RE.test(String(firstError));
+        const transient = !firstInterpreted.ok && !orderRes.timedOut &&
+          (orderRes.unreachable || orderRes.status >= 500);
+        if (transient || sessionFault) {
+          const firstMsg = firstError || `VPS HTTP ${orderRes.status}`;
+          console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
 
-          const interpreted = interpretVpsOrderResult(orderRes.json);
-          if (interpreted.success) {
-            await logSuccess(relationship, adjustedVolume, 'vps', orderRes.json?.data?.price ?? null);
-            return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: orderRes.json };
-          }
-
-          vpsError = orderRes.error || orderRes.json?.error || `VPS HTTP ${orderRes.status}`;
+          const re = await rebindVpsSession(follower);
+          if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order (retry)');
+          else orderRes = { ok: false, status: 0, json: null, error: re.error!, timedOut: false, unreachable: false };
         }
+
+        const interpreted = interpretVpsOrderResult(orderRes.json);
+        if (interpreted.ok) {
+          await logSuccess(relationship, adjustedVolume, 'vps', interpreted.price ?? null);
+          return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: orderRes.json };
+        }
+
+        vpsError = interpreted.message || orderRes.error || `VPS HTTP ${orderRes.status}`;
       }
 
       if (vpsError) {
