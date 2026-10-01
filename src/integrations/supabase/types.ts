@@ -1279,6 +1279,7 @@ export type Database = {
           platform: string
           provider: string
           provider_account_id: string | null
+          risk_percent: number
           server: string
           updated_at: string
           user_id: string
@@ -1307,6 +1308,7 @@ export type Database = {
           platform: string
           provider?: string
           provider_account_id?: string | null
+          risk_percent?: number
           server: string
           updated_at?: string
           user_id: string
@@ -1335,6 +1337,7 @@ export type Database = {
           platform?: string
           provider?: string
           provider_account_id?: string | null
+          risk_percent?: number
           server?: string
           updated_at?: string
           user_id?: string
