@@ -42,13 +42,22 @@ export function ConnectAccountModal({
   onAccountConnected 
 }: ConnectAccountModalProps) {
   const [provider, setProvider] = useState<ProviderType | ''>('');
-  const [formData, setFormData] = useState({
-    name: "",
-    login: "",
-    password: "",
-    server: "",
-    platform: "",
+  // Draft survives minimising the app / tab reloads (password intentionally not stored).
+  const [formData, setFormDataRaw] = useState(() => {
+    const empty = { name: "", login: "", password: "", server: "", platform: "" };
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("connect-account-draft") || "null");
+      return saved ? { ...empty, ...saved, password: "" } : empty;
+    } catch { return empty; }
   });
+  const setFormData = (next: typeof formData) => {
+    setFormDataRaw(next);
+    try {
+      const { password: _p, ...rest } = next;
+      if (Object.values(rest).some(Boolean)) sessionStorage.setItem("connect-account-draft", JSON.stringify(rest));
+      else sessionStorage.removeItem("connect-account-draft");
+    } catch { /* ignore */ }
+  };
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
