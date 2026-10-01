@@ -50,14 +50,20 @@ export function ConnectAccountModal({
       return saved ? { ...empty, ...saved, password: "" } : empty;
     } catch { return empty; }
   });
-  const setFormData = (next: typeof formData) => {
-    setFormDataRaw(next);
+  const setFormData = (arg: typeof formData | ((p: typeof formData) => typeof formData)) => {
+    setFormDataRaw((prev: typeof formData) => {
+      const next = typeof arg === "function" ? (arg as any)(prev) : arg;
+      persistDraft(next);
+      return next;
+    });
+  };
+  function persistDraft(next: typeof formData) {
     try {
       const { password: _p, ...rest } = next;
       if (Object.values(rest).some(Boolean)) sessionStorage.setItem("connect-account-draft", JSON.stringify(rest));
       else sessionStorage.removeItem("connect-account-draft");
     } catch { /* ignore */ }
-  };
+  }
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
