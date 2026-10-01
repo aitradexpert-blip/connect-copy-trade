@@ -1,10 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
-import { primaryApi, isPrimaryConfigured, PrimaryUnavailableError } from "./primaryApi";
 
 export interface BroadcastOptions {
   toAiBot?: boolean;        // run auto-execute-signal across opted-in bot users
   toCopyFactory?: boolean;  // push external signal through CopyFactory
-  toPrimary?: boolean;      // legacy direct fan-out; automatic copy trading is listener-owned
+  toPrimary?: boolean;      // deprecated, ignored
+  toCopyTrading?: boolean;  // invoke copy-trade-listener (set false when caller runs it itself)
 }
 
 export interface BroadcastSignal {
@@ -45,18 +45,14 @@ export async function broadcastSignal(
 
   // Automatic copy trading is server-owned. This runs for every published idea,
   // regardless of whether the publisher later presses a manual Execute button.
-  const copyTradingPromise = signal.mentor_id
+  const copyTradingPromise = signal.mentor_id && opts.toCopyTrading !== false
     ? supabase.functions
         .invoke("copy-trade-listener", { body: { signal_id: signal.id, mentor_id: signal.mentor_id } })
         .then(({ data, error }) => (error ? { error: error.message } : data))
         .catch((e: any) => ({ error: e?.message || String(e) }))
-    : Promise.resolve({ skipped: "no mentor_id" });
+    : Promise.resolve({ skipped: "listener invoked by caller or no mentor_id" });
 
-  // Legacy direct fan-out is disabled by default to prevent duplicate orders.
-  const wantPrimary = opts.toPrimary === true && isPrimaryConfigured();
-  const primaryPromise: Promise<any> = wantPrimary
-    ? fanOutDirect(signal).catch((e) => ({ error: e?.message || String(e) }))
-    : Promise.resolve({ skipped: "listener owns automatic copy trading" });
+  const primaryPromise: Promise<any> = Promise.resolve({ skipped: "listener owns automatic copy trading" });
 
   // 1) AI Bot fan-out
   const aiPromise: Promise<any> =
@@ -79,114 +75,6 @@ export async function broadcastSignal(
   results.copyFactory = c.status === "fulfilled" ? c.value : { error: String(c.reason) };
   results.copyTrading = ct.status === "fulfilled" ? ct.value : { error: String(ct.reason) };
   return results;
-}
-
-async function fanOutDirect(signal: BroadcastSignal) {
-  // Resolve mentor.user_id (so we only fan out to followers of THIS mentor)
-  let mentorUserId: string | null = null;
-  if (signal.mentor_id) {
-    const { data: mp } = await supabase
-      .from("mentor_profiles")
-      .select("user_id")
-      .eq("id", signal.mentor_id)
-      .maybeSingle();
-    mentorUserId = (mp as any)?.user_id ?? null;
-  }
-
-  // Followers = active copy_trading_relationships scoped to this mentor's master
-  let relsQuery = supabase
-    .from("copy_trading_relationships")
-    .select("follower_account_id, master_user_id")
-    .eq("status", "active");
-  if (mentorUserId) relsQuery = relsQuery.eq("master_user_id", mentorUserId);
-  const { data: rels } = await relsQuery;
-
-  // AI-bot opted-in accounts:
-  //   (a) legacy: rows referencing this exact signal_id
-  //   (b) subscription rows: signal_id IS NULL — mentor matches, or null = any mentor
-  const [legacyBot, subBotAll, subBotMentor] = await Promise.all([
-    supabase
-      .from("ai_bot_assignments")
-      .select("trading_account_id")
-      .eq("signal_id", signal.id)
-      .eq("auto_execute", true)
-      .eq("status", "active"),
-    supabase
-      .from("ai_bot_assignments")
-      .select("trading_account_id")
-      .is("signal_id", null)
-      .is("subscription_mentor_id", null)
-      .eq("auto_execute", true)
-      .eq("status", "active"),
-    signal.mentor_id
-      ? supabase
-          .from("ai_bot_assignments")
-          .select("trading_account_id")
-          .is("signal_id", null)
-          .eq("subscription_mentor_id", signal.mentor_id)
-          .eq("auto_execute", true)
-          .eq("status", "active")
-      : Promise.resolve({ data: [] as any[] } as any),
-  ]);
-
-  const ids = new Set<string>();
-  (rels || []).forEach((r: any) => r?.follower_account_id && ids.add(r.follower_account_id));
-  [legacyBot, subBotAll, subBotMentor].forEach((q: any) =>
-    (q?.data || []).forEach((b: any) => b?.trading_account_id && ids.add(b.trading_account_id)),
-  );
-  if (!ids.size) return { delivered: 0, skipped: "no eligible followers" };
-
-  const { data: accounts } = await supabase
-    .from("trading_accounts")
-    .select("id, metaapi_account_id, login, server, platform")
-    .in("id", Array.from(ids));
-
-  const payloadBase = {
-    signalId: signal.id,
-    symbol: signal.symbol,
-    direction: String(signal.direction).toUpperCase(),
-    volume: signal.lot_size,
-    stopLoss: signal.stop_loss ?? null,
-    takeProfit: signal.take_profit ?? null,
-    comment: signal.comment ?? "HuMi signal",
-  };
-
-  const out = await Promise.allSettled(
-    (accounts || []).map(async (a: any) => {
-      try {
-        const res = await primaryApi.sendOrder({
-          accountId: a.metaapi_account_id || a.id,
-          ...payloadBase,
-        });
-        return { accountId: a.id, via: "primary", res };
-      } catch (e) {
-        // Per-follower fallback: route this single trade through MetaAPI execute
-        if (!(e instanceof PrimaryUnavailableError)) throw e;
-        if (!a.metaapi_account_id) {
-          return { accountId: a.id, via: "fallback", error: "no metaapi_account_id" };
-        }
-        const { data, error } = await supabase.functions.invoke("metaapi-execute-trade", {
-          body: {
-            accountId: a.metaapi_account_id,
-            trade: {
-              symbol: signal.symbol,
-              direction: String(signal.direction).toUpperCase(),
-              volume: signal.lot_size,
-              stopLoss: signal.stop_loss ?? null,
-              takeProfit: signal.take_profit ?? null,
-              comment: signal.comment || "HuMi signal",
-            },
-          },
-        });
-        return { accountId: a.id, via: "fallback", res: error ? { error: error.message } : data };
-      }
-    }),
-  );
-  return {
-    delivered: out.filter((r) => r.status === "fulfilled").length,
-    failed: out.filter((r) => r.status === "rejected").length,
-    detail: out.map((r) => (r.status === "fulfilled" ? r.value : { error: String(r.reason) })),
-  };
 }
 
 async function runCopyFactory(signal: BroadcastSignal) {
