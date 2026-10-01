@@ -282,7 +282,7 @@ export default function MentorHub() {
       if (sig) {
         broadcast = await broadcastSignal(
           { id: sig.id, symbol: newSymbol.toUpperCase().trim(), direction: newDirection as any, lot_size: lot, stop_loss: sl, take_profit: tp, comment: newComment || null, mentor_id: profile.id },
-          { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy },
+          { toAiBot: broadcastToBot, toCopyFactory: broadcastToCopy, toCopyTrading: false },
         );
       }
       // Also trigger copy-trade-listener so active copy relationships execute the trade
@@ -383,7 +383,7 @@ export default function MentorHub() {
       if (sig) {
         broadcast = await broadcastSignal(
           { id: sig.id, symbol: quickSymbol.toUpperCase().trim(), direction: quickDirection as any, lot_size: lot, mentor_id: profile.id, comment: 'Quick trade from Mentor Hub' },
-          { toAiBot: true, toCopyFactory: true },
+          { toAiBot: true, toCopyFactory: true, toCopyTrading: false },
         );
       }
       let fanOut = null;
@@ -645,7 +645,7 @@ export default function MentorHub() {
                   if (sig) {
                     broadcast = await broadcastSignal(
                       { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: suggestion.analysis, mentor_id: profile.id },
-                      { toAiBot: true, toCopyFactory: true },
+                      { toAiBot: true, toCopyFactory: true, toCopyTrading: false },
                     );
                   }
                   const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;
@@ -678,7 +678,7 @@ export default function MentorHub() {
                   if (sig) {
                     broadcast = await broadcastSignal(
                       { id: sig.id, symbol: suggestion.symbol, direction: suggestion.direction, lot_size: 0.01, stop_loss: sl, take_profit: tp, comment: `Copy Trade: ${suggestion.analysis}`, mentor_id: profile.id },
-                      { toAiBot: true, toCopyFactory: true },
+                      { toAiBot: true, toCopyFactory: true, toCopyTrading: false },
                     );
                   }
                   const fanOut = sig && user ? await runCopyFanOut(sig.id, user.id) : null;

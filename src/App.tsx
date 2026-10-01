@@ -2,7 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "next-themes";
 import { MentorProvider, useMentor } from "@/contexts/MentorContext";
@@ -43,7 +44,36 @@ import Privacy from "./pages/Privacy";
 import LegalPage from "./pages/LegalPage";
 import { useSubscription } from "@/hooks/useSubscription";
 
-const queryClient = new QueryClient();
+// Don't refetch everything when the user switches back from another app.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { refetchOnWindowFocus: false, refetchOnReconnect: false, staleTime: 5 * 60 * 1000 },
+  },
+});
+
+// Remember the last page so a cold restart (OS killed the minimised app) returns there.
+const LAST_ROUTE_KEY = "humi-last-route";
+const RouteMemory = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!restored.current) {
+      restored.current = true;
+      const last = localStorage.getItem(LAST_ROUTE_KEY);
+      const fresh = sessionStorage.getItem("humi-session-started");
+      sessionStorage.setItem("humi-session-started", "1");
+      if (!fresh && last && location.pathname === "/" && last !== "/" && !last.startsWith("/auth")) {
+        navigate(last, { replace: true });
+        return;
+      }
+    }
+    if (!location.pathname.startsWith("/auth")) {
+      localStorage.setItem(LAST_ROUTE_KEY, location.pathname + location.search);
+    }
+  }, [location, navigate]);
+  return null;
+};
 
 // Authenticated route — all logged-in users (including free tier)
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -130,6 +160,7 @@ const App = () => (
             <Sonner />
             <KhumoIntroModal />
             <BrowserRouter>
+              <RouteMemory />
               <Routes>
                 {/* Public routes */}
                 <Route path="/pricing" element={<Pricing />} />

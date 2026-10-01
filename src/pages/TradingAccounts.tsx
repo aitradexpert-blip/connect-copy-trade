@@ -272,12 +272,16 @@ const handleVerifyConnection = async (account: TradingAccount) => {
         account_id: credAccount.id,
       });
       if (result?.success) {
-        await supabase.from('trading_accounts').update({
+        const { error: saveErr } = await supabase.from('trading_accounts').update({
           connection_status: 'connected',
+          login: credLogin,
           server: credServer,
+          mt5_password: credPassword,
+          metaapi_last_error: null,
           balance: result.data?.balance ?? 0,
           equity: result.data?.equity ?? 0,
-        }).eq('id', credAccount.id);
+        } as any).eq('id', credAccount.id);
+        if (saveErr) throw saveErr;
         toast({ title: "Reconnected", description: `Balance: $${(result.data?.balance ?? 0).toFixed(2)}` });
         setCredAccount(null);
         await loadAccounts();
@@ -533,6 +537,21 @@ const handleVerifyConnection = async (account: TradingAccount) => {
                               className="text-primary hover:text-primary/80"
                             >
                               <ShieldCheck className={`w-4 h-4 ${verifyingId === account.id ? 'animate-pulse' : ''}`} />
+                            </Button>
+                          )}
+                          {['invalid_credentials', 'needs_reconnect', 'pending_vps', 'error', 'disconnected'].includes(String((account as any).connection_status || '')) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="min-h-[44px]"
+                              onClick={() => {
+                                setCredAccount(account);
+                                setCredLogin(account.login || "");
+                                setCredServer((account as any).server || "");
+                                setCredPassword("");
+                              }}
+                            >
+                              Update Credentials
                             </Button>
                           )}
                           <Button 

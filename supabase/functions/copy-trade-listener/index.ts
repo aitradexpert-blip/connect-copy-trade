@@ -280,6 +280,68 @@ Deno.serve(async (req) => {
       return { ok: false, error: err };
     }
 
+
+    // ---- Serial VPS lock -------------------------------------------------
+    let vpsChain: Promise<unknown> = Promise.resolve();
+    function withVpsLock<T>(fn: () => Promise<T>): Promise<T> {
+      const run = vpsChain.then(fn, fn);
+      vpsChain = run.catch(() => undefined);
+      return run;
+    }
+
+    // ---- Broker symbol variants (AUDUSD -> AUDUSDm, AUDUSD., frxAUDUSD ...) --
+    const SYMBOL_ALIASES: Record<string, string[]> = {
+      XAUUSD: ['GOLD'], GOLD: ['XAUUSD'], XAGUSD: ['SILVER'], SILVER: ['XAGUSD'],
+      BTCUSD: ['BTCUSDT', 'BITCOIN'], ETHUSD: ['ETHUSDT'], US30: ['DJ30', 'WS30'], NAS100: ['USTEC', 'NDX100'],
+    };
+    const SYMBOL_MISSING_RE = /no\s+tradable\s+symbol|symbol\s+(is\s+)?not\s+(available|found|visible)|symbol\s+not\s+exist|invalid\s+symbol|unknown\s+symbol|no\s+such\s+symbol/i;
+    function symbolVariants(raw: string): string[] {
+      const base = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const roots = [base, ...(SYMBOL_ALIASES[base] || [])];
+      const out: string[] = [];
+      for (const r of roots) {
+        for (const v of [r, `${r}m`, `${r}.`, `${r}.r`, `${r}.ecn`, `${r}_i`, `${r}pro`, `${r}micro`, `${r}+`, `frx${r}`]) {
+          if (!out.includes(v)) out.push(v);
+        }
+      }
+      return out;
+    }
+
+    async function placeVpsOrder(follower: any, relationship: any, volume: number):
+      Promise<{ ok: boolean; price?: number | null; symbol?: string; data?: any; error: string | null }> {
+      const variants = symbolVariants(signal.symbol);
+      let rebound = false;
+      let lastError = 'VPS engine did not confirm the order';
+      for (let i = 0; i < variants.length; i++) {
+        const sym = variants[i];
+        const body = {
+          accountId: follower.id, account_id: follower.id, symbol: sym,
+          order_type: String(signal.direction || '').toLowerCase(), volume,
+          sl: signal.stop_loss ?? null, tp: signal.take_profit ?? null,
+          comment: `Copy from ${relationship.master_account?.name || 'master'}`,
+        };
+        let res = await fetchJson(`${VPS_URL}/order`, body, 20000, 'VPS /order');
+        let verdict = interpretVpsOrderResult(res.json);
+        let errText = String(verdict.message || res.error || res.json?.error || '');
+        const sessionFault = !verdict.ok && (SESSION_ERROR_RE.test(errText) || /no\s+result|not\s+connected/i.test(errText));
+        const transient = !verdict.ok && !res.timedOut && (res.unreachable || res.status >= 500);
+        // First failure that smells like a session problem: re-bind once, retry same symbol.
+        if (!rebound && (sessionFault || transient)) {
+          rebound = true;
+          const re = await rebindVpsSession(follower);
+          if (!re.ok) return { ok: false, error: re.error! };
+          res = await fetchJson(`${VPS_URL}/order`, body, 20000, 'VPS /order (retry)');
+          verdict = interpretVpsOrderResult(res.json);
+          errText = String(verdict.message || res.error || res.json?.error || '');
+        }
+        if (verdict.ok) return { ok: true, price: verdict.price ?? null, symbol: sym, data: res.json, error: null };
+        lastError = errText || `VPS HTTP ${res.status}`;
+        // Only walk to the next suffix when the broker says the symbol doesn't exist.
+        if (!SYMBOL_MISSING_RE.test(lastError) || res.timedOut) break;
+      }
+      return { ok: false, error: lastError };
+    }
+
     const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
       const follower = relationship.follower_account;
 
@@ -340,43 +402,15 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         vpsError = 'Trading bridge (VPS) is offline';
       }
 
-           if (vpsEligible) {
-        const orderBody = {
-          accountId: follower.id,
-          account_id: follower.id,
-          symbol: signal.symbol,
-          order_type: String(signal.direction || '').toLowerCase(),
-          volume: adjustedVolume,
-          sl: signal.stop_loss ?? null,
-          tp: signal.take_profit ?? null,
-          comment: `Copy from ${relationship.master_account?.name || 'master'}`,
-        };
-
-        // Straight to /order first, exactly like the manual Execute Trade
-        // button — no pre-login. Re-bind only happens below, as recovery
-        // after a session fault, never before the first attempt.
-        let orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order');
-        const firstError = orderRes.error || orderRes.json?.error || '';
-        const firstInterpreted = interpretVpsOrderResult(orderRes.json);
-        const sessionFault = !firstInterpreted.ok && SESSION_ERROR_RE.test(String(firstError));
-        const transient = !firstInterpreted.ok && !orderRes.timedOut &&
-          (orderRes.unreachable || orderRes.status >= 500);
-        if (transient || sessionFault) {
-          const firstMsg = firstError || `VPS HTTP ${orderRes.status}`;
-          console.warn(`[fan-out] VPS transient failure for ${relationship.follower_user_id}: ${firstMsg} — one retry`);
-
-          const re = await rebindVpsSession(follower);
-          if (re.ok) orderRes = await fetchJson(`${VPS_URL}/order`, orderBody, 20000, 'VPS /order (retry)');
-          else orderRes = { ok: false, status: 0, json: null, error: re.error!, timedOut: false, unreachable: false };
+      if (vpsEligible && !(VPS_URL && !vpsOnline)) {
+        // The VPS drives ONE shared MT5 terminal. Serialise every VPS order
+        // through a lock so followers never collide mid-login-switch.
+        const res = await withVpsLock(() => placeVpsOrder(follower, relationship, adjustedVolume));
+        if (res.ok) {
+          await logSuccess(relationship, adjustedVolume, 'vps', res.price ?? null);
+          return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', symbol: res.symbol, data: res.data };
         }
-
-        const interpreted = interpretVpsOrderResult(orderRes.json);
-        if (interpreted.ok) {
-          await logSuccess(relationship, adjustedVolume, 'vps', interpreted.price ?? null);
-          return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', data: orderRes.json };
-        }
-
-        vpsError = interpreted.message || orderRes.error || `VPS HTTP ${orderRes.status}`;
+        vpsError = res.error;
       }
 
       if (vpsError) {
