@@ -354,13 +354,24 @@ Deno.serve(async (req) => {
           verdict = interpretVpsOrderResult(res.json);
           errText = String(verdict.message || res.error || res.json?.error || '');
         }
-        if (verdict.ok) return { ok: true, price: verdict.price ?? null, symbol: sym, data: res.json, error: null };
+        if (verdict.ok) return { ok: true, price: verdict.price ?? null, symbol: sym, ticket: verdict.ticket ?? null, data: res.json, error: null };
         lastError = errText || `VPS HTTP ${res.status}`;
         // Only walk to the next suffix when the broker says the symbol doesn't exist.
         if (!SYMBOL_MISSING_RE.test(lastError) || res.timedOut) break;
       }
       return { ok: false, error: lastError };
     }
+
+    // Tell the terminal watcher the shared MT5 terminal is busy with a fan-out,
+    // so it doesn't read follower positions as if they were the Master's.
+    const setVpsBusy = async (until: Date | null) => {
+      try {
+        await supabase.from('app_settings').upsert({
+          key: 'vps_busy_until', value: until ? until.toISOString() : new Date(0).toISOString(), updated_at: new Date().toISOString(),
+        } as any, { onConflict: 'key' });
+      } catch (e) { console.warn('vps_busy flag failed', e); }
+    };
+    await setVpsBusy(new Date(Date.now() + 140_000));
 
     const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
       const follower = relationship.follower_account;
@@ -427,7 +438,7 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         // through a lock so followers never collide mid-login-switch.
         const res = await withVpsLock(() => placeVpsOrder(follower, relationship, adjustedVolume));
         if (res.ok) {
-          await logSuccess(relationship, adjustedVolume, 'vps', res.price ?? null);
+          await logSuccess(relationship, adjustedVolume, 'vps', res.price ?? null, res.ticket ?? null, res.symbol ?? null);
           return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', symbol: res.symbol, data: res.data };
         }
         vpsError = res.error;
@@ -496,7 +507,11 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         return { follower_user_id: relationship.follower_user_id, success: false, via: 'metaapi', error: failMsg };
       }
 
-      await logSuccess(relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null);
+      await logSuccess(
+        relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null,
+        tradeResult?.details?.positionId ?? tradeResult?.details?.orderId ?? tradeResult?.tradeId ?? null,
+        signal.symbol,
+      );
       return { follower_user_id: relationship.follower_user_id, success: true, via: 'metaapi', data: tradeResult };
     });
 
