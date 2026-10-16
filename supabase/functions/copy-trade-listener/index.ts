@@ -307,21 +307,29 @@ Deno.serve(async (req) => {
       BTCUSD: ['BTCUSDT', 'BITCOIN'], ETHUSD: ['ETHUSDT'], US30: ['DJ30', 'WS30'], NAS100: ['USTEC', 'NDX100'],
     };
     const SYMBOL_MISSING_RE = /no\s+tradable\s+symbol|symbol\s+(is\s+)?not\s+(available|found|visible)|symbol\s+not\s+exist|invalid\s+symbol|unknown\s+symbol|no\s+such\s+symbol/i;
-    function symbolVariants(raw: string): string[] {
-      const base = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // Broker-aware: Deriv-style "frx" codes are only ever tried on Deriv
+    // servers. Standard MT4/MT5 brokers (PXBT, Exness, IC Markets, XM...) get
+    // the raw symbol first, then suffixes in order of how common they are.
+    function isDerivAccount(acc: any): boolean {
+      return /deriv/i.test(`${acc?.server || ''} ${acc?.broker_name || ''}`) || acc?.provider === 'deriv';
+    }
+    function symbolVariants(raw: string, acc?: any): string[] {
+      let base = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (base.startsWith('FRX')) base = base.slice(3);
       const roots = [base, ...(SYMBOL_ALIASES[base] || [])];
+      const deriv = isDerivAccount(acc);
       const out: string[] = [];
       for (const r of roots) {
-        for (const v of [r, `${r}m`, `${r}.`, `${r}.r`, `${r}.ecn`, `${r}_i`, `${r}pro`, `${r}micro`, `${r}+`, `frx${r}`]) {
-          if (!out.includes(v)) out.push(v);
-        }
+        const list = [r, `${r}m`, `${r}.`, `${r}.r`, `${r}_i`, `${r}pro`, `${r}.ecn`, `${r}micro`, `${r}+`];
+        if (deriv) list.splice(1, 0, `frx${r}`);
+        for (const v of list) if (!out.includes(v)) out.push(v);
       }
       return out;
     }
 
     async function placeVpsOrder(follower: any, relationship: any, volume: number):
-      Promise<{ ok: boolean; price?: number | null; symbol?: string; data?: any; error: string | null }> {
-      const variants = symbolVariants(signal.symbol);
+      Promise<{ ok: boolean; price?: number | null; symbol?: string; ticket?: string | number | null; data?: any; error: string | null }> {
+      const variants = symbolVariants(signal.symbol, follower);
       let rebound = false;
       let lastError = 'VPS engine did not confirm the order';
       for (let i = 0; i < variants.length; i++) {
