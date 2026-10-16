@@ -637,6 +637,123 @@ export type Database = {
         }
         Relationships: []
       }
+      master_positions: {
+        Row: {
+          close_source: string | null
+          closed_at: string | null
+          current_profit: number | null
+          direction: string
+          first_seen_at: string
+          followers_closed: number | null
+          followers_failed: number | null
+          id: string
+          last_seen_at: string
+          master_account_id: string
+          master_user_id: string
+          open_price: number | null
+          opened_at: string | null
+          origin: string
+          signal_id: string | null
+          status: string
+          symbol: string
+          ticket: string
+          volume: number | null
+        }
+        Insert: {
+          close_source?: string | null
+          closed_at?: string | null
+          current_profit?: number | null
+          direction: string
+          first_seen_at?: string
+          followers_closed?: number | null
+          followers_failed?: number | null
+          id?: string
+          last_seen_at?: string
+          master_account_id: string
+          master_user_id: string
+          open_price?: number | null
+          opened_at?: string | null
+          origin?: string
+          signal_id?: string | null
+          status?: string
+          symbol: string
+          ticket: string
+          volume?: number | null
+        }
+        Update: {
+          close_source?: string | null
+          closed_at?: string | null
+          current_profit?: number | null
+          direction?: string
+          first_seen_at?: string
+          followers_closed?: number | null
+          followers_failed?: number | null
+          id?: string
+          last_seen_at?: string
+          master_account_id?: string
+          master_user_id?: string
+          open_price?: number | null
+          opened_at?: string | null
+          origin?: string
+          signal_id?: string | null
+          status?: string
+          symbol?: string
+          ticket?: string
+          volume?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "master_positions_master_account_id_fkey"
+            columns: ["master_account_id"]
+            isOneToOne: false
+            referencedRelation: "public_master_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_positions_master_account_id_fkey"
+            columns: ["master_account_id"]
+            isOneToOne: false
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      master_sync_state: {
+        Row: {
+          baselined_at: string
+          last_error: string | null
+          last_sync_at: string | null
+          master_account_id: string
+        }
+        Insert: {
+          baselined_at?: string
+          last_error?: string | null
+          last_sync_at?: string | null
+          master_account_id: string
+        }
+        Update: {
+          baselined_at?: string
+          last_error?: string | null
+          last_sync_at?: string | null
+          master_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "master_sync_state_master_account_id_fkey"
+            columns: ["master_account_id"]
+            isOneToOne: true
+            referencedRelation: "public_master_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_sync_state_master_account_id_fkey"
+            columns: ["master_account_id"]
+            isOneToOne: true
+            referencedRelation: "trading_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mentor_clients: {
         Row: {
           client_user_id: string
@@ -1171,14 +1288,20 @@ export type Database = {
       }
       trade_history: {
         Row: {
+          broker_symbol: string | null
+          broker_ticket: string | null
+          close_reason: string | null
           closed_at: string | null
           comment: string | null
           created_at: string
           direction: string
           entry_price: number | null
           executed_at: string
+          execution_via: string | null
           exit_price: number | null
           id: string
+          master_account_id: string | null
+          master_ticket: string | null
           profit_loss: number | null
           signal_id: string | null
           status: string
@@ -1191,14 +1314,20 @@ export type Database = {
           volume: number
         }
         Insert: {
+          broker_symbol?: string | null
+          broker_ticket?: string | null
+          close_reason?: string | null
           closed_at?: string | null
           comment?: string | null
           created_at?: string
           direction: string
           entry_price?: number | null
           executed_at?: string
+          execution_via?: string | null
           exit_price?: number | null
           id?: string
+          master_account_id?: string | null
+          master_ticket?: string | null
           profit_loss?: number | null
           signal_id?: string | null
           status?: string
@@ -1211,14 +1340,20 @@ export type Database = {
           volume: number
         }
         Update: {
+          broker_symbol?: string | null
+          broker_ticket?: string | null
+          close_reason?: string | null
           closed_at?: string | null
           comment?: string | null
           created_at?: string
           direction?: string
           entry_price?: number | null
           executed_at?: string
+          execution_via?: string | null
           exit_price?: number | null
           id?: string
+          master_account_id?: string | null
+          master_ticket?: string | null
           profit_loss?: number | null
           signal_id?: string | null
           status?: string
