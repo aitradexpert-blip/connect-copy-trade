@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.metaapi-finalize-deployments]
 verify_jwt = false
+
+[functions.master-position-sync]
+verify_jwt = false

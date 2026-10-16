@@ -130,7 +130,14 @@ Deno.serve(async (req) => {
       }
     };
 
-    const logSuccess = async (relationship: any, volume: number, via: string, entryPrice?: number | null) => {
+    // Optional link to the Master's own MT5 position (set when the fan-out was
+    // triggered by the terminal watcher) so a later close can be mirrored.
+    const masterTicket: string | null = signal?.comment?.match(/#(\d+)\]/)?.[1] ?? null;
+
+    const logSuccess = async (
+      relationship: any, volume: number, via: string, entryPrice?: number | null,
+      ticket?: string | number | null, brokerSymbol?: string | null,
+    ) => {
       try {
         await supabase.from('trade_history').insert({
           user_id: relationship.follower_user_id,
@@ -144,6 +151,11 @@ Deno.serve(async (req) => {
           status: 'open',
           comment: `Copied via ${via} (relationship ${relationship.id})`,
           signal_id,
+          broker_ticket: ticket != null ? String(ticket) : null,
+          broker_symbol: brokerSymbol ?? null,
+          master_account_id: relationship.master_account_id,
+          master_ticket: masterTicket,
+          execution_via: via,
         } as any);
       } catch (logErr) {
         console.error('Failed to write success row:', logErr);
@@ -295,21 +307,29 @@ Deno.serve(async (req) => {
       BTCUSD: ['BTCUSDT', 'BITCOIN'], ETHUSD: ['ETHUSDT'], US30: ['DJ30', 'WS30'], NAS100: ['USTEC', 'NDX100'],
     };
     const SYMBOL_MISSING_RE = /no\s+tradable\s+symbol|symbol\s+(is\s+)?not\s+(available|found|visible)|symbol\s+not\s+exist|invalid\s+symbol|unknown\s+symbol|no\s+such\s+symbol/i;
-    function symbolVariants(raw: string): string[] {
-      const base = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // Broker-aware: Deriv-style "frx" codes are only ever tried on Deriv
+    // servers. Standard MT4/MT5 brokers (PXBT, Exness, IC Markets, XM...) get
+    // the raw symbol first, then suffixes in order of how common they are.
+    function isDerivAccount(acc: any): boolean {
+      return /deriv/i.test(`${acc?.server || ''} ${acc?.broker_name || ''}`) || acc?.provider === 'deriv';
+    }
+    function symbolVariants(raw: string, acc?: any): string[] {
+      let base = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (base.startsWith('FRX')) base = base.slice(3);
       const roots = [base, ...(SYMBOL_ALIASES[base] || [])];
+      const deriv = isDerivAccount(acc);
       const out: string[] = [];
       for (const r of roots) {
-        for (const v of [r, `${r}m`, `${r}.`, `${r}.r`, `${r}.ecn`, `${r}_i`, `${r}pro`, `${r}micro`, `${r}+`, `frx${r}`]) {
-          if (!out.includes(v)) out.push(v);
-        }
+        const list = [r, `${r}m`, `${r}.`, `${r}.r`, `${r}_i`, `${r}pro`, `${r}.ecn`, `${r}micro`, `${r}+`];
+        if (deriv) list.splice(1, 0, `frx${r}`);
+        for (const v of list) if (!out.includes(v)) out.push(v);
       }
       return out;
     }
 
     async function placeVpsOrder(follower: any, relationship: any, volume: number):
-      Promise<{ ok: boolean; price?: number | null; symbol?: string; data?: any; error: string | null }> {
-      const variants = symbolVariants(signal.symbol);
+      Promise<{ ok: boolean; price?: number | null; symbol?: string; ticket?: string | number | null; data?: any; error: string | null }> {
+      const variants = symbolVariants(signal.symbol, follower);
       let rebound = false;
       let lastError = 'VPS engine did not confirm the order';
       for (let i = 0; i < variants.length; i++) {
@@ -334,13 +354,24 @@ Deno.serve(async (req) => {
           verdict = interpretVpsOrderResult(res.json);
           errText = String(verdict.message || res.error || res.json?.error || '');
         }
-        if (verdict.ok) return { ok: true, price: verdict.price ?? null, symbol: sym, data: res.json, error: null };
+        if (verdict.ok) return { ok: true, price: verdict.price ?? null, symbol: sym, ticket: verdict.ticket ?? null, data: res.json, error: null };
         lastError = errText || `VPS HTTP ${res.status}`;
         // Only walk to the next suffix when the broker says the symbol doesn't exist.
         if (!SYMBOL_MISSING_RE.test(lastError) || res.timedOut) break;
       }
       return { ok: false, error: lastError };
     }
+
+    // Tell the terminal watcher the shared MT5 terminal is busy with a fan-out,
+    // so it doesn't read follower positions as if they were the Master's.
+    const setVpsBusy = async (until: Date | null) => {
+      try {
+        await supabase.from('app_settings').upsert({
+          key: 'vps_busy_until', value: until ? until.toISOString() : new Date(0).toISOString(), updated_at: new Date().toISOString(),
+        } as any, { onConflict: 'key' });
+      } catch (e) { console.warn('vps_busy flag failed', e); }
+    };
+    await setVpsBusy(new Date(Date.now() + 140_000));
 
     const settled = await runWithConcurrency(rels, 5, async (relationship: any) => {
       const follower = relationship.follower_account;
@@ -407,7 +438,7 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         // through a lock so followers never collide mid-login-switch.
         const res = await withVpsLock(() => placeVpsOrder(follower, relationship, adjustedVolume));
         if (res.ok) {
-          await logSuccess(relationship, adjustedVolume, 'vps', res.price ?? null);
+          await logSuccess(relationship, adjustedVolume, 'vps', res.price ?? null, res.ticket ?? null, res.symbol ?? null);
           return { follower_user_id: relationship.follower_user_id, success: true, via: 'vps', symbol: res.symbol, data: res.data };
         }
         vpsError = res.error;
@@ -476,10 +507,16 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         return { follower_user_id: relationship.follower_user_id, success: false, via: 'metaapi', error: failMsg };
       }
 
-      await logSuccess(relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null);
+      await logSuccess(
+        relationship, adjustedVolume, 'metaapi', tradeResult?.price ?? null,
+        tradeResult?.details?.positionId ?? tradeResult?.details?.orderId ?? tradeResult?.tradeId ?? null,
+        signal.symbol,
+      );
       return { follower_user_id: relationship.follower_user_id, success: true, via: 'metaapi', data: tradeResult };
     });
 
+
+    await setVpsBusy(null);
 
     const results = settled.map((s, i) =>
       s.status === 'fulfilled'
