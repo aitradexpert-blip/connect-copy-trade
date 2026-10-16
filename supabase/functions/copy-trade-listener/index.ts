@@ -130,7 +130,14 @@ Deno.serve(async (req) => {
       }
     };
 
-    const logSuccess = async (relationship: any, volume: number, via: string, entryPrice?: number | null) => {
+    // Optional link to the Master's own MT5 position (set when the fan-out was
+    // triggered by the terminal watcher) so a later close can be mirrored.
+    const masterTicket: string | null = signal?.comment?.match(/#(\d+)\]/)?.[1] ?? null;
+
+    const logSuccess = async (
+      relationship: any, volume: number, via: string, entryPrice?: number | null,
+      ticket?: string | number | null, brokerSymbol?: string | null,
+    ) => {
       try {
         await supabase.from('trade_history').insert({
           user_id: relationship.follower_user_id,
@@ -144,6 +151,11 @@ Deno.serve(async (req) => {
           status: 'open',
           comment: `Copied via ${via} (relationship ${relationship.id})`,
           signal_id,
+          broker_ticket: ticket != null ? String(ticket) : null,
+          broker_symbol: brokerSymbol ?? null,
+          master_account_id: relationship.master_account_id,
+          master_ticket: masterTicket,
+          execution_via: via,
         } as any);
       } catch (logErr) {
         console.error('Failed to write success row:', logErr);
