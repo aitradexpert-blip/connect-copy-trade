@@ -516,6 +516,8 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
     });
 
 
+    await setVpsBusy(null);
+
     const results = settled.map((s, i) =>
       s.status === 'fulfilled'
         ? s.value
