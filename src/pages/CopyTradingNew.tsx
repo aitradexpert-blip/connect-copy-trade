@@ -537,17 +537,55 @@ export default function CopyTradingNew() {
     }
 
     try {
-      const { error } = await supabase
+      // Switching accounts: pause any other active link this user has to the same master.
+      await supabase
         .from("copy_trading_relationships")
-        .insert({
-          follower_user_id: user?.id,
-          follower_account_id: selectedAccount,
-          master_account_id: masterAccountId,
-          master_user_id: resolvedMasterUserId || user?.id,
-          status: "active"
-        });
+        .update({ status: "inactive" })
+        .eq("follower_user_id", user?.id)
+        .eq("master_account_id", masterAccountId)
+        .neq("follower_account_id", selectedAccount)
+        .eq("status", "active");
 
-      if (error) throw error;
+      // Re-use an existing (master, follower account) link instead of inserting a duplicate.
+      const { data: existing } = await supabase
+        .from("copy_trading_relationships")
+        .select("id")
+        .eq("master_account_id", masterAccountId)
+        .eq("follower_account_id", selectedAccount)
+        .maybeSingle();
+
+      const reactivate = (id: string) =>
+        supabase
+          .from("copy_trading_relationships")
+          .update({ status: "active", follower_user_id: user?.id, master_user_id: resolvedMasterUserId || user?.id })
+          .eq("id", id);
+
+      if (existing?.id) {
+        const { error } = await reactivate(existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("copy_trading_relationships")
+          .insert({
+            follower_user_id: user?.id,
+            follower_account_id: selectedAccount,
+            master_account_id: masterAccountId,
+            master_user_id: resolvedMasterUserId || user?.id,
+            status: "active"
+          });
+        if (error) {
+          if ((error as any).code !== "23505") throw error;
+          const { data: row } = await supabase
+            .from("copy_trading_relationships")
+            .select("id")
+            .eq("master_account_id", masterAccountId)
+            .eq("follower_account_id", selectedAccount)
+            .maybeSingle();
+          if (!row?.id) throw new Error("This account is already linked to this master. Refresh and try again.");
+          const { error: upErr } = await reactivate(row.id);
+          if (upErr) throw upErr;
+        }
+      }
 
       toast({
         title: isSelfCopy ? "Self-copy activated" : "Successfully following trader",

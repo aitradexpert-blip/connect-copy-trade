@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { SymbolCombobox } from "@/components/SymbolCombobox";
 import NoticeBoard from "@/components/NoticeBoard";
 import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
+import MasterPositionsCard from "@/components/MasterPositionsCard";
 
 interface MentorProfile {
   id: string;
@@ -720,6 +721,8 @@ export default function MentorHub() {
                 }
               }}
             />
+
+            <MasterPositionsCard masterAccountIds={accounts.filter((a) => a.is_master).map((a) => a.id)} />
 
             {/* Publish Signal */}
             <Card>
