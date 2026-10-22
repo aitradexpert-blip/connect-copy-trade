@@ -395,6 +395,24 @@ Deno.serve(async (req) => {
         return { follower_user_id: relationship.follower_user_id, success: false, via: 'skipped', error: msg };
       }
 
+      // Duplicate guard: the same trade (account + symbol + direction + SL + TP)
+      // may arrive from two detectors (VPS watcher and HuMi watcher) seconds
+      // apart. Claim it atomically; a second arrival within 10 min is skipped.
+      {
+        const r = (v: any) => (v == null || Number(v) === 0 ? '-' : Number(v).toFixed(5));
+        const claimKey = [follower.id, String(signal.symbol).toUpperCase().replace(/[^A-Z0-9]/g, ''),
+          String(signal.direction).toLowerCase(), r(signal.stop_loss), r(signal.take_profit)].join('|');
+        const cutoff = new Date(Date.now() - 10 * 60_000).toISOString();
+        await supabase.from('copy_execution_claims').delete().eq('claim_key', claimKey).lt('created_at', cutoff);
+        const { error: claimErr } = await supabase.from('copy_execution_claims')
+          .insert({ claim_key: claimKey, follower_account_id: follower.id, signal_id } as any);
+        if (claimErr) {
+          const msg = 'Skipped duplicate: this exact trade (same pair, direction, SL and TP) was already sent to this account in the last 10 minutes';
+          console.warn(`[fan-out] ${msg} (account ${follower.id}, key ${claimKey})`);
+          return { follower_user_id: relationship.follower_user_id, success: false, via: 'duplicate', error: msg };
+        }
+      }
+
 // Risk-based sizing, reusing the same formula as the manual Risk
 // Calculator: riskAmount = balance * risk% ; lots = riskAmount / (pips * pipValue).
 // Pip distance is approximated from the signal's own SL/TP spread
