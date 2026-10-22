@@ -158,6 +158,8 @@ export default function MentorClientDashboard() {
         .select('id, status, master_account_id, master_user_id')
         .eq('follower_user_id', user!.id)
         .eq('master_user_id', mentorUserId || '')
+        .order('status', { ascending: true }) // 'active' sorts before 'inactive'
+        .limit(1)
         .maybeSingle();
       setCopyRelationship(copyData as CopyRelationship | null);
     } catch (err) {
