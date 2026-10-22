@@ -542,6 +542,16 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         : { follower_user_id: rels[i]?.follower_user_id, success: false, error: String((s as any).reason?.message || (s as any).reason) },
     );
 
+    // Release duplicate-guard claims for followers whose order did NOT fill,
+    // so a genuine retry of this trade is still allowed.
+    const releaseIds = results
+      .map((r: any, i: number) => (!r.success && r.via !== 'duplicate' ? rels[i]?.follower_account_id : null))
+      .filter(Boolean);
+    if (releaseIds.length) {
+      await supabase.from('copy_execution_claims').delete()
+        .eq('signal_id', signal_id).in('follower_account_id', releaseIds as string[]);
+    }
+
     const copied_count = results.filter((r: any) => r.success).length;
     const failed_count = results.length - copied_count;
 
