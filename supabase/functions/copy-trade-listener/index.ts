@@ -93,6 +93,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (signal.status === 'duplicate') {
+      console.warn('Signal flagged as duplicate — not copying again:', signal_id);
+      return new Response(
+        JSON.stringify({ success: true, signal_id, skipped: 'duplicate', copied_count: 0, failed_count: 0, results: [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { data: relationships, error: relationshipsError } = await supabase
       .from('copy_trading_relationships')
       .select('*, follower_account:trading_accounts!follower_account_id(*), master_account:trading_accounts!master_account_id(*)')
