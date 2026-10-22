@@ -287,6 +287,27 @@ export type Database = {
         }
         Relationships: []
       }
+      copy_execution_claims: {
+        Row: {
+          claim_key: string
+          created_at: string
+          follower_account_id: string
+          signal_id: string | null
+        }
+        Insert: {
+          claim_key: string
+          created_at?: string
+          follower_account_id: string
+          signal_id?: string | null
+        }
+        Update: {
+          claim_key?: string
+          created_at?: string
+          follower_account_id?: string
+          signal_id?: string | null
+        }
+        Relationships: []
+      }
       copy_trading_relationships: {
         Row: {
           copyfactory_subscriber_id: string | null
