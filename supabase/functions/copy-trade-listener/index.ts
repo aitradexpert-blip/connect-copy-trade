@@ -93,6 +93,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (signal.status === 'duplicate') {
+      console.warn('Signal flagged as duplicate — not copying again:', signal_id);
+      return new Response(
+        JSON.stringify({ success: true, signal_id, skipped: 'duplicate', copied_count: 0, failed_count: 0, results: [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { data: relationships, error: relationshipsError } = await supabase
       .from('copy_trading_relationships')
       .select('*, follower_account:trading_accounts!follower_account_id(*), master_account:trading_accounts!master_account_id(*)')
@@ -395,6 +403,24 @@ Deno.serve(async (req) => {
         return { follower_user_id: relationship.follower_user_id, success: false, via: 'skipped', error: msg };
       }
 
+      // Duplicate guard: the same trade (account + symbol + direction + SL + TP)
+      // may arrive from two detectors (VPS watcher and HuMi watcher) seconds
+      // apart. Claim it atomically; a second arrival within 10 min is skipped.
+      {
+        const r = (v: any) => (v == null || Number(v) === 0 ? '-' : Number(v).toFixed(5));
+        const claimKey = [follower.id, String(signal.symbol).toUpperCase().replace(/[^A-Z0-9]/g, ''),
+          String(signal.direction).toLowerCase(), r(signal.stop_loss), r(signal.take_profit)].join('|');
+        const cutoff = new Date(Date.now() - 10 * 60_000).toISOString();
+        await supabase.from('copy_execution_claims').delete().eq('claim_key', claimKey).lt('created_at', cutoff);
+        const { error: claimErr } = await supabase.from('copy_execution_claims')
+          .insert({ claim_key: claimKey, follower_account_id: follower.id, signal_id } as any);
+        if (claimErr) {
+          const msg = 'Skipped duplicate: this exact trade (same pair, direction, SL and TP) was already sent to this account in the last 10 minutes';
+          console.warn(`[fan-out] ${msg} (account ${follower.id}, key ${claimKey})`);
+          return { follower_user_id: relationship.follower_user_id, success: false, via: 'duplicate', error: msg };
+        }
+      }
+
 // Risk-based sizing, reusing the same formula as the manual Risk
 // Calculator: riskAmount = balance * risk% ; lots = riskAmount / (pips * pipValue).
 // Pip distance is approximated from the signal's own SL/TP spread
@@ -523,6 +549,16 @@ const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(
         ? s.value
         : { follower_user_id: rels[i]?.follower_user_id, success: false, error: String((s as any).reason?.message || (s as any).reason) },
     );
+
+    // Release duplicate-guard claims for followers whose order did NOT fill,
+    // so a genuine retry of this trade is still allowed.
+    const releaseIds = results
+      .map((r: any, i: number) => (!r.success && r.via !== 'duplicate' ? rels[i]?.follower_account_id : null))
+      .filter(Boolean);
+    if (releaseIds.length) {
+      await supabase.from('copy_execution_claims').delete()
+        .eq('signal_id', signal_id).in('follower_account_id', releaseIds as string[]);
+    }
 
     const copied_count = results.filter((r: any) => r.success).length;
     const failed_count = results.length - copied_count;

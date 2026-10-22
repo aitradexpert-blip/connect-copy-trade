@@ -116,6 +116,7 @@ export default function TradingIdeas() {
       const { data: signalsData, error: signalsError } = await supabase
         .from('trading_signals')
         .select('id,symbol,direction,lot_size,stop_loss,take_profit,comment,created_at')
+        .eq('status', 'active') // hide duplicates and closed Ideas
         .order('created_at', { ascending: false });
 
       if (signalsError) throw signalsError;
