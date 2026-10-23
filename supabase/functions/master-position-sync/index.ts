@@ -204,25 +204,34 @@ async function backfillTickets(acc: any) {
   }
 }
 
-// mode "repair": close orphaned follower copies — open copies whose Master
-// no longer has an open position of that pair+direction (their close event
-// fired before matching worked, or their fill was never linked).
+// mode "repair" (also runs automatically at the end of every cron pass):
+// close orphaned follower copies — open copies whose Master position for the
+// same pair+direction is CLOSED (their close event fired before matching
+// worked, or the close mirror failed mid-way). Strictly gated: a copy is
+// never touched unless (a) a master position for that pair actually exists,
+// (b) it is closed, (c) the copy predates that close, and (d) it is at least
+// 10 minutes old — so a just-copied trade can never be mistaken for an orphan.
 async function repairAccount(acc: any) {
+  const isVps = acc.connection_type === 'vps' || acc.provider === 'vps';
+  if (isVps && await vpsBusy()) return { account: acc.name, skipped: 'terminal busy with a copy fan-out' };
   const { data: rows } = await db.from('trade_history')
-    .select('id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id, master_ticket')
+    .select('id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id, master_ticket, created_at')
     .eq('master_account_id', acc.id).eq('status', 'open').not('broker_ticket', 'is', null).limit(100);
   if (!rows || rows.length === 0) return { account: acc.name, repaired: 0, failed: 0 };
   const { data: mps } = await db.from('master_positions')
-    .select('ticket, symbol, direction').eq('master_account_id', acc.id).eq('status', 'open');
-  const openKeys = new Set((mps || []).map((m: any) => `${normSym(m.symbol)}|${String(m.direction).toUpperCase()}`));
-  const openTickets = new Set((mps || []).map((m: any) => String(m.ticket)));
+    .select('ticket, symbol, direction, status, closed_at').eq('master_account_id', acc.id);
+  const openTickets = new Set((mps || []).filter((m: any) => m.status === 'open').map((m: any) => String(m.ticket)));
   let repaired = 0, failed = 0;
   const details: any[] = [];
   const signalIds: string[] = [];
   for (const row of rows) {
-    if (row.master_ticket && openTickets.has(String(row.master_ticket))) continue; // still live on the Master
-    const key = `${normSym(row.symbol)}|${String(row.direction).toUpperCase()}`;
-    if (openKeys.has(key)) continue; // Master still holds this pair+direction open
+    if (row.master_ticket && openTickets.has(String(row.master_ticket))) continue; // Master still holds this exact trade open
+    const matches = (mps || []).filter((m: any) =>
+      normSym(m.symbol) === normSym(row.symbol) && String(m.direction).toUpperCase() === String(row.direction).toUpperCase());
+    if (matches.length === 0 || matches.some((m: any) => m.status === 'open')) continue;
+    const lastClose = matches.map((m: any) => new Date(m.closed_at || 0).getTime()).reduce((a: number, b: number) => Math.max(a, b), 0);
+    const copyAt = new Date(row.created_at || 0).getTime();
+    if (Date.now() - copyAt < 10 * 60_000 || copyAt > lastClose) continue; // fresh copy, or master closed before this copy existed
     const { data: facc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
     const err = facc ? await closeOnAccount(facc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
     if (!err) {
