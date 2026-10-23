@@ -362,8 +362,12 @@ Deno.serve(async (req) => {
     const user = await authedUser(req);
     if (!user) return json({ error: 'Sign in required' }, 401);
     const accountId = String(body?.account_id || '');
-    const { data: acc } = await db.from('trading_accounts').select('*').eq('id', accountId).maybeSingle();
-    if (!acc || acc.user_id !== user.id || !acc.is_master) return json({ error: 'Master account not found for this user' }, 403);
+    const { data: acc } = accountId
+      ? await db.from('trading_accounts').select('*').eq('id', accountId).maybeSingle()
+      : { data: null };
+    if (mode !== 'repair' && (!acc || acc.user_id !== user.id || !acc.is_master)) {
+      return json({ error: 'Master account not found for this user' }, 403);
+    }
 
     if (mode === 'sync') return json({ success: true, result: await syncAccount(acc) });
 
