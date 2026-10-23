@@ -251,6 +251,9 @@ const normSym = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/
 async function syncAccount(acc: any) {
   const isVps = acc.connection_type === 'vps' || acc.provider === 'vps';
   if (isVps && await vpsBusy()) return { account: acc.name, skipped: 'terminal busy with a copy fan-out' };
+  // Keep follower copies linked to the Master's ticket on every pass —
+  // this is what lets later closes find them.
+  await backfillTickets(acc);
   const { positions, error } = await readPositions(acc);
   const now = new Date().toISOString();
   if (error || !positions) {
@@ -363,6 +366,22 @@ Deno.serve(async (req) => {
     if (!acc || acc.user_id !== user.id || !acc.is_master) return json({ error: 'Master account not found for this user' }, 403);
 
     if (mode === 'sync') return json({ success: true, result: await syncAccount(acc) });
+
+    if (mode === 'repair') {
+      const isAdmin = await db.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').limit(1).then((r) => !!r.data?.length);
+      let targets: any[];
+      if (body?.account_id) {
+        if (acc.user_id !== user.id && !isAdmin) return json({ error: 'Not allowed for this account' }, 403);
+        targets = [acc];
+      } else {
+        if (!isAdmin) return json({ error: 'Admin required to repair all master accounts' }, 403);
+        const { data: masters } = await db.from('trading_accounts').select('*').eq('is_master', true);
+        targets = masters || [];
+      }
+      const out: any[] = [];
+      for (const t of targets) out.push(await repairAccount(t).catch((e) => ({ account: t.name, error: String(e) })));
+      return json({ success: true, results: out });
+    }
 
     if (mode === 'close') {
       const ticket = String(body?.ticket || '');
