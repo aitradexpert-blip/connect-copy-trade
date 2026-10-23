@@ -120,16 +120,41 @@ async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: 
 
 // Close every follower copy of one Master position — strictly one at a time
 // because VPS followers share a single MT5 terminal.
+// Matching is layered so a close can never silently hit "0 matched" again:
+//   1. exact master_ticket link, 2. the Master position's signal_id,
+//   3. fallback: unlinked open copies of the same pair + direction on this
+//      master (dual-watcher duplicates carry a different signal_id).
 async function closeFollowers(mp: any, reason: string) {
   const filters = [`master_ticket.eq.${mp.ticket}`];
   if (mp.signal_id) filters.push(`signal_id.eq.${mp.signal_id}`);
-  const { data: rows } = await db.from('trade_history')
-    .select('id, trading_account_id, broker_ticket, broker_symbol, symbol, volume, user_id')
+  const selectCols = 'id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id';
+  let { data: rows } = await db.from('trade_history')
+    .select(selectCols)
     .eq('master_account_id', mp.master_account_id).eq('status', 'open').not('broker_ticket', 'is', null)
     .or(filters.join(','));
+  if (!rows || rows.length === 0) {
+    const { data: unlinked } = await db.from('trade_history')
+      .select(selectCols)
+      .eq('master_account_id', mp.master_account_id).eq('status', 'open')
+      .not('broker_ticket', 'is', null).is('master_ticket', null);
+    rows = (unlinked || []).filter((r: any) =>
+      normSym(r.symbol) === normSym(mp.symbol) && String(r.direction).toUpperCase() === String(mp.direction).toUpperCase());
+  }
+  if (!rows || rows.length === 0) {
+    // Silence is how this bug hid for weeks — make a zero-match close loud.
+    console.warn(`[close-mirror] master ticket ${mp.ticket} (${mp.symbol} ${mp.direction}) matched 0 open follower copies`);
+    await db.from('notifications').insert({
+      user_id: mp.master_user_id, type: 'CLOSE_MIRROR_WARNING',
+      title: 'Follower copies not found for a closed Master trade',
+      message: `Closing ${mp.symbol} ${mp.direction} (ticket ${mp.ticket}) matched no open follower copies — they may have failed to open or were already closed.`,
+      data: jsonbSafe({ master_ticket: mp.ticket, symbol: mp.symbol, direction: mp.direction, link: '/journal' }),
+    } as any);
+    return { closed: 0, failed: 0, details: [], matched: 0 };
+  }
   let closed = 0, failed = 0;
   const details: any[] = [];
-  for (const row of rows || []) {
+  const signalIds: string[] = mp.signal_id ? [mp.signal_id] : [];
+  for (const row of rows) {
     const { data: acc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
     const err = acc ? await closeOnAccount(acc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
     if (!err) {
@@ -139,10 +164,81 @@ async function closeFollowers(mp: any, reason: string) {
       failed++;
       await db.from('trade_history').update({ comment: `Close mirror failed: ${err}`.slice(0, 500) } as any).eq('id', row.id);
     }
+    if (row.signal_id) signalIds.push(row.signal_id);
     details.push({ account: acc?.name, ticket: row.broker_ticket, ok: !err, error: err });
   }
   await db.from('master_positions').update({ followers_closed: closed, followers_failed: failed } as any).eq('id', mp.id);
-  return { closed, failed, details };
+  // The Idea leaves the active feed once its trade is actually over.
+  const uniqueSignalIds = [...new Set(signalIds)];
+  if (uniqueSignalIds.length) {
+    await db.from('trading_signals').update({ status: 'closed' } as any).in('id', uniqueSignalIds);
+  }
+  return { closed, failed, details, matched: rows.length };
+}
+
+function jsonbSafe(v: any) { return JSON.parse(JSON.stringify(v ?? null)); }
+
+// Persistent ticket linking: runs on EVERY sync pass. Follower copies are
+// placed seconds before the terminal watcher discovers the Master's ticket,
+// so a one-time backfill at detection time always links nothing. Linking by
+// signal when known, else by pair+direction when exactly one open Master
+// position matches (never guess between two).
+async function backfillTickets(acc: any) {
+  const { data: rows } = await db.from('trade_history')
+    .select('id, signal_id, symbol, direction')
+    .eq('master_account_id', acc.id).eq('status', 'open').is('master_ticket', null)
+    .not('broker_ticket', 'is', null).limit(100);
+  if (!rows || rows.length === 0) return;
+  const { data: mps } = await db.from('master_positions')
+    .select('ticket, symbol, direction, signal_id').eq('master_account_id', acc.id).eq('status', 'open');
+  if (!mps || mps.length === 0) return;
+  for (const row of rows) {
+    let mp = row.signal_id ? mps.find((m: any) => m.signal_id === row.signal_id) : null;
+    if (!mp) {
+      const matches = mps.filter((m: any) =>
+        normSym(m.symbol) === normSym(row.symbol) && String(m.direction).toUpperCase() === String(row.direction).toUpperCase());
+      if (matches.length !== 1) continue;
+      mp = matches[0];
+    }
+    await db.from('trade_history').update({ master_ticket: mp.ticket } as any).eq('id', row.id);
+  }
+}
+
+// mode "repair": close orphaned follower copies — open copies whose Master
+// no longer has an open position of that pair+direction (their close event
+// fired before matching worked, or their fill was never linked).
+async function repairAccount(acc: any) {
+  const { data: rows } = await db.from('trade_history')
+    .select('id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id, master_ticket')
+    .eq('master_account_id', acc.id).eq('status', 'open').not('broker_ticket', 'is', null).limit(100);
+  if (!rows || rows.length === 0) return { account: acc.name, repaired: 0, failed: 0 };
+  const { data: mps } = await db.from('master_positions')
+    .select('ticket, symbol, direction').eq('master_account_id', acc.id).eq('status', 'open');
+  const openKeys = new Set((mps || []).map((m: any) => `${normSym(m.symbol)}|${String(m.direction).toUpperCase()}`));
+  const openTickets = new Set((mps || []).map((m: any) => String(m.ticket)));
+  let repaired = 0, failed = 0;
+  const details: any[] = [];
+  const signalIds: string[] = [];
+  for (const row of rows) {
+    if (row.master_ticket && openTickets.has(String(row.master_ticket))) continue; // still live on the Master
+    const key = `${normSym(row.symbol)}|${String(row.direction).toUpperCase()}`;
+    if (openKeys.has(key)) continue; // Master still holds this pair+direction open
+    const { data: facc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
+    const err = facc ? await closeOnAccount(facc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
+    if (!err) {
+      repaired++;
+      if (row.signal_id) signalIds.push(row.signal_id);
+      await db.from('trade_history').update({ status: 'closed', closed_at: new Date().toISOString(), close_reason: 'master_closed_repair' } as any).eq('id', row.id);
+    } else {
+      failed++;
+      await db.from('trade_history').update({ comment: `Repair close failed: ${err}`.slice(0, 500) } as any).eq('id', row.id);
+    }
+    details.push({ account: facc?.name, ticket: row.broker_ticket, symbol: row.symbol, ok: !err, error: err });
+  }
+  if (signalIds.length) {
+    await db.from('trading_signals').update({ status: 'closed' } as any).in('id', [...new Set(signalIds)]);
+  }
+  return { account: acc.name, repaired, failed, details };
 }
 
 async function vpsBusy(): Promise<boolean> {
