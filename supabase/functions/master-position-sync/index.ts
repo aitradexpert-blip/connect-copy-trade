@@ -127,18 +127,28 @@ async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: 
 async function closeFollowers(mp: any, reason: string) {
   const filters = [`master_ticket.eq.${mp.ticket}`];
   if (mp.signal_id) filters.push(`signal_id.eq.${mp.signal_id}`);
-  const selectCols = 'id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id';
+  const selectCols = 'id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id, created_at';
   let { data: rows } = await db.from('trade_history')
     .select(selectCols)
     .eq('master_account_id', mp.master_account_id).eq('status', 'open').not('broker_ticket', 'is', null)
     .or(filters.join(','));
   if (!rows || rows.length === 0) {
+    // Fallback: unlinked open copies of the same pair + direction on this
+    // master. Restricted to copies created in a short window around the
+    // Master's own open — older unlinked copies of the same pair belong to
+    // other trades and must never be swept into this close.
+    const openAt = mp.opened_at || mp.first_seen_at || null;
+    const openMs = openAt ? new Date(openAt).getTime() : 0;
     const { data: unlinked } = await db.from('trade_history')
       .select(selectCols)
       .eq('master_account_id', mp.master_account_id).eq('status', 'open')
       .not('broker_ticket', 'is', null).is('master_ticket', null);
     rows = (unlinked || []).filter((r: any) =>
-      normSym(r.symbol) === normSym(mp.symbol) && String(r.direction).toUpperCase() === String(mp.direction).toUpperCase());
+      openMs > 0
+      && normSym(r.symbol) === normSym(mp.symbol)
+      && String(r.direction).toUpperCase() === String(mp.direction).toUpperCase()
+      && new Date(r.created_at).getTime() >= openMs - 60_000
+      && new Date(r.created_at).getTime() <= openMs + 2 * 60_000);
   }
   if (!rows || rows.length === 0) {
     // Silence is how this bug hid for weeks — make a zero-match close loud.
@@ -255,7 +265,10 @@ async function vpsBusy(): Promise<boolean> {
   return !!data?.value && new Date(data.value).getTime() > Date.now();
 }
 
-const normSym = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FRX/, '').replace(/(M|PRO|MICRO|ECN|I|R)$/, '');
+// Strip broker suffixes (EURUSDm, EURUSD.pro, EURUSDECN...) but NEVER bare
+// single trailing letters: USDZAR ends in R (South African Rand) and stripping
+// it produced the phantom "USDZA" symbol that broke matching and fan-out.
+const normSym = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FRX/, '').replace(/(PRO|MICRO|ECN|M)$/, '');
 
 async function syncAccount(acc: any) {
   const isVps = acc.connection_type === 'vps' || acc.provider === 'vps';
@@ -313,7 +326,9 @@ async function syncAccount(acc: any) {
         } as any).select('id').single();
         if (sig) {
           await db.from('master_positions').update({ signal_id: sig.id } as any).eq('id', inserted.id);
-          const task = db.functions.invoke('copy-trade-listener', { body: { signal_id: sig.id, master_user_id: acc.user_id } })
+          const task = db.functions.invoke('copy-trade-listener', {
+            body: { signal_id: sig.id, master_user_id: acc.user_id, master_ticket: p.ticket, master_account_id: acc.id },
+          })
             .catch((e) => console.error('fan-out invoke failed', e));
           // @ts-ignore EdgeRuntime exists in Supabase edge runtime
           (globalThis as any).EdgeRuntime?.waitUntil?.(task);
