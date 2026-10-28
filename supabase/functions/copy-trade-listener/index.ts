@@ -447,7 +447,10 @@ const stopPips = stopDistance > 0 ? stopDistance / pipSize : 20; // default 20 p
 const riskAmount = followerBalance * (riskPercent / 100);
 const pipValue = 10; // standard $10/pip per lot, matches manual calculator
 const rawVolume = stopPips > 0 ? riskAmount / (stopPips * pipValue) : 0.01;
-const adjustedVolume = Number(Math.min(10.0, Math.max(0.01, rawVolume)).toFixed(2));
+// Ideas with no SL/TP can't be risk-sized, so they get the minimum lot.
+// Everything else is capped at 1.00 lot per follower (placeholder cap; set your own).
+const hasStops = !!(signal.stop_loss || signal.take_profit);
+const adjustedVolume = Number((hasStops ? Math.min(1.0, Math.max(0.01, rawVolume)) : 0.01).toFixed(2));
 
       console.log(`[fan-out] follower=${relationship.follower_user_id} vol=${adjustedVolume}`);
 
