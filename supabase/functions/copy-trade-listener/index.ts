@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
-    const { signal_id, master_user_id } = await req.json();
+    const { signal_id, master_user_id, master_ticket, master_account_id } = await req.json();
 
     if (!signal_id || !master_user_id) {
       return new Response(
@@ -138,9 +138,14 @@ Deno.serve(async (req) => {
       }
     };
 
-    // Optional link to the Master's own MT5 position (set when the fan-out was
-    // triggered by the terminal watcher) so a later close can be mirrored.
-    const masterTicket: string | null = signal?.comment?.match(/#(\d+)\]/)?.[1] ?? null;
+    // Link to the Master's own MT5 position so a later close can be mirrored.
+    // The terminal watcher passes the ticket + master account explicitly when it
+    // triggers the fan-out (authoritative); the comment tag is only a fallback
+    // for older invocations.
+    const masterTicket: string | null =
+      (master_ticket != null && String(master_ticket).trim() !== '' ? String(master_ticket) : null)
+      ?? signal?.comment?.match(/#(\d+)\]/)?.[1] ?? null;
+    const bodyMasterAccountId: string | null = master_account_id ?? null;
 
     const logSuccess = async (
       relationship: any, volume: number, via: string, entryPrice?: number | null,
@@ -161,7 +166,7 @@ Deno.serve(async (req) => {
           signal_id,
           broker_ticket: ticket != null ? String(ticket) : null,
           broker_symbol: brokerSymbol ?? null,
-          master_account_id: relationship.master_account_id,
+          master_account_id: relationship.master_account_id ?? bodyMasterAccountId,
           master_ticket: masterTicket,
           execution_via: via,
         } as any);

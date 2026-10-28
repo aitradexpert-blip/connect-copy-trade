@@ -127,18 +127,28 @@ async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: 
 async function closeFollowers(mp: any, reason: string) {
   const filters = [`master_ticket.eq.${mp.ticket}`];
   if (mp.signal_id) filters.push(`signal_id.eq.${mp.signal_id}`);
-  const selectCols = 'id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id';
+  const selectCols = 'id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, user_id, signal_id, created_at';
   let { data: rows } = await db.from('trade_history')
     .select(selectCols)
     .eq('master_account_id', mp.master_account_id).eq('status', 'open').not('broker_ticket', 'is', null)
     .or(filters.join(','));
   if (!rows || rows.length === 0) {
+    // Fallback: unlinked open copies of the same pair + direction on this
+    // master. Restricted to copies created in a short window around the
+    // Master's own open — older unlinked copies of the same pair belong to
+    // other trades and must never be swept into this close.
+    const openAt = mp.opened_at || mp.first_seen_at || null;
+    const openMs = openAt ? new Date(openAt).getTime() : 0;
     const { data: unlinked } = await db.from('trade_history')
       .select(selectCols)
       .eq('master_account_id', mp.master_account_id).eq('status', 'open')
       .not('broker_ticket', 'is', null).is('master_ticket', null);
     rows = (unlinked || []).filter((r: any) =>
-      normSym(r.symbol) === normSym(mp.symbol) && String(r.direction).toUpperCase() === String(mp.direction).toUpperCase());
+      openMs > 0
+      && normSym(r.symbol) === normSym(mp.symbol)
+      && String(r.direction).toUpperCase() === String(mp.direction).toUpperCase()
+      && new Date(r.created_at).getTime() >= openMs - 60_000
+      && new Date(r.created_at).getTime() <= openMs + 2 * 60_000);
   }
   if (!rows || rows.length === 0) {
     // Silence is how this bug hid for weeks — make a zero-match close loud.
@@ -250,12 +260,119 @@ async function repairAccount(acc: any) {
   return { account: acc.name, repaired, failed, details };
 }
 
+const setVpsBusyUntil = async (until: Date | null) => {
+  try {
+    await db.from('app_settings').upsert({
+      key: 'vps_busy_until', value: until ? until.toISOString() : new Date(0).toISOString(), updated_at: new Date().toISOString(),
+    } as any, { onConflict: 'key' });
+  } catch (e) { console.warn('vps_busy flag failed', e); }
+};
+
+// Reconcile pass: every Master position closed within the lookback window
+// (default 24h) still gets its open follower copies closed — this repairs
+// closes that happened before ticket linking / windowed matching existed.
+// Idempotent: a position with nothing left open is a cheap DB no-op, and a
+// copy is only ever marked closed after the broker itself confirms the close
+// (or reports the position already gone). Nothing is bulk-marked.
+async function reconcileCloses(opts: { hours?: number } = {}) {
+  const hours = Math.min(Math.max(Number(opts.hours) || 24, 1), 240);
+  if (await vpsBusy()) return { skipped: 'terminal busy with a copy fan-out' };
+  const since = new Date(Date.now() - hours * 3600_000).toISOString();
+  const { data: mps } = await db.from('master_positions')
+    .select('*').eq('status', 'closed').gte('closed_at', since).order('closed_at', { ascending: false });
+  const results: any[] = [];
+  for (const mp of mps || []) {
+    if (await vpsBusy()) { results.push({ ticket: mp.ticket, symbol: mp.symbol, skipped: 'terminal busy' }); continue; }
+    // Cheap candidate check FIRST — never call the broker for a position
+    // whose copies are already all closed.
+    const openAt = mp.opened_at || mp.first_seen_at || null;
+    const openMs = openAt ? new Date(openAt).getTime() : 0;
+    const { data: linked } = await db.from('trade_history').select('id')
+      .eq('master_account_id', mp.master_account_id).eq('status', 'open')
+      .not('broker_ticket', 'is', null).eq('master_ticket', String(mp.ticket));
+    let candidates = linked || [];
+    if (!candidates.length) {
+      const { data: unlinked } = await db.from('trade_history')
+        .select('id, symbol, direction, created_at')
+        .eq('master_account_id', mp.master_account_id).eq('status', 'open')
+        .not('broker_ticket', 'is', null).is('master_ticket', null);
+      candidates = (unlinked || []).filter((r: any) =>
+        openMs > 0
+        && normSym(r.symbol) === normSym(mp.symbol)
+        && String(r.direction).toUpperCase() === String(mp.direction).toUpperCase()
+        && new Date(r.created_at).getTime() >= openMs - 60_000
+        && new Date(r.created_at).getTime() <= openMs + 2 * 60_000);
+    }
+    if (!candidates.length) continue;
+    const res = await closeFollowers(mp, 'master_closed_reconcile');
+    results.push({ ticket: mp.ticket, symbol: mp.symbol, direction: mp.direction, master_closed_at: mp.closed_at, ...res });
+  }
+  return { hours, reconciled: results.length, results };
+}
+
+// Read-only audit: for every open follower copy, ask the broker for its REAL
+// live positions and report which copies are truly still open. Writes NO
+// status changes — the report decides what happens next.
+async function auditOpenCopies(opts: { master_account_id?: string; hours?: number } = {}) {
+  const hours = Math.min(Math.max(Number(opts.hours) || 24 * 30, 1), 24 * 365);
+  if (await vpsBusy()) return { skipped: 'terminal busy with a copy fan-out' };
+  const since = new Date(Date.now() - hours * 3600_000).toISOString();
+  let q = db.from('trade_history')
+    .select('id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, created_at, master_ticket, signal_id')
+    .eq('status', 'open').not('broker_ticket', 'is', null)
+    .gte('created_at', since).order('created_at', { ascending: false }).limit(300);
+  if (opts.master_account_id) q = q.eq('master_account_id', opts.master_account_id);
+  const { data: rows, error } = await q;
+  if (error) return { error: error.message };
+  if (!rows?.length) return { checked: 0, entries: [] };
+  const accIds = [...new Set(rows.map((r: any) => r.trading_account_id))];
+  const { data: accs } = await db.from('trading_accounts')
+    .select('id, name, login, server, connection_type, provider, metaapi_account_id, mt5_password, connection_status')
+    .in('id', accIds);
+  const accMap = new Map((accs || []).map((a: any) => [a.id, a]));
+  const byAcc = new Map<string, any[]>();
+  for (const r of rows) {
+    const list = byAcc.get(r.trading_account_id) || [];
+    list.push(r);
+    byAcc.set(r.trading_account_id, list);
+  }
+  // Park the cron watcher while the shared terminal is bound account-by-account.
+  await setVpsBusyUntil(new Date(Date.now() + byAcc.size * 25_000 + 60_000));
+  const entries: any[] = [];
+  try {
+    for (const [accId, rs] of byAcc) {
+      const acc = accMap.get(accId);
+      if (!acc) {
+        for (const r of rs) entries.push({ ticket: r.broker_ticket, symbol: r.symbol, direction: r.direction, account: null, created_at: r.created_at, verdict: 'account_missing' });
+        continue;
+      }
+      const { positions, error: perr } = await readPositions(acc);
+      if (perr || !positions) {
+        for (const r of rs) entries.push({ ticket: r.broker_ticket, symbol: r.symbol, direction: r.direction, account: acc.name, created_at: r.created_at, verdict: 'check_failed', error: perr });
+        continue;
+      }
+      const live = new Set(positions.map((p) => String(p.ticket)));
+      for (const r of rs) entries.push({
+        ticket: r.broker_ticket, symbol: r.symbol, direction: r.direction, volume: r.volume,
+        account: acc.name, created_at: r.created_at, master_ticket: r.master_ticket,
+        verdict: live.has(String(r.broker_ticket)) ? 'truly_open' : 'not_on_broker',
+      });
+    }
+  } finally {
+    await setVpsBusyUntil(null);
+  }
+  return { checked: rows.length, accounts: byAcc.size, entries };
+}
+
 async function vpsBusy(): Promise<boolean> {
   const { data } = await db.from('app_settings').select('value').eq('key', 'vps_busy_until').maybeSingle();
   return !!data?.value && new Date(data.value).getTime() > Date.now();
 }
 
-const normSym = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FRX/, '').replace(/(M|PRO|MICRO|ECN|I|R)$/, '');
+// Strip broker suffixes (EURUSDm, EURUSD.pro, EURUSDECN...) but NEVER bare
+// single trailing letters: USDZAR ends in R (South African Rand) and stripping
+// it produced the phantom "USDZA" symbol that broke matching and fan-out.
+const normSym = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^FRX/, '').replace(/(PRO|MICRO|ECN|M)$/, '');
 
 async function syncAccount(acc: any) {
   const isVps = acc.connection_type === 'vps' || acc.provider === 'vps';
@@ -313,7 +430,9 @@ async function syncAccount(acc: any) {
         } as any).select('id').single();
         if (sig) {
           await db.from('master_positions').update({ signal_id: sig.id } as any).eq('id', inserted.id);
-          const task = db.functions.invoke('copy-trade-listener', { body: { signal_id: sig.id, master_user_id: acc.user_id } })
+          const task = db.functions.invoke('copy-trade-listener', {
+            body: { signal_id: sig.id, master_user_id: acc.user_id, master_ticket: p.ticket, master_account_id: acc.id },
+          })
             .catch((e) => console.error('fan-out invoke failed', e));
           // @ts-ignore EdgeRuntime exists in Supabase edge runtime
           (globalThis as any).EdgeRuntime?.waitUntil?.(task);
