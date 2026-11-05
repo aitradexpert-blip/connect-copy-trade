@@ -6,6 +6,7 @@
 //  - mode "close" : Master pressed "Close Trade" in HuMi — close the Master's
 //                   position first, then every follower copy of it.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.0';
+import { chooseCloseIdeaStrategy, isOpenCopyRow } from './closeIdeaRules.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -313,7 +314,7 @@ async function reconcileCloses(opts: { hours?: number } = {}) {
 // Read-only audit: for every open follower copy, ask the broker for its REAL
 // live positions and report which copies are truly still open. Writes NO
 // status changes — the report decides what happens next.
-async function auditOpenCopies(opts: { master_account_id?: string; hours?: number } = {}) {
+async function auditOpenCopies(opts: { master_account_id?: string; trade_ids?: string[]; hours?: number } = {}) {
   const hours = Math.min(Math.max(Number(opts.hours) || 24 * 30, 1), 24 * 365);
   if (await vpsBusy()) return { skipped: 'terminal busy with a copy fan-out' };
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
@@ -322,6 +323,7 @@ async function auditOpenCopies(opts: { master_account_id?: string; hours?: numbe
     .eq('status', 'open').not('broker_ticket', 'is', null)
     .gte('created_at', since).order('created_at', { ascending: false }).limit(300);
   if (opts.master_account_id) q = q.eq('master_account_id', opts.master_account_id);
+  if (opts.trade_ids?.length) q = q.in('id', opts.trade_ids);
   const { data: rows, error } = await q;
   if (error) return { error: error.message };
   if (!rows?.length) return { checked: 0, entries: [] };
@@ -351,12 +353,16 @@ async function auditOpenCopies(opts: { master_account_id?: string; hours?: numbe
         for (const r of rs) entries.push({ ticket: r.broker_ticket, symbol: r.symbol, direction: r.direction, account: acc.name, created_at: r.created_at, verdict: 'check_failed', error: perr });
         continue;
       }
-      const live = new Set(positions.map((p) => String(p.ticket)));
-      for (const r of rs) entries.push({
-        ticket: r.broker_ticket, symbol: r.symbol, direction: r.direction, volume: r.volume,
-        account: acc.name, created_at: r.created_at, master_ticket: r.master_ticket,
-        verdict: live.has(String(r.broker_ticket)) ? 'truly_open' : 'not_on_broker',
-      });
+      const liveByTicket = new Map(positions.map((p) => [String(p.ticket), p]));
+      for (const r of rs) {
+        const live = liveByTicket.get(String(r.broker_ticket));
+        entries.push({
+          trade_id: r.id, ticket: r.broker_ticket, symbol: r.symbol, broker_symbol: r.broker_symbol,
+          direction: r.direction, recorded_volume: r.volume, broker_volume: live?.volume ?? null,
+          account: acc.name, created_at: r.created_at, master_ticket: r.master_ticket,
+          verdict: live ? 'truly_open' : 'not_on_broker',
+        });
+      }
     }
   } finally {
     await setVpsBusyUntil(null);
@@ -367,6 +373,76 @@ async function auditOpenCopies(opts: { master_account_id?: string; hours?: numbe
 async function vpsBusy(): Promise<boolean> {
   const { data } = await db.from('app_settings').select('value').eq('key', 'vps_busy_until').maybeSingle();
   return !!data?.value && new Date(data.value).getTime() > Date.now();
+}
+
+async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
+  const { data: rows, error } = await db.from('trade_history')
+    .select('id, user_id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
+    .eq('signal_id', signalId).eq('status', 'open').neq('user_id', ownerUserId);
+  if (error) return { closed: 0, failed: 0, details: [{ ok: false, error: error.message }] };
+
+  const candidates = (rows || []).filter((row: any) => row.status === 'open');
+  if (candidates.some((row: any) => row.broker_ticket && (row.provider === 'vps'))) {
+    // The account is loaded below; this branch intentionally does not infer VPS use from trade rows.
+  }
+  let closed = 0;
+  let failed = 0;
+  const details: any[] = [];
+  for (const row of candidates) {
+    if (!row.broker_ticket) {
+      failed++;
+      details.push({ trade_id: row.id, ok: false, error: 'No broker ticket is recorded for this open copy' });
+      continue;
+    }
+    const { data: acc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
+    if (!acc || acc.user_id === ownerUserId) {
+      failed++;
+      details.push({ trade_id: row.id, account: acc?.name, ok: false, error: acc ? 'Skipped Master-owned account; only followers are closed on this path' : 'Follower account missing' });
+      continue;
+    }
+    const { positions, error: positionError } = await readPositions(acc);
+    if (positionError || !positions) {
+      failed++;
+      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: positionError || 'Could not read live positions' });
+      continue;
+    }
+    const live = positions.find((position) => String(position.ticket) === String(row.broker_ticket));
+    if (!live) {
+      failed++;
+      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: 'Ticket is not currently open at the broker; record left unchanged' });
+      continue;
+    }
+    if (acc.connection_type === 'vps' || acc.provider === 'vps') {
+      if (await vpsBusy()) {
+        failed++;
+        details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: 'Trading terminal is busy; retry shortly' });
+        continue;
+      }
+      await setVpsBusyUntil(new Date(Date.now() + 45_000));
+    }
+    let closeError: string | null = null;
+    try {
+      closeError = await closeOnAccount(acc, String(row.broker_ticket), row.broker_symbol || live.symbol, Number(live.volume));
+    } finally {
+      if (acc.connection_type === 'vps' || acc.provider === 'vps') await setVpsBusyUntil(null);
+    }
+    if (closeError) {
+      failed++;
+      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: closeError });
+      continue;
+    }
+    const { error: updateError } = await db.from('trade_history').update({
+      status: 'closed', closed_at: new Date().toISOString(), close_reason: 'mentor_close_idea',
+    } as any).eq('id', row.id).eq('status', 'open');
+    if (updateError) {
+      failed++;
+      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: `Broker closed; app record update failed: ${updateError.message}` });
+      continue;
+    }
+    closed++;
+    details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: true });
+  }
+  return { closed, failed, details, matched: candidates.length };
 }
 
 // Strip broker suffixes (EURUSDm, EURUSD.pro, EURUSDECN...) but NEVER bare
