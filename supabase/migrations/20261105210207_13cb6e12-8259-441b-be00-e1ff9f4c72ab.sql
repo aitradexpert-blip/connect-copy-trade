@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.close_linked_idea_on_master_position_close() FROM PUBLIC, anon, authenticated;
