@@ -92,6 +92,8 @@ export default function MentorHub() {
   
   const [profile, setProfile] = useState<MentorProfile | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
+  const [ideaToClose, setIdeaToClose] = useState<Signal | null>(null);
+  const [closingIdeaId, setClosingIdeaId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [copyRelationships, setCopyRelationships] = useState<CopyRelationship[]>([]);
   const [clients, setClients] = useState<MentorClient[]>([]);
@@ -254,6 +256,36 @@ export default function MentorHub() {
     }
     setSignals(prev => prev.filter(s => s.id !== signalId));
     toast({ title: 'Idea removed', description: 'It no longer appears to your clients.' });
+  };
+
+  const closeIdea = async () => {
+    if (!ideaToClose) return;
+    setClosingIdeaId(ideaToClose.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('master-position-sync', {
+        body: { mode: 'close_idea', signal_id: ideaToClose.id },
+      });
+      if (error || !data?.success) throw new Error(data?.error || error?.message || 'Could not close this Idea');
+
+      const followerSummary = data.followers || { closed: 0, failed: 0, details: [] };
+      const masterFailures = (data.master_positions || []).filter((position: any) => !position.success);
+      const failed = Number(followerSummary.failed || 0) + masterFailures.length;
+      const reasons = [
+        ...(followerSummary.details || []).filter((detail: any) => !detail.ok).map((detail: any) => `${detail.account || detail.ticket || 'Follower'}: ${detail.error || 'close failed'}`),
+        ...masterFailures.map((position: any) => `Master #${position.ticket}: ${position.error || 'close failed'}`),
+      ];
+      toast({
+        title: 'Idea close completed',
+        description: `${Number(followerSummary.closed || 0)} closed, ${failed} failed${reasons.length ? ` — ${reasons.join('; ')}` : ''}`,
+        variant: failed ? 'destructive' : undefined,
+      });
+      setIdeaToClose(null);
+      await loadData();
+    } catch (err: any) {
+      toast({ title: 'Could not close Idea', description: err.message, variant: 'destructive' });
+    } finally {
+      setClosingIdeaId(null);
+    }
   };
 
   const publishSignal = async () => {
@@ -821,15 +853,27 @@ export default function MentorHub() {
                         </div>
                         <div className="flex items-center justify-between mt-2 gap-2">
                           <span className="text-xs text-muted-foreground">{new Date(sig.created_at).toLocaleString()}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 px-2 text-destructive hover:text-destructive"
-                            onClick={() => removeSignal(sig.id)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Remove
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2"
+                              onClick={() => setIdeaToClose(sig)}
+                              disabled={closingIdeaId === sig.id}
+                            >
+                              <StopCircle className="h-4 w-4 mr-1" />
+                              Close Idea
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 text-destructive hover:text-destructive"
+                              onClick={() => removeSignal(sig.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Remove
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -949,6 +993,26 @@ export default function MentorHub() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={Boolean(ideaToClose)} onOpenChange={(open) => { if (!open && !closingIdeaId) setIdeaToClose(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Close {ideaToClose?.symbol} Idea?</DialogTitle>
+            <DialogDescription>
+              This closes any open Master trade linked to this Idea and its open follower copies. If no linked Master trade is open, only open follower copies are closed. Already-closed trades are skipped.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIdeaToClose(null)} disabled={Boolean(closingIdeaId)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={closeIdea} disabled={Boolean(closingIdeaId)}>
+              {closingIdeaId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <StopCircle className="mr-2 h-4 w-4" />}
+              {closingIdeaId ? 'Closing…' : 'Confirm close'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Connect Account Modal */}
       <ConnectAccountModal open={showConnectModal} onOpenChange={setShowConnectModal} />
