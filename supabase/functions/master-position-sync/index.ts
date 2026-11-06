@@ -439,8 +439,8 @@ async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
   const masterAccountIds = (ownerMasterAccounts || []).map((account: any) => account.id);
   if (!masterAccountIds.length) return { closed: 0, failed: 0, details: [], matched: 0 };
   const { data: rows, error } = await db.from('trade_history')
-    .select('id, user_id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
-    .eq('signal_id', signalId).eq('status', 'open').neq('user_id', ownerUserId)
+    .select('id, user_id, trading_account_id, master_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
+    .eq('signal_id', signalId).eq('status', 'open')
     .in('master_account_id', masterAccountIds);
   if (error) return { closed: 0, failed: 0, details: [{ ok: false, error: error.message }] };
 
@@ -455,9 +455,9 @@ async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
       continue;
     }
     const { data: acc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
-    if (!acc || acc.user_id === ownerUserId) {
+    if (!acc || acc.user_id !== row.user_id || acc.is_master || acc.id === row.master_account_id) {
       failed++;
-      details.push({ trade_id: row.id, account: acc?.name, ok: false, error: acc ? 'Skipped Master-owned account; only followers are closed on this path' : 'Follower account missing' });
+      details.push({ trade_id: row.id, account: acc?.name, ok: false, error: acc ? 'Skipped non-follower or Master account; only follower accounts are closed on this path' : 'Follower account missing' });
       continue;
     }
     const result = await closeVerifiedPosition(acc, String(row.broker_ticket), row.broker_symbol || row.symbol);
@@ -674,7 +674,9 @@ Deno.serve(async (req) => {
       }
       if (!row.broker_ticket) return json({ error: 'No broker ticket is recorded; no close order was sent' }, 409);
       const { data: follower } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
-      if (!follower || follower.user_id !== row.user_id) return json({ error: 'Follower account ownership could not be verified' }, 409);
+      if (!follower || follower.user_id !== row.user_id || follower.is_master || follower.id === row.master_account_id) {
+        return json({ error: 'Follower account ownership could not be verified; Master accounts are never closed on this path' }, 409);
+      }
       const close = await closeVerifiedPosition(follower, String(row.broker_ticket), row.broker_symbol || row.symbol);
       if (close.error) {
         const notOpen = close.error.includes('not currently open at the broker');
