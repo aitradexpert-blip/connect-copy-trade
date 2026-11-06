@@ -670,35 +670,16 @@ Deno.serve(async (req) => {
       if (!row.broker_ticket) return json({ error: 'No broker ticket is recorded; no close order was sent' }, 409);
       const { data: follower } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
       if (!follower || follower.user_id !== row.user_id) return json({ error: 'Follower account ownership could not be verified' }, 409);
-      const isVps = follower.connection_type === 'vps' || follower.provider === 'vps';
-      if (isVps && await vpsBusy()) return json({ error: 'Trading terminal is busy; try again shortly' }, 409);
-      if (isVps) await setVpsBusyUntil(new Date(Date.now() + 45_000));
-      let live: Pos | undefined;
-      let positionError: string | undefined;
-      try {
-        const liveResult = await readPositions(follower);
-        positionError = liveResult.error;
-        live = liveResult.positions?.find((position) => String(position.ticket) === String(row.broker_ticket));
-      } finally {
-        if (isVps) await setVpsBusyUntil(null);
+      const close = await closeVerifiedPosition(follower, String(row.broker_ticket), row.broker_symbol || row.symbol);
+      if (close.error) {
+        const notOpen = close.error.includes('not currently open at the broker');
+        return json({ success: notOpen, ...(notOpen ? { skipped: 'not_on_broker', record_unchanged: true } : {}), error: close.error, ticket: row.broker_ticket, broker: close.broker }, notOpen ? 200 : 502);
       }
-      if (positionError) return json({ error: `Broker audit failed: ${positionError}; no close order was sent` }, 502);
-      if (!live) return json({ success: true, skipped: 'not_on_broker', trade_id: row.id, ticket: row.broker_ticket, record_unchanged: true });
-
-      if (isVps) await setVpsBusyUntil(new Date(Date.now() + 45_000));
-      const brokerResult: { retcode?: number | string; comment?: string } = {};
-      let closeError: string | null;
-      try {
-        closeError = await closeOnAccount(follower, String(row.broker_ticket), row.broker_symbol || live.symbol, Number(live.volume), brokerResult);
-      } finally {
-        if (isVps) await setVpsBusyUntil(null);
-      }
-      if (closeError) return json({ success: false, error: closeError, ticket: row.broker_ticket, broker: brokerResult }, 502);
       const { error: updateError } = await db.from('trade_history').update({
         status: 'closed', closed_at: new Date().toISOString(), close_reason: 'verified_manual_close',
       } as any).eq('id', row.id).eq('status', 'open');
-      if (updateError) return json({ success: false, error: `Broker accepted close; HuMi record update failed: ${updateError.message}`, ticket: row.broker_ticket, broker: brokerResult }, 500);
-      return json({ success: true, closed: true, trade_id: row.id, account: follower.name, ticket: row.broker_ticket, symbol: live.symbol, volume: live.volume, broker: brokerResult });
+      if (updateError) return json({ success: false, error: `Broker closed and verified; HuMi record update failed: ${updateError.message}`, ticket: row.broker_ticket, broker: close.broker }, 500);
+      return json({ success: true, closed: true, trade_id: row.id, account: follower.name, ticket: row.broker_ticket, symbol: close.position?.symbol, volume: close.position?.volume, broker: close.broker });
     }
     const accountId = String(body?.account_id || '');
     const { data: acc } = accountId
