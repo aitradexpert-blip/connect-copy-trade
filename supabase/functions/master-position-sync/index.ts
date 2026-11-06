@@ -133,20 +133,41 @@ async function closeOnAccount(
   return 'No live connection for this account';
 }
 
+async function closeVerifiedPosition(acc: any, ticket: string, symbol: string) {
+  const isVps = acc.connection_type === 'vps' || acc.provider === 'vps';
+  if (isVps && await vpsBusy()) return { error: 'Trading terminal is busy; try again shortly', position: null, broker: {} };
+  if (isVps) await setVpsBusyUntil(new Date(Date.now() + 90_000));
+  try {
+    const before = await readPositions(acc);
+    if (before.error || !before.positions) {
+      return { error: `Broker audit failed: ${before.error || 'could not read positions'}; no close order was sent`, position: null, broker: {} };
+    }
+    const live = before.positions.find((position) => String(position.ticket) === String(ticket));
+    if (!live) return { error: 'Ticket is not currently open at the broker; no close order was sent', position: null, broker: {} };
+
+    const broker: { retcode?: number | string; comment?: string } = {};
+    const closeError = await closeOnAccount(acc, String(ticket), symbol || live.symbol, Number(live.volume), broker);
+    if (closeError) return { error: closeError, position: live, broker };
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 750));
+      const after = await readPositions(acc);
+      if (after.error || !after.positions) {
+        return { error: `Broker accepted close but post-close verification failed: ${after.error || 'could not read positions'}`, position: live, broker };
+      }
+      if (!after.positions.some((position) => String(position.ticket) === String(ticket))) {
+        return { error: null, position: live, broker };
+      }
+    }
+    return { error: 'Broker accepted the request, but the ticket is still open; the record was left unchanged', position: live, broker };
+  } finally {
+    if (isVps) await setVpsBusyUntil(null);
+  }
+}
+
 async function closeMasterPosition(acc: any, mp: any, reason: string) {
-  if ((acc.connection_type === 'vps' || acc.provider === 'vps') && await vpsBusy()) {
-    return { success: false, error: 'Copying is in progress on the trading terminal — try again in a few seconds' };
-  }
-  const { positions, error: positionError } = await readPositions(acc);
-  if (positionError || !positions) {
-    return { success: false, error: positionError || 'Could not verify the Master position at the broker' };
-  }
-  const live = positions.find((position) => String(position.ticket) === String(mp.ticket));
-  if (!live) {
-    return { success: false, error: 'The Master ticket is no longer open at the broker; no close order was sent' };
-  }
-  const closeError = await closeOnAccount(acc, String(mp.ticket), live.symbol || mp.symbol, Number(live.volume));
-  if (closeError) return { success: false, error: `Master trade not closed: ${closeError}` };
+  const close = await closeVerifiedPosition(acc, String(mp.ticket), mp.symbol);
+  if (close.error) return { success: false, error: `Master trade not closed: ${close.error}` };
   const { data: claimed, error: updateError } = await db.from('master_positions')
     .update({ status: 'closed', closed_at: new Date().toISOString(), close_source: reason === 'mentor_close_idea' ? 'humi' : reason } as any)
     .eq('id', mp.id).eq('status', 'open').select('*').maybeSingle();
@@ -434,35 +455,10 @@ async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
       details.push({ trade_id: row.id, account: acc?.name, ok: false, error: acc ? 'Skipped Master-owned account; only followers are closed on this path' : 'Follower account missing' });
       continue;
     }
-    const { positions, error: positionError } = await readPositions(acc);
-    if (positionError || !positions) {
+    const result = await closeVerifiedPosition(acc, String(row.broker_ticket), row.broker_symbol || row.symbol);
+    if (result.error) {
       failed++;
-      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: positionError || 'Could not read live positions' });
-      continue;
-    }
-    const live = positions.find((position) => String(position.ticket) === String(row.broker_ticket));
-    if (!live) {
-      failed++;
-      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: 'Ticket is not currently open at the broker; record left unchanged' });
-      continue;
-    }
-    if (acc.connection_type === 'vps' || acc.provider === 'vps') {
-      if (await vpsBusy()) {
-        failed++;
-        details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: 'Trading terminal is busy; retry shortly' });
-        continue;
-      }
-      await setVpsBusyUntil(new Date(Date.now() + 45_000));
-    }
-    let closeError: string | null = null;
-    try {
-      closeError = await closeOnAccount(acc, String(row.broker_ticket), row.broker_symbol || live.symbol, Number(live.volume));
-    } finally {
-      if (acc.connection_type === 'vps' || acc.provider === 'vps') await setVpsBusyUntil(null);
-    }
-    if (closeError) {
-      failed++;
-      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: closeError });
+      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: result.error, broker: result.broker });
       continue;
     }
     const { error: updateError } = await db.from('trade_history').update({
@@ -474,7 +470,7 @@ async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
       continue;
     }
     closed++;
-    details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: true });
+    details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, volume: result.position?.volume, ok: true, broker: result.broker });
   }
   return { closed, failed, details, matched: candidates.length };
 }
