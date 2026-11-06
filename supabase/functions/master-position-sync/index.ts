@@ -167,6 +167,14 @@ async function closeVerifiedPosition(acc: any, ticket: string, symbol: string) {
 
 async function closeMasterPosition(acc: any, mp: any, reason: string) {
   const close = await closeVerifiedPosition(acc, String(mp.ticket), mp.symbol);
+  if (close.error === 'Ticket is not currently open at the broker; no close order was sent') {
+    const { data: alreadyClosed, error: markError } = await db.from('master_positions')
+      .update({ status: 'closed', closed_at: new Date().toISOString(), close_source: 'terminal' } as any)
+      .eq('id', mp.id).eq('status', 'open').select('*').maybeSingle();
+    if (markError) return { success: false, error: `Master ticket is already absent at the broker; position record update failed: ${markError.message}` };
+    if (!alreadyClosed) return { success: false, error: 'Master position changed while closing; refresh before retrying' };
+    return { success: true, master_closed: true, already_closed_at_broker: true, followers: await closeFollowers(alreadyClosed, reason) };
+  }
   if (close.error) return { success: false, error: `Master trade not closed: ${close.error}` };
   const { data: claimed, error: updateError } = await db.from('master_positions')
     .update({ status: 'closed', closed_at: new Date().toISOString(), close_source: reason === 'mentor_close_idea' ? 'humi' : reason } as any)
@@ -602,7 +610,9 @@ async function closeIdea(signalId: string, userId: string) {
         results.push({ ticket: mp.ticket, success: false, error: 'Linked Master account could not be verified as yours' });
         continue;
       }
-      results.push({ ticket: mp.ticket, symbol: mp.symbol, ...await closeMasterPosition(acc, mp, 'mentor_close_idea') });
+      const result = await closeMasterPosition(acc, mp, 'mentor_close_idea');
+      results.push({ ticket: mp.ticket, symbol: mp.symbol, ...result });
+      if (acc.connection_type === 'vps' || acc.provider === 'vps') await bindVps(acc);
     }
     const followers = results.reduce((sum, result) => sum + (result.followers?.closed || 0), 0);
     const failed = results.reduce((sum, result) => sum + (result.followers?.failed || (result.success ? 0 : 1)), 0);
@@ -611,9 +621,9 @@ async function closeIdea(signalId: string, userId: string) {
 
   const followers = await closeIdeaFollowersOnly(signalId, userId);
   if (!followers.failed) {
-    const { count } = await db.from('trade_history').select('id', { count: 'exact', head: true })
+    const { count, error: countError } = await db.from('trade_history').select('id', { count: 'exact', head: true })
       .eq('signal_id', signalId).eq('status', 'open');
-    if (!count) await db.from('trading_signals').update({ status: 'closed' } as any).eq('id', signalId).neq('status', 'removed');
+    if (!countError && count === 0) await db.from('trading_signals').update({ status: 'closed' } as any).eq('id', signalId).neq('status', 'removed');
   }
   return { status: 200, body: { success: true, strategy, followers } };
 }
