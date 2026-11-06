@@ -94,13 +94,23 @@ async function readPositions(acc: any): Promise<{ positions?: Pos[]; error?: str
   return { error: 'No live connection for this account' };
 }
 
-async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: number): Promise<string | null> {
+async function closeOnAccount(
+  acc: any,
+  ticket: string,
+  symbol: string,
+  volume: number,
+  result?: { retcode?: number | string; comment?: string },
+): Promise<string | null> {
   if (acc.connection_type === 'vps' || acc.provider === 'vps') {
     const bindErr = await bindVps(acc);
     if (bindErr) return bindErr;
     const r = await vps('POST', '/close', { accountId: acc.id, account_id: acc.id, ticket: Number(ticket), symbol, volume }, 20000);
     if (r.status === 404 || r.status === 405) return 'Trading bridge has no /close endpoint yet — install the close update on the VPS';
     const d = r.json?.data ?? r.json;
+    if (result) {
+      result.retcode = d?.retcode ?? d?.retCode;
+      result.comment = d?.comment ?? r.json?.message;
+    }
     if (r.json?.success === true || d?.retcode === 10009 || d?.retcode === 10008) return null;
     if (/not\s+found|no\s+position|already\s+closed/i.test(String(r.json?.error || ''))) return null; // already flat
     return r.json?.error || d?.comment || `Close failed (HTTP ${r.status}${d?.retcode ? `, retcode ${d.retcode}` : ''})`;
@@ -112,6 +122,10 @@ async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: 
       body: JSON.stringify({ actionType: 'POSITION_CLOSE_ID', positionId: ticket }),
     });
     const j = await r.json().catch(() => null);
+    if (result) {
+      result.retcode = j?.numericCode ?? j?.stringCode;
+      result.comment = j?.message;
+    }
     if (r.ok && (j?.numericCode === 0 || j?.numericCode === 10009 || j?.stringCode === 'TRADE_RETCODE_DONE' || !j?.error)) return null;
     if (/not\s+found/i.test(JSON.stringify(j))) return null;
     return j?.message || j?.error || `MetaAPI close HTTP ${r.status}`;
@@ -639,6 +653,56 @@ Deno.serve(async (req) => {
         return json({ error: 'Only the Master account owner can audit these trades' }, 403);
       }
       return json({ success: true, ...(await auditOpenCopies({ trade_ids: tradeIds })) });
+    }
+    if (mode === 'close_copy') {
+      const tradeId = String(body?.trade_id || '');
+      if (!tradeId || tradeId.length > 80) return json({ error: 'A valid trade id is required' }, 400);
+      const { data: row, error: rowError } = await db.from('trade_history')
+        .select('id, user_id, trading_account_id, master_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
+        .eq('id', tradeId).maybeSingle();
+      if (rowError || !row) return json({ error: 'Follower trade not found' }, 404);
+      if (row.status !== 'open') return json({ success: true, skipped: 'already_closed', trade_id: row.id });
+      if (!row.master_account_id || row.user_id === user.id || row.trading_account_id === row.master_account_id) {
+        return json({ error: 'This row is not an eligible follower copy' }, 403);
+      }
+      const { data: master } = await db.from('trading_accounts').select('id, user_id, is_master')
+        .eq('id', row.master_account_id).maybeSingle();
+      const isAdmin = await db.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').limit(1).then((r) => !!r.data?.length);
+      if ((!master || master.user_id !== user.id || !master.is_master) && !isAdmin) {
+        return json({ error: 'Only the Master account owner can close this follower copy' }, 403);
+      }
+      if (!row.broker_ticket) return json({ error: 'No broker ticket is recorded; no close order was sent' }, 409);
+      const { data: follower } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
+      if (!follower || follower.user_id !== row.user_id) return json({ error: 'Follower account ownership could not be verified' }, 409);
+      const isVps = follower.connection_type === 'vps' || follower.provider === 'vps';
+      if (isVps && await vpsBusy()) return json({ error: 'Trading terminal is busy; try again shortly' }, 409);
+      if (isVps) await setVpsBusyUntil(new Date(Date.now() + 45_000));
+      let live: Pos | undefined;
+      let positionError: string | undefined;
+      try {
+        const liveResult = await readPositions(follower);
+        positionError = liveResult.error;
+        live = liveResult.positions?.find((position) => String(position.ticket) === String(row.broker_ticket));
+      } finally {
+        if (isVps) await setVpsBusyUntil(null);
+      }
+      if (positionError) return json({ error: `Broker audit failed: ${positionError}; no close order was sent` }, 502);
+      if (!live) return json({ success: true, skipped: 'not_on_broker', trade_id: row.id, ticket: row.broker_ticket, record_unchanged: true });
+
+      if (isVps) await setVpsBusyUntil(new Date(Date.now() + 45_000));
+      const brokerResult: { retcode?: number | string; comment?: string } = {};
+      let closeError: string | null;
+      try {
+        closeError = await closeOnAccount(follower, String(row.broker_ticket), row.broker_symbol || live.symbol, Number(live.volume), brokerResult);
+      } finally {
+        if (isVps) await setVpsBusyUntil(null);
+      }
+      if (closeError) return json({ success: false, error: closeError, ticket: row.broker_ticket, broker: brokerResult }, 502);
+      const { error: updateError } = await db.from('trade_history').update({
+        status: 'closed', closed_at: new Date().toISOString(), close_reason: 'verified_manual_close',
+      } as any).eq('id', row.id).eq('status', 'open');
+      if (updateError) return json({ success: false, error: `Broker accepted close; HuMi record update failed: ${updateError.message}`, ticket: row.broker_ticket, broker: brokerResult }, 500);
+      return json({ success: true, closed: true, trade_id: row.id, account: follower.name, ticket: row.broker_ticket, symbol: live.symbol, volume: live.volume, broker: brokerResult });
     }
     const accountId = String(body?.account_id || '');
     const { data: acc } = accountId
