@@ -434,9 +434,14 @@ async function vpsBusy(): Promise<boolean> {
 }
 
 async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
+  const { data: ownerMasterAccounts } = await db.from('trading_accounts').select('id')
+    .eq('user_id', ownerUserId).eq('is_master', true);
+  const masterAccountIds = (ownerMasterAccounts || []).map((account: any) => account.id);
+  if (!masterAccountIds.length) return { closed: 0, failed: 0, details: [], matched: 0 };
   const { data: rows, error } = await db.from('trade_history')
     .select('id, user_id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
-    .eq('signal_id', signalId).eq('status', 'open').neq('user_id', ownerUserId);
+    .eq('signal_id', signalId).eq('status', 'open').neq('user_id', ownerUserId)
+    .in('master_account_id', masterAccountIds);
   if (error) return { closed: 0, failed: 0, details: [{ ok: false, error: error.message }] };
 
   const candidates = (rows || []).filter((row: any) => row.status === 'open');
@@ -645,7 +650,7 @@ Deno.serve(async (req) => {
       const masterIds = [...new Set(rows.map((row: any) => row.master_account_id).filter(Boolean))];
       const { data: masters } = await db.from('trading_accounts').select('id, user_id').in('id', masterIds);
       const isAdmin = await db.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').limit(1).then((r) => !!r.data?.length);
-      if (!isAdmin && (masters || []).some((master: any) => master.user_id !== user.id)) {
+      if (masters?.length !== masterIds.length || (!isAdmin && (masters || []).some((master: any) => master.user_id !== user.id))) {
         return json({ error: 'Only the Master account owner can audit these trades' }, 403);
       }
       return json({ success: true, ...(await auditOpenCopies({ trade_ids: tradeIds })) });
