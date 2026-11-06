@@ -228,21 +228,37 @@ async function closeFollowers(mp: any, reason: string) {
     } as any);
     return { closed: 0, failed: 0, details: [], matched: 0 };
   }
+  const accountIds = [...new Set(rows.map((row: any) => row.trading_account_id))];
+  const { data: accounts } = await db.from('trading_accounts').select('*').in('id', accountIds);
+  const accountMap = new Map((accounts || []).map((account: any) => [account.id, account]));
+  const vpsRows = rows.filter((row: any) => {
+    const account = accountMap.get(row.trading_account_id);
+    return account?.connection_type === 'vps' || account?.provider === 'vps';
+  }).length;
+  if (vpsRows && await vpsBusy()) {
+    const details = rows.map((row: any) => ({ account: accountMap.get(row.trading_account_id)?.name, ticket: row.broker_ticket, ok: false, error: 'Trading terminal is busy; retry this close shortly' }));
+    return { closed: 0, failed: rows.length, details, matched: rows.length };
+  }
+  if (vpsRows) await setVpsBusyUntil(new Date(Date.now() + vpsRows * 25_000 + 60_000));
   let closed = 0, failed = 0;
   const details: any[] = [];
   const signalIds: string[] = mp.signal_id ? [mp.signal_id] : [];
-  for (const row of rows) {
-    const { data: acc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
-    const err = acc ? await closeOnAccount(acc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
-    if (!err) {
-      closed++;
-      await db.from('trade_history').update({ status: 'closed', closed_at: new Date().toISOString(), close_reason: reason } as any).eq('id', row.id);
-    } else {
-      failed++;
-      await db.from('trade_history').update({ comment: `Close mirror failed: ${err}`.slice(0, 500) } as any).eq('id', row.id);
+  try {
+    for (const row of rows) {
+      const acc = accountMap.get(row.trading_account_id);
+      const err = acc ? await closeOnAccount(acc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
+      if (!err) {
+        closed++;
+        await db.from('trade_history').update({ status: 'closed', closed_at: new Date().toISOString(), close_reason: reason } as any).eq('id', row.id).eq('status', 'open');
+      } else {
+        failed++;
+        await db.from('trade_history').update({ comment: `Close mirror failed: ${err}`.slice(0, 500) } as any).eq('id', row.id).eq('status', 'open');
+      }
+      if (row.signal_id) signalIds.push(row.signal_id);
+      details.push({ account: acc?.name, ticket: row.broker_ticket, ok: !err, error: err });
     }
-    if (row.signal_id) signalIds.push(row.signal_id);
-    details.push({ account: acc?.name, ticket: row.broker_ticket, ok: !err, error: err });
+  } finally {
+    if (vpsRows) await setVpsBusyUntil(null);
   }
   await db.from('master_positions').update({ followers_closed: closed, followers_failed: failed } as any).eq('id', mp.id);
   // The Idea leaves the active feed once its trade is actually over.
