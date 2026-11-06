@@ -94,13 +94,23 @@ async function readPositions(acc: any): Promise<{ positions?: Pos[]; error?: str
   return { error: 'No live connection for this account' };
 }
 
-async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: number): Promise<string | null> {
+async function closeOnAccount(
+  acc: any,
+  ticket: string,
+  symbol: string,
+  volume: number,
+  result?: { retcode?: number | string; comment?: string },
+): Promise<string | null> {
   if (acc.connection_type === 'vps' || acc.provider === 'vps') {
     const bindErr = await bindVps(acc);
     if (bindErr) return bindErr;
     const r = await vps('POST', '/close', { accountId: acc.id, account_id: acc.id, ticket: Number(ticket), symbol, volume }, 20000);
     if (r.status === 404 || r.status === 405) return 'Trading bridge has no /close endpoint yet — install the close update on the VPS';
     const d = r.json?.data ?? r.json;
+    if (result) {
+      result.retcode = d?.retcode ?? d?.retCode;
+      result.comment = d?.comment ?? r.json?.message;
+    }
     if (r.json?.success === true || d?.retcode === 10009 || d?.retcode === 10008) return null;
     if (/not\s+found|no\s+position|already\s+closed/i.test(String(r.json?.error || ''))) return null; // already flat
     return r.json?.error || d?.comment || `Close failed (HTTP ${r.status}${d?.retcode ? `, retcode ${d.retcode}` : ''})`;
@@ -112,6 +122,10 @@ async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: 
       body: JSON.stringify({ actionType: 'POSITION_CLOSE_ID', positionId: ticket }),
     });
     const j = await r.json().catch(() => null);
+    if (result) {
+      result.retcode = j?.numericCode ?? j?.stringCode;
+      result.comment = j?.message;
+    }
     if (r.ok && (j?.numericCode === 0 || j?.numericCode === 10009 || j?.stringCode === 'TRADE_RETCODE_DONE' || !j?.error)) return null;
     if (/not\s+found/i.test(JSON.stringify(j))) return null;
     return j?.message || j?.error || `MetaAPI close HTTP ${r.status}`;
@@ -119,20 +133,49 @@ async function closeOnAccount(acc: any, ticket: string, symbol: string, volume: 
   return 'No live connection for this account';
 }
 
+async function closeVerifiedPosition(acc: any, ticket: string, symbol: string) {
+  const isVps = acc.connection_type === 'vps' || acc.provider === 'vps';
+  if (isVps && await vpsBusy()) return { error: 'Trading terminal is busy; try again shortly', position: null, broker: {} };
+  if (isVps) await setVpsBusyUntil(new Date(Date.now() + 90_000));
+  try {
+    const before = await readPositions(acc);
+    if (before.error || !before.positions) {
+      return { error: `Broker audit failed: ${before.error || 'could not read positions'}; no close order was sent`, position: null, broker: {} };
+    }
+    const live = before.positions.find((position) => String(position.ticket) === String(ticket));
+    if (!live) return { error: 'Ticket is not currently open at the broker; no close order was sent', position: null, broker: {} };
+
+    const broker: { retcode?: number | string; comment?: string } = {};
+    const closeError = await closeOnAccount(acc, String(ticket), symbol || live.symbol, Number(live.volume), broker);
+    if (closeError) return { error: closeError, position: live, broker };
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 750));
+      const after = await readPositions(acc);
+      if (after.error || !after.positions) {
+        return { error: `Broker accepted close but post-close verification failed: ${after.error || 'could not read positions'}`, position: live, broker };
+      }
+      if (!after.positions.some((position) => String(position.ticket) === String(ticket))) {
+        return { error: null, position: live, broker };
+      }
+    }
+    return { error: 'Broker accepted the request, but the ticket is still open; the record was left unchanged', position: live, broker };
+  } finally {
+    if (isVps) await setVpsBusyUntil(null);
+  }
+}
+
 async function closeMasterPosition(acc: any, mp: any, reason: string) {
-  if ((acc.connection_type === 'vps' || acc.provider === 'vps') && await vpsBusy()) {
-    return { success: false, error: 'Copying is in progress on the trading terminal — try again in a few seconds' };
+  const close = await closeVerifiedPosition(acc, String(mp.ticket), mp.symbol);
+  if (close.error === 'Ticket is not currently open at the broker; no close order was sent') {
+    const { data: alreadyClosed, error: markError } = await db.from('master_positions')
+      .update({ status: 'closed', closed_at: new Date().toISOString(), close_source: 'terminal' } as any)
+      .eq('id', mp.id).eq('status', 'open').select('*').maybeSingle();
+    if (markError) return { success: false, error: `Master ticket is already absent at the broker; position record update failed: ${markError.message}` };
+    if (!alreadyClosed) return { success: false, error: 'Master position changed while closing; refresh before retrying' };
+    return { success: true, master_closed: true, already_closed_at_broker: true, followers: await closeFollowers(alreadyClosed, reason) };
   }
-  const { positions, error: positionError } = await readPositions(acc);
-  if (positionError || !positions) {
-    return { success: false, error: positionError || 'Could not verify the Master position at the broker' };
-  }
-  const live = positions.find((position) => String(position.ticket) === String(mp.ticket));
-  if (!live) {
-    return { success: false, error: 'The Master ticket is no longer open at the broker; no close order was sent' };
-  }
-  const closeError = await closeOnAccount(acc, String(mp.ticket), live.symbol || mp.symbol, Number(live.volume));
-  if (closeError) return { success: false, error: `Master trade not closed: ${closeError}` };
+  if (close.error) return { success: false, error: `Master trade not closed: ${close.error}` };
   const { data: claimed, error: updateError } = await db.from('master_positions')
     .update({ status: 'closed', closed_at: new Date().toISOString(), close_source: reason === 'mentor_close_idea' ? 'humi' : reason } as any)
     .eq('id', mp.id).eq('status', 'open').select('*').maybeSingle();
@@ -185,21 +228,37 @@ async function closeFollowers(mp: any, reason: string) {
     } as any);
     return { closed: 0, failed: 0, details: [], matched: 0 };
   }
+  const accountIds = [...new Set(rows.map((row: any) => row.trading_account_id))];
+  const { data: accounts } = await db.from('trading_accounts').select('*').in('id', accountIds);
+  const accountMap = new Map((accounts || []).map((account: any) => [account.id, account]));
+  const vpsRows = rows.filter((row: any) => {
+    const account = accountMap.get(row.trading_account_id);
+    return account?.connection_type === 'vps' || account?.provider === 'vps';
+  }).length;
+  if (vpsRows && await vpsBusy()) {
+    const details = rows.map((row: any) => ({ account: accountMap.get(row.trading_account_id)?.name, ticket: row.broker_ticket, ok: false, error: 'Trading terminal is busy; retry this close shortly' }));
+    return { closed: 0, failed: rows.length, details, matched: rows.length };
+  }
+  if (vpsRows) await setVpsBusyUntil(new Date(Date.now() + vpsRows * 25_000 + 60_000));
   let closed = 0, failed = 0;
   const details: any[] = [];
   const signalIds: string[] = mp.signal_id ? [mp.signal_id] : [];
-  for (const row of rows) {
-    const { data: acc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
-    const err = acc ? await closeOnAccount(acc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
-    if (!err) {
-      closed++;
-      await db.from('trade_history').update({ status: 'closed', closed_at: new Date().toISOString(), close_reason: reason } as any).eq('id', row.id);
-    } else {
-      failed++;
-      await db.from('trade_history').update({ comment: `Close mirror failed: ${err}`.slice(0, 500) } as any).eq('id', row.id);
+  try {
+    for (const row of rows) {
+      const acc = accountMap.get(row.trading_account_id);
+      const err = acc ? await closeOnAccount(acc, row.broker_ticket!, row.broker_symbol || row.symbol, Number(row.volume)) : 'Follower account missing';
+      if (!err) {
+        closed++;
+        await db.from('trade_history').update({ status: 'closed', closed_at: new Date().toISOString(), close_reason: reason } as any).eq('id', row.id).eq('status', 'open');
+      } else {
+        failed++;
+        await db.from('trade_history').update({ comment: `Close mirror failed: ${err}`.slice(0, 500) } as any).eq('id', row.id).eq('status', 'open');
+      }
+      if (row.signal_id) signalIds.push(row.signal_id);
+      details.push({ account: acc?.name, ticket: row.broker_ticket, ok: !err, error: err });
     }
-    if (row.signal_id) signalIds.push(row.signal_id);
-    details.push({ account: acc?.name, ticket: row.broker_ticket, ok: !err, error: err });
+  } finally {
+    if (vpsRows) await setVpsBusyUntil(null);
   }
   await db.from('master_positions').update({ followers_closed: closed, followers_failed: failed } as any).eq('id', mp.id);
   // The Idea leaves the active feed once its trade is actually over.
@@ -399,9 +458,14 @@ async function vpsBusy(): Promise<boolean> {
 }
 
 async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
+  const { data: ownerMasterAccounts } = await db.from('trading_accounts').select('id')
+    .eq('user_id', ownerUserId).eq('is_master', true);
+  const masterAccountIds = (ownerMasterAccounts || []).map((account: any) => account.id);
+  if (!masterAccountIds.length) return { closed: 0, failed: 0, details: [], matched: 0 };
   const { data: rows, error } = await db.from('trade_history')
-    .select('id, user_id, trading_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
-    .eq('signal_id', signalId).eq('status', 'open').neq('user_id', ownerUserId);
+    .select('id, user_id, trading_account_id, master_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
+    .eq('signal_id', signalId).eq('status', 'open')
+    .in('master_account_id', masterAccountIds);
   if (error) return { closed: 0, failed: 0, details: [{ ok: false, error: error.message }] };
 
   const candidates = (rows || []).filter((row: any) => row.status === 'open');
@@ -415,40 +479,15 @@ async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
       continue;
     }
     const { data: acc } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
-    if (!acc || acc.user_id === ownerUserId) {
+    if (!acc || acc.user_id !== row.user_id || acc.is_master || acc.id === row.master_account_id) {
       failed++;
-      details.push({ trade_id: row.id, account: acc?.name, ok: false, error: acc ? 'Skipped Master-owned account; only followers are closed on this path' : 'Follower account missing' });
+      details.push({ trade_id: row.id, account: acc?.name, ok: false, error: acc ? 'Skipped non-follower or Master account; only follower accounts are closed on this path' : 'Follower account missing' });
       continue;
     }
-    const { positions, error: positionError } = await readPositions(acc);
-    if (positionError || !positions) {
+    const result = await closeVerifiedPosition(acc, String(row.broker_ticket), row.broker_symbol || row.symbol);
+    if (result.error) {
       failed++;
-      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: positionError || 'Could not read live positions' });
-      continue;
-    }
-    const live = positions.find((position) => String(position.ticket) === String(row.broker_ticket));
-    if (!live) {
-      failed++;
-      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: 'Ticket is not currently open at the broker; record left unchanged' });
-      continue;
-    }
-    if (acc.connection_type === 'vps' || acc.provider === 'vps') {
-      if (await vpsBusy()) {
-        failed++;
-        details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: 'Trading terminal is busy; retry shortly' });
-        continue;
-      }
-      await setVpsBusyUntil(new Date(Date.now() + 45_000));
-    }
-    let closeError: string | null = null;
-    try {
-      closeError = await closeOnAccount(acc, String(row.broker_ticket), row.broker_symbol || live.symbol, Number(live.volume));
-    } finally {
-      if (acc.connection_type === 'vps' || acc.provider === 'vps') await setVpsBusyUntil(null);
-    }
-    if (closeError) {
-      failed++;
-      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: closeError });
+      details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: false, error: result.error, broker: result.broker });
       continue;
     }
     const { error: updateError } = await db.from('trade_history').update({
@@ -460,7 +499,7 @@ async function closeIdeaFollowersOnly(signalId: string, ownerUserId: string) {
       continue;
     }
     closed++;
-    details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, ok: true });
+    details.push({ trade_id: row.id, account: acc.name, ticket: row.broker_ticket, volume: result.position?.volume, ok: true, broker: result.broker });
   }
   return { closed, failed, details, matched: candidates.length };
 }
@@ -587,7 +626,9 @@ async function closeIdea(signalId: string, userId: string) {
         results.push({ ticket: mp.ticket, success: false, error: 'Linked Master account could not be verified as yours' });
         continue;
       }
-      results.push({ ticket: mp.ticket, symbol: mp.symbol, ...await closeMasterPosition(acc, mp, 'mentor_close_idea') });
+      const result = await closeMasterPosition(acc, mp, 'mentor_close_idea');
+      results.push({ ticket: mp.ticket, symbol: mp.symbol, ...result });
+      if (acc.connection_type === 'vps' || acc.provider === 'vps') await bindVps(acc);
     }
     const followers = results.reduce((sum, result) => sum + (result.followers?.closed || 0), 0);
     const failed = results.reduce((sum, result) => sum + (result.followers?.failed || (result.success ? 0 : 1)), 0);
@@ -596,9 +637,9 @@ async function closeIdea(signalId: string, userId: string) {
 
   const followers = await closeIdeaFollowersOnly(signalId, userId);
   if (!followers.failed) {
-    const { count } = await db.from('trade_history').select('id', { count: 'exact', head: true })
+    const { count, error: countError } = await db.from('trade_history').select('id', { count: 'exact', head: true })
       .eq('signal_id', signalId).eq('status', 'open');
-    if (!count) await db.from('trading_signals').update({ status: 'closed' } as any).eq('id', signalId).neq('status', 'removed');
+    if (!countError && count === 0) await db.from('trading_signals').update({ status: 'closed' } as any).eq('id', signalId).neq('status', 'removed');
   }
   return { status: 200, body: { success: true, strategy, followers } };
 }
@@ -635,10 +676,43 @@ Deno.serve(async (req) => {
       const masterIds = [...new Set(rows.map((row: any) => row.master_account_id).filter(Boolean))];
       const { data: masters } = await db.from('trading_accounts').select('id, user_id').in('id', masterIds);
       const isAdmin = await db.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').limit(1).then((r) => !!r.data?.length);
-      if (!isAdmin && (masters || []).some((master: any) => master.user_id !== user.id)) {
+      if (masters?.length !== masterIds.length || (!isAdmin && (masters || []).some((master: any) => master.user_id !== user.id))) {
         return json({ error: 'Only the Master account owner can audit these trades' }, 403);
       }
       return json({ success: true, ...(await auditOpenCopies({ trade_ids: tradeIds })) });
+    }
+    if (mode === 'close_copy') {
+      const tradeId = String(body?.trade_id || '');
+      if (!tradeId || tradeId.length > 80) return json({ error: 'A valid trade id is required' }, 400);
+      const { data: row, error: rowError } = await db.from('trade_history')
+        .select('id, user_id, trading_account_id, master_account_id, broker_ticket, broker_symbol, symbol, direction, volume, status')
+        .eq('id', tradeId).maybeSingle();
+      if (rowError || !row) return json({ error: 'Follower trade not found' }, 404);
+      if (row.status !== 'open') return json({ success: true, skipped: 'already_closed', trade_id: row.id });
+      if (!row.master_account_id || row.user_id === user.id || row.trading_account_id === row.master_account_id) {
+        return json({ error: 'This row is not an eligible follower copy' }, 403);
+      }
+      const { data: master } = await db.from('trading_accounts').select('id, user_id, is_master')
+        .eq('id', row.master_account_id).maybeSingle();
+      const isAdmin = await db.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').limit(1).then((r) => !!r.data?.length);
+      if ((!master || master.user_id !== user.id || !master.is_master) && !isAdmin) {
+        return json({ error: 'Only the Master account owner can close this follower copy' }, 403);
+      }
+      if (!row.broker_ticket) return json({ error: 'No broker ticket is recorded; no close order was sent' }, 409);
+      const { data: follower } = await db.from('trading_accounts').select('*').eq('id', row.trading_account_id).maybeSingle();
+      if (!follower || follower.user_id !== row.user_id || follower.is_master || follower.id === row.master_account_id) {
+        return json({ error: 'Follower account ownership could not be verified; Master accounts are never closed on this path' }, 409);
+      }
+      const close = await closeVerifiedPosition(follower, String(row.broker_ticket), row.broker_symbol || row.symbol);
+      if (close.error) {
+        const notOpen = close.error.includes('not currently open at the broker');
+        return json({ success: notOpen, ...(notOpen ? { skipped: 'not_on_broker', record_unchanged: true } : {}), error: close.error, ticket: row.broker_ticket, broker: close.broker }, notOpen ? 200 : 502);
+      }
+      const { error: updateError } = await db.from('trade_history').update({
+        status: 'closed', closed_at: new Date().toISOString(), close_reason: 'verified_manual_close',
+      } as any).eq('id', row.id).eq('status', 'open');
+      if (updateError) return json({ success: false, error: `Broker closed and verified; HuMi record update failed: ${updateError.message}`, ticket: row.broker_ticket, broker: close.broker }, 500);
+      return json({ success: true, closed: true, trade_id: row.id, account: follower.name, ticket: row.broker_ticket, symbol: close.position?.symbol, volume: close.position?.volume, broker: close.broker });
     }
     const accountId = String(body?.account_id || '');
     const { data: acc } = accountId
