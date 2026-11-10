@@ -29,6 +29,12 @@ function categoryFor(type: string): keyof { signals: boolean; trades: boolean; a
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Public key is safe to expose; the browser needs it to subscribe.
+  if (req.method === "GET") {
+    return new Response(JSON.stringify({ ok: !!VAPID_PUBLIC, publicKey: VAPID_PUBLIC }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const body = await req.json();
