@@ -658,7 +658,9 @@ Deno.serve(async (req) => {
         for (const m of masters || []) out.push(await syncAccount(m).catch((e) => ({ account: m.name, error: String(e) })));
         if (i < passes - 1) await new Promise((r) => setTimeout(r, 15000));
       }
-      return json({ success: true, results: out });
+      // Self-healing: close follower copies still open after their Master closed (last 24h).
+      const reconcile = await reconcileCloses({ hours: 24 }).catch((e) => ({ error: String(e) }));
+      return json({ success: true, results: out, reconcile });
     }
 
     const user = await authedUser(req);

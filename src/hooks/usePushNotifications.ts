@@ -4,7 +4,19 @@ import { useAuth } from '@/hooks/useAuth';
 
 // VAPID public key must be exposed to the client. Set VITE_VAPID_PUBLIC_KEY
 // in .env from the same VAPID_PUBLIC_KEY stored as an edge-function secret.
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+const ENV_VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+let cachedKey: string | undefined = ENV_VAPID_KEY;
+
+async function getVapidPublicKey(): Promise<string | undefined> {
+  if (cachedKey) return cachedKey;
+  try {
+    const { data } = await supabase.functions.invoke('send-push-notification', { method: 'GET' });
+    if (data?.publicKey) cachedKey = String(data.publicKey);
+  } catch (e) {
+    console.warn('Could not load push key', e);
+  }
+  return cachedKey;
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -36,9 +48,10 @@ export function usePushNotifications() {
 
   const enable = useCallback(async () => {
     if (!supported || !user) return { ok: false, error: 'Not supported' };
-    if (!VAPID_PUBLIC_KEY) return { ok: false, error: 'VAPID key missing (VITE_VAPID_PUBLIC_KEY)' };
     setLoading(true);
     try {
+      const VAPID_PUBLIC_KEY = await getVapidPublicKey();
+      if (!VAPID_PUBLIC_KEY) return { ok: false, error: 'Push is not configured on the server yet' };
       const perm = await Notification.requestPermission();
       setPermission(perm);
       if (perm !== 'granted') return { ok: false, error: 'Permission denied' };
