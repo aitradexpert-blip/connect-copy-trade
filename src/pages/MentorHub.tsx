@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -83,6 +83,16 @@ interface MentorClient {
   display_name?: string;
 }
 
+const readMentorHubIdeaDraft = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const draft = window.localStorage.getItem("mentorHubIdeaDraft");
+    return draft ? JSON.parse(draft) as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function MentorHub() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
@@ -94,6 +104,15 @@ export default function MentorHub() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [ideaToClose, setIdeaToClose] = useState<Signal | null>(null);
   const [closingIdeaId, setClosingIdeaId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "home";
+    try {
+      const savedTab = window.localStorage.getItem("mentorHubTab");
+      return savedTab && ["home", "ideas", "copy", "bot"].includes(savedTab) ? savedTab : "home";
+    } catch {
+      return "home";
+    }
+  });
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [copyRelationships, setCopyRelationships] = useState<CopyRelationship[]>([]);
   const [clients, setClients] = useState<MentorClient[]>([]);
@@ -103,12 +122,13 @@ export default function MentorHub() {
 
   // Signal form state
   const [showSignalDialog, setShowSignalDialog] = useState(false);
-  const [newSymbol, setNewSymbol] = useState("");
-  const [newDirection, setNewDirection] = useState<string>("BUY");
-  const [newLotSize, setNewLotSize] = useState("0.01");
-  const [newStopLoss, setNewStopLoss] = useState("");
-  const [newTakeProfit, setNewTakeProfit] = useState("");
-  const [newComment, setNewComment] = useState("");
+  const [savedIdeaDraft] = useState(readMentorHubIdeaDraft);
+  const [newSymbol, setNewSymbol] = useState(() => typeof savedIdeaDraft?.symbol === "string" ? savedIdeaDraft.symbol : "");
+  const [newDirection, setNewDirection] = useState<string>(() => typeof savedIdeaDraft?.direction === "string" ? savedIdeaDraft.direction : "BUY");
+  const [newLotSize, setNewLotSize] = useState(() => typeof savedIdeaDraft?.lotSize === "string" ? savedIdeaDraft.lotSize : "0.01");
+  const [newStopLoss, setNewStopLoss] = useState(() => typeof savedIdeaDraft?.stopLoss === "string" ? savedIdeaDraft.stopLoss : "");
+  const [newTakeProfit, setNewTakeProfit] = useState(() => typeof savedIdeaDraft?.takeProfit === "string" ? savedIdeaDraft.takeProfit : "");
+  const [newComment, setNewComment] = useState(() => typeof savedIdeaDraft?.comment === "string" ? savedIdeaDraft.comment : "");
   const [publishingSignal, setPublishingSignal] = useState(false);
 
   // AI Suggestion
@@ -120,8 +140,9 @@ export default function MentorHub() {
   const [quickDirection, setQuickDirection] = useState("BUY");
   const [quickLotSize, setQuickLotSize] = useState("0.01");
   const [executingQuickTrade, setExecutingQuickTrade] = useState(false);
-  const [broadcastToBot, setBroadcastToBot] = useState(true);
-  const [broadcastToCopy, setBroadcastToCopy] = useState(true);
+  const [broadcastToBot, setBroadcastToBot] = useState(() => typeof savedIdeaDraft?.broadcastToBot === "boolean" ? savedIdeaDraft.broadcastToBot : true);
+  const [broadcastToCopy, setBroadcastToCopy] = useState(() => typeof savedIdeaDraft?.broadcastToCopy === "boolean" ? savedIdeaDraft.broadcastToCopy : true);
+  const initialLoadComplete = useRef(false);
 
   const primaryColor = profile?.ui_config?.primary_color || "#6366f1";
   const secondaryColor = profile?.ui_config?.secondary_color || "#8b5cf6";
@@ -147,11 +168,34 @@ export default function MentorHub() {
   };
 
   useEffect(() => {
-    if (user) loadData();
-  }, [user]);
+    if (user?.id) void loadData();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hasDraft = Boolean(newSymbol || newStopLoss || newTakeProfit || newComment || newDirection !== "BUY" || newLotSize !== "0.01" || !broadcastToBot || !broadcastToCopy);
+    try {
+      if (!hasDraft) {
+        window.localStorage.removeItem("mentorHubIdeaDraft");
+        return;
+      }
+      window.localStorage.setItem("mentorHubIdeaDraft", JSON.stringify({
+        symbol: newSymbol,
+        direction: newDirection,
+        lotSize: newLotSize,
+        stopLoss: newStopLoss,
+        takeProfit: newTakeProfit,
+        comment: newComment,
+        broadcastToBot,
+        broadcastToCopy,
+      }));
+    } catch {
+      // Keep the form usable when browser storage is unavailable.
+    }
+  }, [newSymbol, newDirection, newLotSize, newStopLoss, newTakeProfit, newComment, broadcastToBot, broadcastToCopy]);
 
   const loadData = async () => {
-    setLoading(true);
+    if (!initialLoadComplete.current) setLoading(true);
     try {
       // Load mentor profile
       const { data: profileData } = await supabase
@@ -239,6 +283,7 @@ export default function MentorHub() {
     } catch (err) {
       console.error("Error loading mentor hub data:", err);
     } finally {
+      initialLoadComplete.current = true;
       setLoading(false);
     }
   };
@@ -330,7 +375,9 @@ export default function MentorHub() {
         variant: report.destructive ? "destructive" : undefined,
       });
       setShowSignalDialog(false);
-      setNewSymbol(""); setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
+      setNewSymbol(""); setNewDirection("BUY"); setNewLotSize("0.01");
+      setNewComment(""); setNewStopLoss(""); setNewTakeProfit("");
+      setBroadcastToBot(true); setBroadcastToCopy(true);
       loadData();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -541,7 +588,18 @@ export default function MentorHub() {
       <div className="max-w-6xl mx-auto px-4 py-6 overflow-x-hidden">
         <CopyTradingActiveBanner className="mb-6" />
         <NoticeBoard audience="mentor_hub" className="mb-6" />
-        <Tabs defaultValue="home" className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value);
+            try {
+              window.localStorage.setItem("mentorHubTab", value);
+            } catch {
+              // Keep tab navigation usable when browser storage is unavailable.
+            }
+          }}
+          className="space-y-6"
+        >
           <TabsList className="w-full overflow-x-auto flex-nowrap justify-start md:grid md:grid-cols-4 md:max-w-lg bg-muted/50 p-1 rounded-full">
             <TabsTrigger value="home" className="flex items-center gap-1 rounded-full data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <Home className="w-4 h-4" /> Home
