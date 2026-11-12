@@ -10,6 +10,7 @@ import { GraduationCap, BookOpen, Video, Book, FileText, Wrench, ExternalLink, C
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import AcademyCourse from "@/components/academy/AcademyCourse";
 
 interface TrainingContent {
   id: string;
@@ -38,9 +39,9 @@ const typeIcons: Record<string, any> = {
 };
 
 const difficultyColors: Record<string, string> = {
-  beginner: "bg-green-500/10 text-green-600 border-green-500/20",
-  intermediate: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  advanced: "bg-red-500/10 text-red-600 border-red-500/20",
+  beginner: "bg-profit/10 text-profit border-profit/20",
+  intermediate: "bg-primary/10 text-primary border-primary/20",
+  advanced: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
 export default function TrainingCenter() {
@@ -57,7 +58,7 @@ export default function TrainingCenter() {
 
   useEffect(() => {
     loadContent();
-  }, [user]);
+  }, [user?.id]);
 
   const loadContent = async () => {
     setLoading(true);
@@ -102,8 +103,9 @@ export default function TrainingCenter() {
     }
   };
 
-  const askKhumo = async () => {
-    if (!question.trim() || !user) return;
+  const askKhumo = async (override?: string) => {
+    const q = override ?? question;
+    if (!q.trim() || !user) return;
     setAskingKhumo(true);
     try {
       const context = selectedContent
@@ -113,7 +115,7 @@ export default function TrainingCenter() {
       const { data } = await supabase.functions.invoke('khumo-chat', {
         body: {
           user_id: user.id,
-          message: question,
+          message: q,
           context: `training_center: ${context}`
         }
       });
@@ -149,6 +151,34 @@ export default function TrainingCenter() {
       </AppLayout>
     );
   }
+
+  const tutorCard = (
+            <Card className="bg-gradient-card border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Ask Khumo
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Input
+                  value={question}
+                  onChange={e => setQuestion(e.target.value)}
+                  placeholder="Ask about any trading concept..."
+                  onKeyDown={e => e.key === 'Enter' && askKhumo()}
+                />
+                <Button size="sm" className="w-full" onClick={() => askKhumo()} disabled={askingKhumo || !question.trim()}>
+                  {askingKhumo ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                  {askingKhumo ? "Thinking..." : "Ask"}
+                </Button>
+                {khumoAnswer && (
+                  <div className="text-sm bg-muted/50 p-3 rounded-lg mt-2 whitespace-pre-wrap">
+                    {khumoAnswer}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+  );
 
   const renderContentCard = (item: TrainingContent) => {
     const Icon = typeIcons[item.type] || BookOpen;
@@ -193,13 +223,31 @@ export default function TrainingCenter() {
               <GraduationCap className="h-8 w-8" />
               Training Center
             </h1>
-            <p className="text-muted-foreground mt-1">Learn trading from beginner to advanced</p>
+            <p className="text-muted-foreground mt-1">Structured Pro Forex Institute course plus a curated video library</p>
           </div>
           <Badge variant="secondary" className="text-sm">
-            {completedCount}/{content.length} completed
+            {completedCount}/{content.length} videos completed
           </Badge>
         </div>
 
+        <Tabs defaultValue="academy">
+          <TabsList>
+            <TabsTrigger value="academy">Academy Course</TabsTrigger>
+            <TabsTrigger value="library">Video Library</TabsTrigger>
+          </TabsList>
+          <TabsContent value="academy" className="mt-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <AcademyCourse userId={user?.id} onAskTutor={(l) => {
+                  const q = `Explain "${l.title}" from the Pro Forex Institute course in simple terms with a practical example. Key points: ${l.points.join(" ")}`;
+                  setQuestion(q);
+                  askKhumo(q);
+                }} />
+              </div>
+              <div className="space-y-4">{tutorCard}</div>
+            </div>
+          </TabsContent>
+          <TabsContent value="library" className="mt-4 space-y-6">
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -276,34 +324,11 @@ export default function TrainingCenter() {
               </Card>
             )}
 
-            {/* Khumo AI Tutor */}
-            <Card className="bg-gradient-card border-border">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Ask Khumo
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Input
-                  value={question}
-                  onChange={e => setQuestion(e.target.value)}
-                  placeholder="Ask about any trading concept..."
-                  onKeyDown={e => e.key === 'Enter' && askKhumo()}
-                />
-                <Button size="sm" className="w-full" onClick={askKhumo} disabled={askingKhumo || !question.trim()}>
-                  {askingKhumo ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
-                  {askingKhumo ? "Thinking..." : "Ask"}
-                </Button>
-                {khumoAnswer && (
-                  <div className="text-sm bg-muted/50 p-3 rounded-lg mt-2 whitespace-pre-wrap">
-                    {khumoAnswer}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {tutorCard}
           </div>
         </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

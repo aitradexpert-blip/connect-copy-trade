@@ -20,8 +20,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+        // Supabase re-emits auth events with new objects; keep the same ones when nothing changed
+        setSession(prev => (prev?.access_token === session?.access_token ? prev : session));
+        setUser(prev => {
+          const next = session?.user ?? null;
+          if (event === 'USER_UPDATED') return next;
+          return prev?.id === next?.id ? prev : next;
+        });
         setLoading(false);
       }
     );
