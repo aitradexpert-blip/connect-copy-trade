@@ -14,6 +14,90 @@ export type Database = {
   }
   public: {
     Tables: {
+      affiliate_commissions: {
+        Row: {
+          affiliate_user_id: string
+          commission_cents: number
+          created_at: string
+          id: string
+          paid_at: string | null
+          payout_reference: string | null
+          period_month: string
+          plan_name: string | null
+          referred_user_id: string
+          status: string
+          subscription_amount_cents: number
+        }
+        Insert: {
+          affiliate_user_id: string
+          commission_cents: number
+          created_at?: string
+          id?: string
+          paid_at?: string | null
+          payout_reference?: string | null
+          period_month: string
+          plan_name?: string | null
+          referred_user_id: string
+          status?: string
+          subscription_amount_cents: number
+        }
+        Update: {
+          affiliate_user_id?: string
+          commission_cents?: number
+          created_at?: string
+          id?: string
+          paid_at?: string | null
+          payout_reference?: string | null
+          period_month?: string
+          plan_name?: string | null
+          referred_user_id?: string
+          status?: string
+          subscription_amount_cents?: number
+        }
+        Relationships: []
+      }
+      affiliates: {
+        Row: {
+          account_holder: string | null
+          account_number: string | null
+          bank_name: string | null
+          branch_code: string | null
+          commission_pct: number
+          created_at: string
+          id: string
+          referral_code: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_holder?: string | null
+          account_number?: string | null
+          bank_name?: string | null
+          branch_code?: string | null
+          commission_pct?: number
+          created_at?: string
+          id?: string
+          referral_code: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_holder?: string | null
+          account_number?: string | null
+          bank_name?: string | null
+          branch_code?: string | null
+          commission_pct?: number
+          created_at?: string
+          id?: string
+          referral_code?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_bot_assignments: {
         Row: {
           auto_execute: boolean | null
@@ -807,6 +891,179 @@ export type Database = {
           },
         ]
       }
+      mentor_ledger_entries: {
+        Row: {
+          available_at: string
+          collection_mode: string
+          created_at: string
+          follower_user_id: string
+          gross_cents: number
+          id: string
+          mentor_net_cents: number
+          mentor_user_id: string
+          payout_id: string | null
+          period_end: string
+          period_start: string
+          platform_fee_cents: number
+          status: string
+          subscription_id: string | null
+        }
+        Insert: {
+          available_at?: string
+          collection_mode: string
+          created_at?: string
+          follower_user_id: string
+          gross_cents: number
+          id?: string
+          mentor_net_cents: number
+          mentor_user_id: string
+          payout_id?: string | null
+          period_end: string
+          period_start: string
+          platform_fee_cents: number
+          status?: string
+          subscription_id?: string | null
+        }
+        Update: {
+          available_at?: string
+          collection_mode?: string
+          created_at?: string
+          follower_user_id?: string
+          gross_cents?: number
+          id?: string
+          mentor_net_cents?: number
+          mentor_user_id?: string
+          payout_id?: string | null
+          period_end?: string
+          period_start?: string
+          platform_fee_cents?: number
+          status?: string
+          subscription_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mentor_ledger_entries_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "mentor_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mentor_payout_accounts: {
+        Row: {
+          account_holder: string
+          account_number: string
+          bank_name: string
+          branch_code: string
+          created_at: string
+          id: string
+          is_verified: boolean
+          mentor_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_holder: string
+          account_number: string
+          bank_name: string
+          branch_code: string
+          created_at?: string
+          id?: string
+          is_verified?: boolean
+          mentor_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_holder?: string
+          account_number?: string
+          bank_name?: string
+          branch_code?: string
+          created_at?: string
+          id?: string
+          is_verified?: boolean
+          mentor_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      mentor_payouts: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          id: string
+          mentor_user_id: string
+          paid_at: string | null
+          period_end: string
+          period_start: string
+          reference: string | null
+          status: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          id?: string
+          mentor_user_id: string
+          paid_at?: string | null
+          period_end: string
+          period_start: string
+          reference?: string | null
+          status?: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          id?: string
+          mentor_user_id?: string
+          paid_at?: string | null
+          period_end?: string
+          period_start?: string
+          reference?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      mentor_plans: {
+        Row: {
+          billing_period: string
+          collection_mode: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          mentor_user_id: string
+          name: string
+          platform_fee_cents: number
+          price_cents: number
+          updated_at: string
+        }
+        Insert: {
+          billing_period?: string
+          collection_mode?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          mentor_user_id: string
+          name?: string
+          platform_fee_cents?: number
+          price_cents: number
+          updated_at?: string
+        }
+        Update: {
+          billing_period?: string
+          collection_mode?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          mentor_user_id?: string
+          name?: string
+          platform_fee_cents?: number
+          price_cents?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       mentor_profiles: {
         Row: {
           admin_notes: string | null
@@ -857,6 +1114,71 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      mentor_subscriptions: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          collection_mode: string
+          created_at: string
+          current_period_end: string | null
+          follower_user_id: string
+          id: string
+          mentor_user_id: string
+          payment_method: string | null
+          payment_reference: string | null
+          plan_id: string | null
+          platform_fee_cents_snapshot: number
+          price_cents_snapshot: number
+          proof_url: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          collection_mode: string
+          created_at?: string
+          current_period_end?: string | null
+          follower_user_id: string
+          id?: string
+          mentor_user_id: string
+          payment_method?: string | null
+          payment_reference?: string | null
+          plan_id?: string | null
+          platform_fee_cents_snapshot: number
+          price_cents_snapshot: number
+          proof_url?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          collection_mode?: string
+          created_at?: string
+          current_period_end?: string | null
+          follower_user_id?: string
+          id?: string
+          mentor_user_id?: string
+          payment_method?: string | null
+          payment_reference?: string | null
+          plan_id?: string | null
+          platform_fee_cents_snapshot?: number
+          price_cents_snapshot?: number
+          proof_url?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mentor_subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "mentor_plans"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notifications: {
         Row: {
@@ -1826,11 +2148,16 @@ export type Database = {
       }
     }
     Functions: {
+      approve_mentor_subscription: {
+        Args: { _subscription_id: string }
+        Returns: undefined
+      }
       consume_subscription_quota: {
         Args: { p_feature_key: string; p_quantity?: number; p_user_id: string }
         Returns: undefined
       }
       delete_expired_pending_trades: { Args: never; Returns: undefined }
+      expire_mentor_subscriptions: { Args: never; Returns: number }
       expire_stale_subscriptions: { Args: never; Returns: undefined }
       has_role: { Args: { _role: string; _user_id: string }; Returns: boolean }
       has_subscription_access: {

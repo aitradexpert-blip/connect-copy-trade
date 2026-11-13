@@ -576,10 +576,7 @@ const handleMetaApiSubmit = async (e: React.FormEvent) => {
     setAgreedToTerms(false);
     onOpenChange(false);
     onAccountConnected?.();
-    // Force accounts page to reload even if already on /accounts
-    // by navigating away first then back (avoids stale cache from useEffect [user])
-    navigate('/');
-    setTimeout(() => navigate('/accounts'), 100);
+    // Stay on the current page (Mentor Hub, Mentor Center, etc.) — parent refreshes via onAccountConnected
   };
 
   const handleBack = () => {

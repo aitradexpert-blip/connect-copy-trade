@@ -63,7 +63,7 @@ serve(async (req) => {
     // Check limit
     if (queriesUsed >= queryLimit) {
       const upgradeText = tierName === 'free'
-        ? "Eish, you've used all 5 of your free Khumo questions this month! 💡 Upgrade to Basic (R178/mo) for 50 questions, or Professional for unlimited access. Head to the Subscription page to level up!"
+        ? "Eish, you've used all 5 of your free Khumo questions this month! 💡 Upgrade to Basic (R349/mo) for 50 questions, or Professional for unlimited access. Head to the Subscription page to level up!"
         : "You've reached your monthly Khumo question limit. Upgrade your plan for more access!";
 
       return new Response(JSON.stringify({

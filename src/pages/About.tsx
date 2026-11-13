@@ -75,7 +75,7 @@ const userJourneySteps = [
   {
     step: 1,
     title: "Choose a Plan & Subscribe",
-    desc: "Visit the Pricing page, select a plan (Basic at R178/mo, Professional at R538/mo, or Enterprise at R718/mo), enter your email, and pay securely via Yoco. Your subscription is recorded and linked to your email.",
+    desc: "Visit the Pricing page, select a plan (Basic at R349/mo, Professional at R538/mo, or Enterprise at R718/mo), enter your email, and pay securely via PayPal or direct bank deposit (EFT). Your subscription is recorded and linked to your email.",
     icon: CreditCard,
   },
   {
@@ -140,7 +140,7 @@ const howItWorks = [
 const subscriptionTiers = [
   {
     name: "Basic",
-    price: "R178",
+    price: "R349",
     features: [
       "10 auto-trades per month",
       "2 trading accounts",
@@ -187,7 +187,7 @@ const techStack = [
   { label: "Backend", value: "Supabase — PostgreSQL, Auth, Edge Functions, Realtime" },
   { label: "Broker APIs", value: "Secure cloud bridges for MT4/MT5, Deriv WebSocket API" },
   { label: "AI Engine", value: "Advanced AI (Khumo intelligence), Natural voice synthesis (SA accent)" },
-  { label: "Payments", value: "Yoco (ZAR), Crypto wallet integration for transfers" },
+  { label: "Payments", value: "PayPal (USD), Direct EFT (ZAR), Crypto wallet integration for transfers" },
   { label: "Copy Trading", value: "Cloud-based CopyFactory engine, Deriv native copy trading" },
   { label: "Database", value: "20+ tables with Row-Level Security, real-time subscriptions" },
   { label: "Edge Functions", value: "18+ serverless functions for trade execution, AI, payments" },

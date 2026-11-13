@@ -30,15 +30,6 @@ verify_jwt = false
 [functions.bankii-api]
 verify_jwt = false
 
-[functions.yoco-webhook]
-verify_jwt = false
-
-[functions.create-yoco-checkout]
-verify_jwt = false
-
-[functions.create-guest-checkout]
-verify_jwt = false
-
 [functions.deriv-execute-signal]
 verify_jwt = false
 

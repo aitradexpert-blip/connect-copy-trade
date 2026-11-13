@@ -11,7 +11,7 @@ const APK_URL = "https://connect-copy-trade.lovable.app/HuMi_Mobile.apk";
 const APP_URL = "https://connect-copy-trade.lovable.app";
 const OCTAFX_NEW = "https://clickto.trade/b3gtWBN3fii?ib=44960573";
 const OCTAFX_EXISTING = "https://clickto.trade/b7mKraZhMSj?ib=44960573";
-const YOCO_LINK = `${APP_URL}/pricing`;
+const PAY_LINK = `${APP_URL}/pricing`;
 const WA_CHANNEL = "https://whatsapp.com/channel/0029VaY0Klp9Gv7VhypIt61A";
 const WA_BUSINESS = "https://wa.me/message/WOH4AWGKQWSWL1";
 
@@ -49,7 +49,7 @@ function freePlanKeyboard() {
       [{ text: "🔗 Register OctaFX (Free)", url: OCTAFX_NEW }],
       [{ text: "✅ I have an OctaFX account", callback_data: "have_octafx" }],
       [{ text: "🔁 Switch IB to HuMi", url: OCTAFX_EXISTING }],
-      [{ text: "💳 Pay R179/month (any broker)", url: YOCO_LINK }],
+      [{ text: "💳 Pay R349/month (any broker)", url: PAY_LINK }],
     ],
   };
 }

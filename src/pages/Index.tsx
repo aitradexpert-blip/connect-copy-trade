@@ -434,7 +434,7 @@ const Index = () => {
                 <h3 className="text-lg font-bold text-foreground mb-2">Unlock the Full HuMi Experience</h3>
                 <p className="text-sm text-muted-foreground mb-4">Multi-broker dashboard, one-click signal execution, AI auto-trading, copy trading, and more.</p>
                 <div className="flex flex-wrap justify-center gap-3">
-                  <Button onClick={() => navigate('/subscription')}><CreditCard className="w-4 h-4 mr-2" /> Upgrade from R178/mo</Button>
+                  <Button onClick={() => navigate('/subscription')}><CreditCard className="w-4 h-4 mr-2" /> Upgrade from R349/mo</Button>
                   <Button variant="outline" onClick={() => navigate('/pricing')}>Compare Plans</Button>
                 </div>
               </CardContent>

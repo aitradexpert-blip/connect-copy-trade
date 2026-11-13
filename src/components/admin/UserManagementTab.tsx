@@ -55,7 +55,7 @@ export function UserManagementTab() {
     if (dbPlans.length === 0) {
       return [
         freePlan,
-        { value: 'basic', label: 'Basic', price: 'R178.20/mo' },
+        { value: 'basic', label: 'Basic', price: 'R349.00/mo' },
         { value: 'professional', label: 'Professional', price: 'R538.20/mo' },
         { value: 'enterprise', label: 'Enterprise', price: 'R719.82/mo' },
       ];

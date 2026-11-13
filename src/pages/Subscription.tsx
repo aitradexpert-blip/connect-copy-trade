@@ -18,7 +18,7 @@ import { PayPalButton } from "@/components/PayPalButton";
 import { CreditCard } from "lucide-react";
 
 const PAYPAL_CONFIG: Record<string, { hostedButtonId: string; qrCode: string }> = {
-  basic: { hostedButtonId: "MZNVMXGUBRKSQ", qrCode: "/qr-codes/basic.png" },
+  basic: { hostedButtonId: "HDTJA2QJBS5QG", qrCode: "/qr-codes/basic.png" },
   professional: { hostedButtonId: "ETQMRGQBSLG2Y", qrCode: "/qr-codes/professional.png" },
   enterprise: { hostedButtonId: "U8ZAJNT797Q58", qrCode: "/qr-codes/enterprise.png" },
   mentor: { hostedButtonId: "S7CTAQUZVG528", qrCode: "/qr-codes/mentor.png" },
