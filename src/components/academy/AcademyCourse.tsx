@@ -3,9 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Award, CheckCircle, ChevronLeft, ChevronRight, Download, Lightbulb, Lock, PlayCircle, Sparkles } from "lucide-react";
+import { Award, CheckCircle, ChevronLeft, ChevronRight, Lightbulb, Lock, PlayCircle, Sparkles } from "lucide-react";
 import { academyModules, isModuleUnlocked, scoreQuiz, totalLessons, PASS_MARK, type AcademyLesson, type AcademyModule } from "@/data/academyCurriculum";
-import guidePdf from "@/assets/pro-forex-guide.pdf.asset.json";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Saved { lessons: Record<string, boolean>; quizzes: Record<string, boolean>; }
 
@@ -25,7 +25,33 @@ export default function AcademyCourse({ userId, onAskTutor }: Props) {
   const [answers, setAnswers] = useState<number[]>([]);
   const [result, setResult] = useState<{ correct: number; passed: boolean } | null>(null);
 
-  useEffect(() => { localStorage.setItem(key, JSON.stringify(saved)); }, [key, saved]);
+  const [cloudLoaded, setCloudLoaded] = useState(!userId);
+
+  // Load account progress once and merge with anything done on this device.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    supabase.from("academy_progress").select("lessons, quizzes").eq("user_id", userId).maybeSingle().then(({ data }) => {
+      if (cancelled) return;
+      if (data) setSaved(s => ({
+        lessons: { ...(data.lessons as Record<string, boolean>), ...s.lessons },
+        quizzes: { ...(data.quizzes as Record<string, boolean>), ...s.quizzes },
+      }));
+      setCloudLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  useEffect(() => {
+    localStorage.setItem(key, JSON.stringify(saved));
+    if (!userId || !cloudLoaded) return;
+    const t = setTimeout(() => {
+      supabase.from("academy_progress").upsert({ user_id: userId, lessons: saved.lessons, quizzes: saved.quizzes }).then(({ error }) => {
+        if (error) console.error("[Academy] save failed", error);
+      });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [key, saved, userId, cloudLoaded]);
 
   const doneLessons = Object.values(saved.lessons).filter(Boolean).length;
   const passedCount = academyModules.filter(m => saved.quizzes[m.id]).length;
@@ -68,9 +94,6 @@ export default function AcademyCourse({ userId, onAskTutor }: Props) {
               <p className="text-xs text-muted-foreground mt-1">{doneLessons}/{totalLessons} lessons · {passedCount}/6 quizzes passed</p>
             </div>
             <div className="flex flex-col gap-2">
-              <Button variant="outline" asChild className="min-h-11">
-                <a href={guidePdf.url} target="_blank" rel="noreferrer"><Download className="h-4 w-4 mr-2" />Study Guide (PDF)</a>
-              </Button>
               {certified && <Badge className="justify-center py-2"><Award className="h-4 w-4 mr-1" />Course Certified</Badge>}
             </div>
           </CardContent>

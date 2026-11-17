@@ -1,8 +1,9 @@
 # Roadmap
-
-- [x] Preserve Mentor Hub's selected tab and unsent Idea form draft across refreshes.
-- [x] Keep data refreshes silent after the initial Mentor Hub load.
-- [x] Add secure Close Idea handling and Mentor Hub confirmation.
-- [ ] Audit and, only if confirmed open, close the three specified EUR/USD follower tickets; report per-ticket broker outcomes.
-- [x] Run the focused close-Idea tests and confirm the preview build.
-- [ ] Verify the Master-close Idea trigger and audit the three specified EUR/USD follower tickets; requires an authenticated broker session.
+- [x] 5. Tracked share buttons on trade ideas + referral linking at signup
+- [x] 6. Remove study guide PDF, save Academy progress to account
+- [ ] 2. Mentor Hub Earnings tab (daily payouts)
+- [ ] 4. Subscribe button on mentor referral page
+- [ ] 1. Affiliate page (daily payouts)
+- [ ] 3. Admin approvals + daily payout queue
+- [ ] 7. Google & AI search updates
+- [ ] 8. Older security warnings

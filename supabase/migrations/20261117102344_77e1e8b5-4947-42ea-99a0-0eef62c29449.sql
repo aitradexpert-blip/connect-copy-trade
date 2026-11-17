@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.set_referral_signup_referrer() FROM PUBLIC, anon, authenticated;

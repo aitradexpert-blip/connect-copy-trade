@@ -27,6 +27,9 @@ import { SymbolCombobox } from "@/components/SymbolCombobox";
 import NoticeBoard from "@/components/NoticeBoard";
 import CopyTradingActiveBanner from "@/components/CopyTradingActiveBanner";
 import MasterPositionsCard from "@/components/MasterPositionsCard";
+import ShareMenu from "@/components/share/ShareMenu";
+import { useSharerIdentity } from "@/hooks/useSharerIdentity";
+import { buildShareLink } from "@/lib/referral";
 
 interface MentorProfile {
   id: string;
@@ -95,6 +98,7 @@ const readMentorHubIdeaDraft = () => {
 
 export default function MentorHub() {
   const { user, signOut } = useAuth();
+  const sharer = useSharerIdentity(user?.id);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { canInstall, install } = usePWAInstall();
@@ -911,7 +915,11 @@ export default function MentorHub() {
                         </div>
                         <div className="flex items-center justify-between mt-2 gap-2">
                           <span className="text-xs text-muted-foreground">{new Date(sig.created_at).toLocaleString()}</span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
+                            <ShareMenu
+                              text={`${profile?.brand_name || "My"} trade idea on HuMi: ${sig.symbol} ${sig.direction}${sig.stop_loss ? ` · SL ${sig.stop_loss}` : ""}${sig.take_profit ? ` · TP ${sig.take_profit}` : ""}. Copy it automatically:`}
+                              url={buildShareLink(sharer.kind, sharer.code, sig.id)}
+                            />
                             <Button
                               variant="outline"
                               size="sm"

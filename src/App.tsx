@@ -27,6 +27,7 @@ import Analytics from "./pages/Analytics";
 import CryptoWallet from "./pages/CryptoWallet";
 import CreditUsage from "./pages/CreditUsage";
 import KhumoIntroModal from "./components/KhumoIntroModal";
+import { captureReferral } from "./lib/referral";
 import Notifications from "./pages/Notifications";
 import ApiDocs from "./pages/ApiDocs";
 import Journal from "./pages/Journal";
@@ -57,6 +58,7 @@ const RouteMemory = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const restored = useRef(false);
+  useEffect(() => { captureReferral(location.search, location.pathname); }, [location.search, location.pathname]);
   useEffect(() => {
     if (!restored.current) {
       restored.current = true;

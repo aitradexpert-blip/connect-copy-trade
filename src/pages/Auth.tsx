@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
+import { getStoredReferral, getStoredReferralDetails } from "@/lib/referral";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2,
@@ -61,7 +62,7 @@ const Auth = () => {
   const paymentSuccess = searchParams.get("payment_success") === "true";
   const planFromUrl = searchParams.get("plan");
   const emailFromUrl = searchParams.get("email");
-  const refSlug = searchParams.get("ref");
+  const refSlug = searchParams.get("ref") || getStoredReferral();
 
   useEffect(() => {
     if (emailFromUrl) setEmail(decodeURIComponent(emailFromUrl));
@@ -125,6 +126,7 @@ const Auth = () => {
   const linkMentorReferral = async (userId: string) => {
     if (!refSlug) return;
     try {
+      const details = getStoredReferralDetails();
       const { data: mentor } = await supabase
         .from("mentor_profiles")
         .select("id")
@@ -137,10 +139,19 @@ const Auth = () => {
           client_user_id: userId,
           referral_slug_used: refSlug,
         });
-        await supabase.from("profiles").update({ referred_by: refSlug }).eq("user_id", userId);
       }
+      // Always record who referred them so affiliate commissions and mentor tracking both work.
+      await supabase.from("profiles").update({ referred_by: refSlug }).eq("user_id", userId).is("referred_by", null);
+      const idea = details?.ref === refSlug ? details?.idea : searchParams.get("idea");
+      await supabase.from("referral_signups").insert({
+        referred_user_id: userId,
+        ref_code: refSlug,
+        ref_type: "unknown",
+        idea_id: idea && /^[0-9a-f-]{36}$/i.test(idea) ? idea : null,
+        source: (details?.ref === refSlug ? details?.src : searchParams.get("src")) || "link",
+      });
     } catch (err) {
-      console.error("[Auth] Error linking mentor:", err);
+      console.error("[Auth] Error linking referral:", err);
     }
   };
 

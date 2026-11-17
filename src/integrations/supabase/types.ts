@@ -14,9 +14,31 @@ export type Database = {
   }
   public: {
     Tables: {
+      academy_progress: {
+        Row: {
+          lessons: Json
+          quizzes: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          lessons?: Json
+          quizzes?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          lessons?: Json
+          quizzes?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       affiliate_commissions: {
         Row: {
           affiliate_user_id: string
+          available_at: string
           commission_cents: number
           created_at: string
           id: string
@@ -30,6 +52,7 @@ export type Database = {
         }
         Insert: {
           affiliate_user_id: string
+          available_at?: string
           commission_cents: number
           created_at?: string
           id?: string
@@ -43,6 +66,7 @@ export type Database = {
         }
         Update: {
           affiliate_user_id?: string
+          available_at?: string
           commission_cents?: number
           created_at?: string
           id?: string
@@ -1459,6 +1483,39 @@ export type Database = {
           updated_at?: string
           user_agent?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      referral_signups: {
+        Row: {
+          created_at: string
+          id: string
+          idea_id: string | null
+          ref_code: string
+          ref_type: string
+          referred_user_id: string
+          referrer_user_id: string | null
+          source: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idea_id?: string | null
+          ref_code: string
+          ref_type: string
+          referred_user_id: string
+          referrer_user_id?: string | null
+          source?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idea_id?: string | null
+          ref_code?: string
+          ref_type?: string
+          referred_user_id?: string
+          referrer_user_id?: string | null
+          source?: string | null
         }
         Relationships: []
       }
