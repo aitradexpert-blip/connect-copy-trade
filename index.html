@@ -3,9 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>HuMi — AI-Powered Trading Platform</title>
-    <meta name="description" content="HuMi: Advanced trading platform with AI voice assistant, copy trading, and automated signal execution for MetaTrader 4/5." />
-    <meta name="author" content="HuMi Trading" />
+    <title>HuMi — Copy Trading &amp; AI Trading Ideas for MT4/MT5 and Deriv (South Africa)</title>
+    <meta name="description" content="HuMi helps South African traders follow mentors, copy trades and execute AI-assisted trade ideas on their own MT4/MT5 and Deriv accounts. Plans from R349/month. Trading carries a high risk of loss." />
+    <meta name="author" content="HuMi" />
+    <meta name="robots" content="index, follow" />
 
     <!-- PWA Meta Tags -->
     <link rel="manifest" href="/manifest.json" />
@@ -22,17 +23,78 @@
     <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
     <link rel="apple-touch-icon" sizes="120x120" href="/icons/icon-144x144.png" />
 
-    <meta property="og:title" content="HuMi — AI-Powered Trading Platform" />
-    <meta property="og:description" content="Advanced trading with AI voice assistant, copy trading & automated signals" />
+    <meta property="og:title" content="HuMi — Copy Trading &amp; AI Trading Ideas (South Africa)" />
+    <meta property="og:description" content="Follow mentors, copy trades and execute AI-assisted ideas on your own MT4/MT5 and Deriv accounts. Plans from R349/month." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta property="og:site_name" content="HuMi" />
+    <meta property="og:image" content="https://humi.co.za/icons/icon-192x192.png" />
 
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@lovable_dev" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="HuMi — Copy Trading &amp; AI Trading Ideas" />
+    <meta name="twitter:description" content="Follow mentors, copy trades and execute AI-assisted ideas on your own MT4/MT5 and Deriv accounts." />
+    <meta name="twitter:image" content="https://humi.co.za/icons/icon-192x192.png" />
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "name": "HuMi",
+          "url": "https://humi.co.za/",
+          "logo": "https://humi.co.za/icons/icon-192x192.png",
+          "areaServed": "ZA"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "name": "HuMi",
+          "applicationCategory": "FinanceApplication",
+          "operatingSystem": "Web, Android, iOS (installable web app)",
+          "description": "Copy trading, mentor trade ideas and one-tap execution on your own MT4/MT5 and Deriv accounts.",
+          "offers": {
+            "@type": "AggregateOffer",
+            "lowPrice": "349",
+            "priceCurrency": "ZAR"
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is HuMi?",
+              "acceptedAnswer": { "@type": "Answer", "text": "HuMi is a South African trading platform where traders can follow mentors' trade ideas, copy trades automatically and execute ideas in one tap on their own MT4/MT5 and Deriv accounts." }
+            },
+            {
+              "@type": "Question",
+              "name": "Does HuMi hold my trading funds?",
+              "acceptedAnswer": { "@type": "Answer", "text": "No. Trades are placed on your own broker account. HuMi only charges for its subscription plans." }
+            },
+            {
+              "@type": "Question",
+              "name": "How much does HuMi cost?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Plans start from R349 per month. You can pay by card or PayPal, or by direct bank transfer (EFT)." }
+            },
+            {
+              "@type": "Question",
+              "name": "Is trading risky?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. Trading forex, CFDs and synthetic indices carries a high risk of loss and is not suitable for everyone. Never trade money you cannot afford to lose. Past results do not guarantee future results." }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
 
   <body>
+    <noscript>
+      <h1>HuMi — Copy Trading and AI Trading Ideas (South Africa)</h1>
+      <p>HuMi lets traders follow mentors, copy trades automatically and execute trade ideas in one tap on their own MT4/MT5 and Deriv accounts.</p>
+      <p>Plans start from R349 per month. Pay by card or PayPal, or by direct bank transfer (EFT).</p>
+      <p>Trading forex, CFDs and synthetic indices carries a high risk of loss. Past results do not guarantee future results.</p>
+      <p><a href="/pricing">Pricing</a> · <a href="/about">About HuMi</a> · <a href="/auth">Sign up</a></p>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,5 +1,8 @@
 User-agent: *
-Disallow: /admin
-Disallow: /admin-panel
-Disallow: /api/
 Allow: /
+Disallow: /admin
+Disallow: /mentor-hub
+Disallow: /mentor-center
+Disallow: /accounts
+
+Sitemap: https://humi.co.za/sitemap.xml
